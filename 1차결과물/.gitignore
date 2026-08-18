@@ -1,0 +1,4 @@
+member-sync/build/
+member-sync/.gradle/
+*.log
+member-sync/.idea/
