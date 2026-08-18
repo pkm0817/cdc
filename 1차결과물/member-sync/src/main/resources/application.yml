@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: member-sync
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/userdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: appuser
+    password: apppw
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: member-sync
+      auto-offset-reset: earliest
+      # 역직렬화 실패가 컨슈머 전체를 멈추지 않게 감싼다
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+
+app:
+  cdc:
+    # topic.prefix(pg) + schema(public) + table(members)
+    topic: pg.public.members
+
+logging:
+  level:
+    com.example.membersync: INFO
