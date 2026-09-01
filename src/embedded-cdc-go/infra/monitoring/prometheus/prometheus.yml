@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # cdc-service — 처리량, end-to-end 지연, 에러.
+  # Java 판은 Actuator 의 /actuator/prometheus 였지만, 여기서는 go-pq-cdc 가 띄우는
+  # HTTP 서버의 /metrics 를 그대로 쓴다. 우리 파이프라인 지표를 그 레지스트리에
+  # 등록해 넣었기 때문에 go_pq_cdc_* 와 cdc_* 가 한 엔드포인트에서 나온다.
+  - job_name: cdc-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["cdc-service:8080"]
+
+  # source DB — 테이블별 행 수 + replication slot 지연
+  - job_name: source-db
+    static_configs:
+      - targets: ["source-exporter:9187"]
+
+  # target DB — 테이블별 행 수 + 소프트 삭제 행 수
+  - job_name: target-db
+    static_configs:
+      - targets: ["target-exporter:9187"]

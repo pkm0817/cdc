@@ -1,0 +1,53 @@
+# source DB 전용 커스텀 쿼리
+# 메트릭 이름 = <최상위 키>_<컬럼명>  (예: cdc_source_rows{table_name="car"})
+#
+# ── 테이블 목록을 적지 않는다 ────────────────────────────────────────────────
+# 테이블을 열거하면 테이블이 늘 때마다 이 파일을 같이 고쳐야 하고, 잊으면
+# 대시보드에서 조용히 빠진다. 대신 pg_publication_tables 에서 읽는다.
+# "무엇을 캡처하는가"의 정의는 publication 그 자체이므로, 여기 있는 것이 곧 감시 대상이다.
+# ALTER PUBLICATION ... ADD TABLE 하면 다음 스크랩부터 메트릭이 저절로 생긴다.
+#
+# 단 heartbeat 표(cdc_heartbeat)는 뺀다. publication 에 들어 있지만 동기화 대상이
+# 아니라 슬롯을 밀어 주기 위한 살림살이라, 세면 정합성 판정이 어긋난다.
+#
+# count(*) 를 쓰는 이유: 대시보드가 source 와 target 의 행 수 차이로 정합성을
+# 판정한다. pg_stat_user_tables.n_live_tup 은 ANALYZE 시점에 따라 흔들리는
+# 추정치라 이 판정에 쓸 수 없다. 정확도를 위해 스캔 비용을 감수한다.
+#
+# query_to_xml 은 "테이블 이름을 런타임에 받아 count 하는" 유일한 순수 SQL 수단이다.
+# ───────────────────────────────────────────────────────────────────────────
+cdc_source:
+  query: |
+    SELECT t.tablename AS table_name,
+           (xpath('/row/c/text()',
+                  query_to_xml(format('SELECT count(*) AS c FROM %I.%I', t.schemaname, t.tablename),
+                               false, true, '')))[1]::text::float AS rows
+    FROM pg_publication_tables t
+    WHERE t.pubname = 'embedded_cdc_go_pub'
+      AND t.tablename NOT LIKE 'cdc\_%'
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name (discovered from the publication)"
+    - rows:
+        usage: "GAUGE"
+        description: "exact row count in source table"
+
+# replication slot 지연 — cdc-service 가 멈추면 lag_bytes 가 계속 자란다 (디스크 고갈 경보용)
+# 슬롯 역시 이름을 적지 않는다. 새 슬롯이 생기면 그대로 잡힌다.
+cdc_slot:
+  query: |
+    SELECT slot_name,
+           active::int AS active,
+           COALESCE(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn), 0)::float AS lag_bytes
+    FROM pg_replication_slots
+  metrics:
+    - slot_name:
+        usage: "LABEL"
+        description: "replication slot name"
+    - active:
+        usage: "GAUGE"
+        description: "1 if a consumer is currently connected to the slot"
+    - lag_bytes:
+        usage: "GAUGE"
+        description: "WAL bytes retained but not yet confirmed by the consumer"
