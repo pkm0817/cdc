@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# cdc-service — Debezium Embedded Engine 을 내장한 Spring Boot 서비스
+#
+#   source-postgres (WAL) ──logical replication──▶ cdc-service ──JDBC──▶ target-postgres
+#
+# offset(어디까지 읽었는지)은 named volume 의 파일에 저장되므로
+# 컨테이너를 재시작해도 멈춘 지점부터 이어서 읽는다.
+# ─────────────────────────────────────────────────────────────────────────────
+name: embedded-cdc-app
+
+networks:
+  emb-cdc-net:
+    external: true
+
+services:
+  cdc-service:
+    build:
+      context: ./cdc-service
+    image: embedded-cdc/cdc-service:local
+    container_name: emb-cdc-service
+    networks: [emb-cdc-net]
+    environment:
+      SOURCE_DB_HOST: source-postgres
+      SOURCE_DB_PORT: "5432"
+      TARGET_DB_HOST: target-postgres
+      TARGET_DB_PORT: "5432"
+    ports:
+      - "56080:8080"
+    volumes:
+      - emb-cdc-offsets:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  emb-cdc-offsets:

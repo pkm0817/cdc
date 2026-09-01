@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Source PostgreSQL — CDC 원천 DB
+#
+# 로그 기반 CDC(logical decoding, pgoutput)를 쓰기 위한 필수 설정:
+#   wal_level=logical          : WAL 에 논리 디코딩용 정보를 기록 (기본 replica 로는 불가)
+#   max_wal_senders            : WAL 스트림 전송 프로세스 수
+#   max_replication_slots      : replication slot 수 (Debezium 이 slot 하나를 점유)
+#
+# ⚠️ replication slot 은 만료되지 않는다. 컨슈머(cdc-service)가 오래 죽어 있으면
+#    slot 이 붙잡은 WAL 이 무한정 쌓여 원천 DB 디스크가 고갈된다.
+#    실습 종료 시 slot 을 지우거나 볼륨째 내릴 것 (scripts/down 참고).
+# ─────────────────────────────────────────────────────────────────────────────
+name: embedded-cdc-source-db
+
+networks:
+  emb-cdc-net:
+    external: true
+
+services:
+  source-postgres:
+    image: postgres:16
+    container_name: emb-cdc-source-pg
+    networks: [emb-cdc-net]
+    environment:
+      POSTGRES_DB: sourcedb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+    ports:
+      - "56432:5432"
+    volumes:
+      - emb-source-pgdata:/var/lib/postgresql/data
+      - ./source/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sourcedb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  emb-source-pgdata:
