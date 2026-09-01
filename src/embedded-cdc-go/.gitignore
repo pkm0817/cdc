@@ -1,0 +1,4 @@
+# 검증 리포트와 빌드 산출물
+dev/cdc-service/build/
+dev/cdc-service/test/verification/build/
+dev/cdc-service/bin/
