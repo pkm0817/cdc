@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Embedded CDC 아키텍처</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #fafbfc;
+  --surface: #ffffff;
+  --surface-2: #eef2f5;
+  --ink: #22303e;
+  --muted: #5b6b7a;
+  --line: #d8dfe5;
+  --accent: #336791;        /* PostgreSQL blue */
+  --accent-soft: #e3ecf3;
+  --service: #2e7d6b;       /* cdc-service green */
+  --service-soft: #e2f0ec;
+  --warn: #c2593c;
+  --warn-soft: #f7e8e2;
+  --code-bg: #f1f4f7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141c24;
+    --surface: #1b2530;
+    --surface-2: #22303e;
+    --ink: #dbe4ec;
+    --muted: #92a3b2;
+    --line: #33424f;
+    --accent: #6ea3cc;
+    --accent-soft: #23384a;
+    --service: #5cb39c;
+    --service-soft: #1e3630;
+    --warn: #db8367;
+    --warn-soft: #3d2820;
+    --code-bg: #101820;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141c24;
+  --surface: #1b2530;
+  --surface-2: #22303e;
+  --ink: #dbe4ec;
+  --muted: #92a3b2;
+  --line: #33424f;
+  --accent: #6ea3cc;
+  --accent-soft: #23384a;
+  --service: #5cb39c;
+  --service-soft: #1e3630;
+  --warn: #db8367;
+  --warn-soft: #3d2820;
+  --code-bg: #101820;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "IBM Plex Sans KR", "Malgun Gothic", sans-serif;
+  line-height: 1.7;
+  font-size: 16px;
+}
+main { max-width: 880px; margin: 0 auto; padding: 0 24px 96px; }
+
+/* ── 헤더 ─────────────────────────────────────────── */
+header { padding: 64px 0 8px; }
+.eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent); font-weight: 600;
+}
+h1 {
+  font-size: 40px; font-weight: 700; margin: 8px 0 12px;
+  letter-spacing: -0.02em; text-wrap: balance;
+}
+.lede { color: var(--muted); max-width: 60ch; margin: 0 0 24px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.facts span {
+  font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+  background: var(--surface); border: 1px solid var(--line);
+  padding: 4px 12px; border-radius: 999px; color: var(--muted);
+}
+.facts span b { color: var(--ink); font-weight: 600; }
+
+/* ── 목차 칩 ──────────────────────────────────────── */
+nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 28px 0 0; }
+nav a {
+  font-size: 13.5px; text-decoration: none; color: var(--accent);
+  background: var(--accent-soft); padding: 5px 14px; border-radius: 999px;
+  font-weight: 500;
+}
+nav a:hover, nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ── 섹션 공통 ────────────────────────────────────── */
+section { margin-top: 72px; }
+h2 {
+  font-size: 26px; font-weight: 700; letter-spacing: -0.01em;
+  margin: 0 0 6px; text-wrap: balance;
+  padding-top: 16px; border-top: 2px solid var(--ink);
+}
+.h2-sub { color: var(--muted); margin: 0 0 24px; max-width: 64ch; }
+h3 { font-size: 18px; font-weight: 600; margin: 32px 0 10px; }
+p { max-width: 70ch; }
+strong { font-weight: 600; }
+
+code, .mono {
+  font-family: "IBM Plex Mono", monospace; font-size: .88em;
+  background: var(--code-bg); padding: 1px 6px; border-radius: 4px;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 16px 18px; overflow-x: auto;
+  font-family: "IBM Plex Mono", monospace; font-size: 13.5px; line-height: 1.6;
+}
+pre code { background: none; padding: 0; }
+
+/* ── 다이어그램 ───────────────────────────────────── */
+.diagram {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 28px 20px; overflow-x: auto; margin: 20px 0;
+}
+.flow { display: flex; align-items: center; gap: 0; min-width: 720px; }
+.node {
+  flex: 1; border-radius: 10px; padding: 14px 16px; text-align: center;
+  border: 1.5px solid var(--line); background: var(--surface-2);
+}
+.node .t { font-weight: 600; font-size: 15px; }
+.node .d { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+.node.pg   { border-color: var(--accent); background: var(--accent-soft); }
+.node.svc  { border-color: var(--service); background: var(--service-soft); }
+.arrow {
+  flex: 0 0 auto; padding: 0 10px; text-align: center;
+  font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--muted);
+  white-space: nowrap;
+}
+.arrow .line { font-size: 18px; color: var(--ink); line-height: 1; }
+.inner-chain { display: flex; flex-direction: column; gap: 8px; min-width: 640px; }
+.inner-row { display: flex; align-items: stretch; gap: 8px; }
+.inner-node {
+  flex: 1; border: 1.5px solid var(--line); border-radius: 8px;
+  background: var(--surface-2); padding: 10px 12px;
+}
+.inner-node .t { font-family: "IBM Plex Mono", monospace; font-size: 13px; font-weight: 600; }
+.inner-node .d { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.inner-node.hot { border-color: var(--service); background: var(--service-soft); }
+.varrow { text-align: center; color: var(--muted); font-size: 14px; line-height: 1; }
+
+/* ── 표 ───────────────────────────────────────────── */
+.tablewrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; background: var(--surface); }
+th, td { border: 1px solid var(--line); padding: 9px 14px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; font-size: 13.5px; }
+td code { white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ── 콜아웃 ───────────────────────────────────────── */
+.callout {
+  border-left: 4px solid var(--accent); background: var(--surface);
+  border-radius: 0 10px 10px 0; padding: 14px 20px; margin: 20px 0;
+  border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.callout.warn { border-left-color: var(--warn); }
+.callout .label {
+  font-family: "IBM Plex Mono", monospace; font-size: 11.5px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--accent);
+}
+.callout.warn .label { color: var(--warn); }
+.callout p { margin: 6px 0 0; }
+
+/* ── 매핑 다이어그램용 배지 ────────────────────────── */
+.op {
+  display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 12px;
+  font-weight: 600; border-radius: 4px; padding: 1px 8px; margin-right: 4px;
+}
+.op.r { background: var(--surface-2); color: var(--muted); }
+.op.c { background: var(--service-soft); color: var(--service); }
+.op.u { background: var(--accent-soft); color: var(--accent); }
+.op.d { background: var(--warn-soft); color: var(--warn); }
+
+footer { margin-top: 96px; padding-top: 20px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="eyebrow">D:\src\cdc\embedded-cdc</div>
+  <h1>Embedded CDC 아키텍처</h1>
+  <p class="lede">
+    Kafka 없이, PostgreSQL의 트랜잭션 로그(WAL)를 Spring 서비스에 내장된 Debezium 엔진이 직접 읽어
+    다른 PostgreSQL로 실시간 동기화하는 파이프라인. 이 문서 하나로 전체 구조·컨테이너·모니터링을 파악할 수 있다.
+  </p>
+  <div class="facts">
+    <span><b>Java 21</b></span>
+    <span><b>Spring Boot 3.5</b></span>
+    <span><b>Debezium 3.6.1</b> Embedded</span>
+    <span><b>PostgreSQL 16</b> × 2</span>
+    <span>Kafka <b>없음</b></span>
+    <span>로그 기반 · <b>pgoutput</b></span>
+  </div>
+  <nav>
+    <a href="#external">외부 아키텍처</a>
+    <a href="#why">왜 이 구조인가</a>
+    <a href="#lifecycle">이벤트의 일생</a>
+    <a href="#internal">내부 아키텍처</a>
+    <a href="#schema">스키마 매핑</a>
+    <a href="#containers">컨테이너 구성</a>
+    <a href="#monitoring">모니터링</a>
+    <a href="#run">실행 방법</a>
+    <a href="#ops">운영 시 주의</a>
+  </nav>
+</header>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="external">
+  <h2>외부 아키텍처 — 한눈에 보기</h2>
+  <p class="h2-sub">중간 브로커가 없다. 데이터는 source DB에서 서비스 하나를 거쳐 target DB로 바로 흐른다.</p>
+
+  <div class="diagram">
+    <div class="flow">
+      <div class="node pg">
+        <div class="t">Source PostgreSQL</div>
+        <div class="d">sourcedb · :56432<br>wal_level=logical<br>car · computer</div>
+      </div>
+      <div class="arrow">
+        logical replication<br><span class="line">─────▶</span><br>(WAL 스트림 · pgoutput)
+      </div>
+      <div class="node svc">
+        <div class="t">cdc-service</div>
+        <div class="d">Spring Boot + Debezium<br>Embedded Engine · :56080<br>변환 · UPSERT · 지표</div>
+      </div>
+      <div class="arrow">
+        JDBC<br><span class="line">─────▶</span><br>(멱등 UPSERT / DELETE)
+      </div>
+      <div class="node pg">
+        <div class="t">Target PostgreSQL</div>
+        <div class="d">targetdb · :56433<br>car(동일 스키마)<br>computer(다른 스키마)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div class="flow">
+      <div class="node">
+        <div class="t">postgres_exporter ×2</div>
+        <div class="d">source/target 행 수<br>slot 지연 · :56187/:56188</div>
+      </div>
+      <div class="arrow"><span class="line">─────▶</span><br>scrape 5s</div>
+      <div class="node">
+        <div class="t">Prometheus</div>
+        <div class="d">:56090<br>cdc-service 지표도 함께 수집</div>
+      </div>
+      <div class="arrow"><span class="line">─────▶</span></div>
+      <div class="node">
+        <div class="t">Grafana</div>
+        <div class="d">:56300<br>정합성 · 처리량 · 지연 대시보드</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="why">
+  <h2>왜 이 구조인가</h2>
+  <p class="h2-sub">두 가지 큰 선택이 이 파이프라인의 성격을 결정한다.</p>
+
+  <h3>선택 1 — 로그 기반 CDC (폴링·트리거가 아니라)</h3>
+  <p>
+    변경을 잡는 방법은 여러 가지다(주기적 SELECT 폴링, 테이블 트리거, 타임스탬프 비교…).
+    이 프로젝트는 <strong>PostgreSQL이 이미 쓰고 있는 트랜잭션 로그(WAL)를 구독</strong>하는 방식을 쓴다.
+    원천 테이블에 부하를 주지 않고, 놓치는 변경이 없으며, DELETE까지 잡을 수 있는 유일한 방식이기 때문이다.
+    이를 위해 source DB에는 세 가지 설정이 필요하다:
+  </p>
+  <div class="tablewrap"><table>
+    <tr><th>설정</th><th>값</th><th>역할</th></tr>
+    <tr><td><code>wal_level</code></td><td><code>logical</code></td><td>WAL에 논리 디코딩용 정보를 추가로 기록. 이것이 없으면 로그 기반 CDC 자체가 불가능</td></tr>
+    <tr><td><code>max_wal_senders</code></td><td class="num">10</td><td>WAL을 외부로 스트리밍하는 프로세스 수</td></tr>
+    <tr><td><code>max_replication_slots</code></td><td class="num">10</td><td>replication slot 수. Debezium이 slot 하나(<code>embedded_cdc_slot</code>)를 점유</td></tr>
+  </table></div>
+  <p>
+    디코딩 플러그인은 <code>pgoutput</code> — PostgreSQL 10+에 내장되어 있어 별도 확장 설치가 필요 없다.
+    캡처 대상은 publication(<code>embedded_cdc_pub</code>)으로 지정하고, 계정은 <code>REPLICATION</code> 속성과
+    snapshot용 <code>SELECT</code>만 가진 최소 권한 전용 계정(<code>cdc_user</code>)을 쓴다.
+  </p>
+
+  <h3>선택 2 — Kafka 없이 Embedded Engine</h3>
+  <p>
+    Debezium의 표준 배포는 Kafka Connect 위에서 돌지만, 이 프로젝트는
+    <strong>Debezium을 라이브러리로 Spring 앱 안에 내장</strong>했다. 움직이는 부품이 DB 둘 + 서비스 하나로 줄어
+    이해하기 쉽고, 컨테이너 4개 compose로 전부 띄울 수 있다.
+  </p>
+  <div class="tablewrap"><table>
+    <tr><th></th><th>Kafka Connect 배포</th><th>Embedded Engine (이 프로젝트)</th></tr>
+    <tr><td>중간 브로커</td><td>Kafka 클러스터 + Connect 클러스터 필요</td><td>없음 — 앱이 직접 수신</td></tr>
+    <tr><td>offset 저장</td><td>Kafka topic (고가용)</td><td>로컬 파일 <code>offsets.dat</code> (named volume)</td></tr>
+    <tr><td>이벤트 순서</td><td>파티션 단위 보장</td><td>단일 스레드 — WAL 순서 그대로</td></tr>
+    <tr><td>적합한 곳</td><td>다수 컨슈머 · 운영 규모</td><td>단일 컨슈머 · 학습 · PoC · 소규모 동기화</td></tr>
+  </table></div>
+  <div class="callout">
+    <div class="label">Trade-off</div>
+    <p>offset을 로컬 파일이 떠안으므로 파일이 사라지면 snapshot이 재실행된다.
+    모든 sink 쓰기가 멱등(UPSERT)이라 재실행돼도 target은 깨지지 않는다 — 이것이 멱등성이 필수인 이유다.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="lifecycle">
+  <h2>이벤트의 일생</h2>
+  <p class="h2-sub">source에서 UPDATE 한 건이 일어나면 무슨 일이 벌어지는가.</p>
+
+  <div class="diagram">
+    <div class="inner-chain">
+      <div class="inner-row">
+        <div class="inner-node"><div class="t">1 · COMMIT</div><div class="d">source에서 트랜잭션 커밋 → WAL에 기록</div></div>
+        <div class="inner-node"><div class="t">2 · pgoutput 디코딩</div><div class="d">WAL 바이너리를 논리 변경(행 단위)으로 해석</div></div>
+        <div class="inner-node"><div class="t">3 · Debezium 이벤트</div><div class="d">before/after/op/lsn을 담은 JSON 생성</div></div>
+      </div>
+      <div class="varrow">▼</div>
+      <div class="inner-row">
+        <div class="inner-node hot"><div class="t">4 · Parser</div><div class="d">JSON → RowChange(table, op, before, after, lsn)</div></div>
+        <div class="inner-node hot"><div class="t">5 · Dispatcher</div><div class="d">테이블 이름으로 CarSink / ComputerSink 선택</div></div>
+        <div class="inner-node hot"><div class="t">6 · Sink</div><div class="d">target에 멱등 UPSERT 또는 (소프트) 삭제</div></div>
+      </div>
+      <div class="varrow">▼</div>
+      <div class="inner-row">
+        <div class="inner-node"><div class="t">7 · 지표 기록</div><div class="d">처리량 +1, 지연(now − ts_ms) 기록</div></div>
+        <div class="inner-node"><div class="t">8 · offset 커밋</div><div class="d">"여기까지 읽음"을 offsets.dat에 주기 저장(10s)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <p>Debezium이 만드는 이벤트의 실물은 이렇게 생겼다 (computer UPDATE의 예, 요약):</p>
+  <pre><code>{
+  "before": { "id": 2, "brand": "Lenovo", "model": "ThinkPad X1", "ram_gb": 32, ... },
+  "after":  { "id": 2, "brand": "Lenovo", "model": "ThinkPad X1", "ram_gb": 48, ... },
+  "source": { "table": "computer", "lsn": 26710648, "ts_ms": 1787732895241, ... },
+  "op": "u"
+}</code></pre>
+  <p>
+    <span class="op r">r</span>snapshot(최초 전체 복사) ·
+    <span class="op c">c</span>INSERT ·
+    <span class="op u">u</span>UPDATE ·
+    <span class="op d">d</span>DELETE.
+    <code>before</code>에 전체 컬럼이 담기는 것은 source 테이블에 <code>REPLICA IDENTITY FULL</code>을
+    걸었기 때문이다 — 기본값이면 PK만 담겨서, DELETE를 소프트 삭제로 기록할 때 정보가 부족하다.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="internal">
+  <h2>내부 아키텍처 — cdc-service</h2>
+  <p class="h2-sub">클래스 6개가 전부다. 화살표는 호출 방향.</p>
+
+  <div class="diagram">
+    <div class="inner-chain">
+      <div class="inner-row">
+        <div class="inner-node hot">
+          <div class="t">DebeziumEngineManager</div>
+          <div class="d">엔진 라이프사이클(SmartLifecycle). 시작 시 엔진 빌드·실행, 종료 시 engine.close() 먼저 → executor 정리. 배치를 받아 한 건씩 dispatcher에 전달 후 markProcessed</div>
+        </div>
+      </div>
+      <div class="varrow">▼</div>
+      <div class="inner-row">
+        <div class="inner-node">
+          <div class="t">ChangeEventDispatcher</div>
+          <div class="d">파싱 → 테이블별 sink 라우팅 → 지표 기록. sink 실패는 카운트하고 로그 후 계속(파이프라인 유지)</div>
+        </div>
+        <div class="inner-node">
+          <div class="t">ChangeEventParser</div>
+          <div class="d">이벤트 JSON → RowChange. tombstone·truncate 등 관심 밖 이벤트는 걸러냄</div>
+        </div>
+      </div>
+      <div class="varrow">▼</div>
+      <div class="inner-row">
+        <div class="inner-node">
+          <div class="t">CarSink</div>
+          <div class="d">동일 스키마 — 그대로 UPSERT, DELETE는 물리 삭제</div>
+        </div>
+        <div class="inner-node">
+          <div class="t">ComputerSink</div>
+          <div class="d">스키마 매핑 + LSN 가드 UPSERT + 소프트 삭제</div>
+        </div>
+        <div class="inner-node">
+          <div class="t">CdcMetrics</div>
+          <div class="d">cdc_events_total · cdc_sink_errors_total · cdc_end_to_end_lag_seconds</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>엔진에 준 주요 설정</h3>
+  <div class="tablewrap"><table>
+    <tr><th>설정</th><th>값</th><th>이유</th></tr>
+    <tr><td><code>plugin.name</code></td><td><code>pgoutput</code></td><td>PostgreSQL 내장 디코더 — 확장 설치 불필요</td></tr>
+    <tr><td><code>snapshot.mode</code></td><td><code>initial</code></td><td>최초 기동 시 기존 데이터 전체를 <span class="op r">r</span> 이벤트로 복사한 뒤 스트리밍 시작</td></tr>
+    <tr><td><code>offset.storage</code></td><td><code>FileOffsetBackingStore</code></td><td>Kafka 없이 로컬 파일에 진행 위치 저장 → 재시작해도 이어 읽음</td></tr>
+    <tr><td><code>decimal.handling.mode</code></td><td><code>string</code></td><td>NUMERIC이 base64 대신 <code>"1999.00"</code> 문자열로 와서 파싱이 단순</td></tr>
+    <tr><td><code>converter.schemas.enable</code></td><td><code>false</code></td><td>payload보다 수십 배 큰 schema 블록 제거</td></tr>
+    <tr><td><code>tombstones.on.delete</code></td><td><code>false</code></td><td>Kafka 로그 압축용 null 메시지는 여기선 무의미</td></tr>
+  </table></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="schema">
+  <h2>스키마 매핑 — 같은 경우와 다른 경우</h2>
+  <p class="h2-sub">테이블 두 개가 CDC의 두 대표 시나리오를 하나씩 맡는다. 관계(FK)는 아직 없다.</p>
+
+  <h3>car — 스키마가 같은 경우 (1:1 복제)</h3>
+  <p>
+    source와 target의 컬럼이 완전히 같다. sink는 변환 없이 그대로 UPSERT하고, DELETE는 물리 삭제한다.
+    유일한 차이는 target의 <code>id</code>가 <code>BIGSERIAL</code>이 아니라 <code>BIGINT</code>라는 것 —
+    발번은 source만 한다.
+  </p>
+
+  <h3>computer — 스키마가 다른 경우 (변환 + 정확성 장치)</h3>
+  <div class="tablewrap"><table>
+    <tr><th>source 컬럼</th><th>변환</th><th>target 컬럼</th></tr>
+    <tr><td><code>brand</code>, <code>model</code></td><td>이어붙임</td><td><code>full_name</code> — "Lenovo ThinkPad X1"</td></tr>
+    <tr><td><code>cpu</code>, <code>ram_gb</code></td><td>이어붙임</td><td><code>spec</code> — "Core Ultra 7 / 48GB"</td></tr>
+    <tr><td><code>price_usd</code></td><td>× 1350 (데모용 고정 환율)</td><td><code>price_krw</code></td></tr>
+  </table></div>
+  <p>여기에 원본에는 없는 <strong>부가 컬럼 3개</strong>가 target에만 붙는다. 각각 실제 장애 시나리오 하나씩을 막는다:</p>
+  <div class="tablewrap"><table>
+    <tr><th>컬럼</th><th>막는 문제</th></tr>
+    <tr><td><code>deleted</code> (소프트 삭제)</td><td>물리 삭제하면, 순서가 꼬여 늦게 도착한 UPDATE가 UPSERT로 <strong>죽은 행을 되살린다</strong>. 삭제는 플래그만 세운다</td></tr>
+    <tr><td><code>source_lsn</code> (순서 가드)</td><td>UPSERT의 <code>WHERE EXCLUDED.source_lsn &gt; computer.source_lsn</code> 조건이 <strong>더 오래된 이벤트의 덮어쓰기를 차단</strong>. LSN은 WAL 위치라 단조 증가하는 정수 — 가장 확실한 순서 판정 키</td></tr>
+    <tr><td><code>synced_at</code></td><td>"이 행이 언제 마지막으로 동기화됐나"를 행 단위로 남겨 지연·장애 조사를 돕는다</td></tr>
+  </table></div>
+  <div class="callout warn">
+    <div class="label">비가역적 선택</div>
+    <p>이 설계는 target 행을 항상 최신값으로 덮어쓴다(SCD 유형 1). <strong>이력은 남지 않고, 나중에 복원할 수도 없다.</strong>
+    변경 이력이 필요하다면 처음부터 버전 행을 쌓는 유형 2로 시작해야 한다.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="containers">
+  <h2>컨테이너 구성</h2>
+  <p class="h2-sub">compose 파일 4개가 외부 네트워크 <code>emb-cdc-net</code> 하나를 공유한다. 파일이 나뉘어 있어 DB만, 모니터링만 따로 올리고 내릴 수 있다.</p>
+
+  <div class="tablewrap"><table>
+    <tr><th>compose 파일</th><th>컨테이너</th><th>포트(호스트)</th><th>볼륨</th></tr>
+    <tr>
+      <td><code>infra/db/docker-compose.source.yml</code></td>
+      <td>emb-cdc-source-pg</td><td class="num">56432</td>
+      <td><code>emb-source-pgdata</code></td>
+    </tr>
+    <tr>
+      <td><code>infra/db/docker-compose.target.yml</code></td>
+      <td>emb-cdc-target-pg</td><td class="num">56433</td>
+      <td><code>emb-target-pgdata</code></td>
+    </tr>
+    <tr>
+      <td rowspan="4"><code>infra/monitoring/docker-compose.monitoring.yml</code></td>
+      <td>emb-cdc-source-exporter</td><td class="num">56187</td><td>—</td>
+    </tr>
+    <tr><td>emb-cdc-target-exporter</td><td class="num">56188</td><td>—</td></tr>
+    <tr><td>emb-cdc-prometheus</td><td class="num">56090</td><td><code>emb-prometheus-data</code></td></tr>
+    <tr><td>emb-cdc-grafana</td><td class="num">56300</td><td><code>emb-grafana-data</code></td></tr>
+    <tr>
+      <td><code>dev/docker-compose.app.yml</code></td>
+      <td>emb-cdc-service</td><td class="num">56080</td>
+      <td><code>emb-cdc-offsets</code> → <code>/app/data</code></td>
+    </tr>
+  </table></div>
+
+  <p>
+    앱 이미지는 멀티스테이지 Dockerfile로 빌드한다 — <code>gradle:8.14-jdk21</code>에서 bootJar를 만들고
+    <code>eclipse-temurin:21-jre</code>에 JAR만 담는다. 로컬에 JDK가 없어도 빌드된다.
+    offset 파일이 named volume에 있으므로 <strong>컨테이너를 재생성해도 멈춘 지점부터 이어 읽는다</strong>;
+    볼륨까지 지우면(<code>down -Wipe</code>) 다음 기동에서 snapshot이 처음부터 다시 돈다.
+  </p>
+  <p>
+    source DB 초기화 스크립트(<code>infra/db/source/init/01-schema.sql</code>)가 CDC에 필요한 환경을 전부 만든다:
+    테이블 + <code>REPLICA IDENTITY FULL</code> + 최소 권한 계정 + publication.
+    WAL 관련 파라미터는 compose의 <code>command</code> 플래그로 준다.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="monitoring">
+  <h2>모니터링 — 정합성을 눈으로 확인한다</h2>
+  <p class="h2-sub">Grafana 대시보드 "Embedded CDC Overview" 하나에 세 가지 질문의 답이 있다.</p>
+
+  <div class="tablewrap"><table>
+    <tr><th>질문</th><th>패널</th><th>지표</th></tr>
+    <tr>
+      <td><strong>양쪽 데이터가 맞는가?</strong></td>
+      <td>정합성 차이 |source − target| (0=초록, 그 외 빨강)<br>행 수 추이 — 두 선이 겹쳐 움직이면 정상</td>
+      <td><code>cdc_source_rows</code>, <code>cdc_target_rows</code><br>(exporter가 5초마다 실제 <code>count(*)</code>)</td>
+    </tr>
+    <tr>
+      <td><strong>얼마나 빨리·많이 처리하는가?</strong></td>
+      <td>시간별 처리량(op별) · End-to-End 지연(avg/max)</td>
+      <td><code>cdc_events_total{table,op}</code><br><code>cdc_end_to_end_lag_seconds</code> = target 반영 시각 − source 커밋 시각</td>
+    </tr>
+    <tr>
+      <td><strong>문제가 생기고 있는가?</strong></td>
+      <td>Replication slot 지연 · Sink 오류 카운트</td>
+      <td><code>cdc_slot_lag_bytes</code> — 서비스가 죽으면 계속 자란다<br><code>cdc_sink_errors_total</code> — 0이 아니면 유실 발생</td>
+    </tr>
+  </table></div>
+
+  <p>
+    수집 경로는 두 갈래다: 파이프라인 내부 지표는 cdc-service의 <code>/actuator/prometheus</code>에서,
+    DB의 실제 상태(행 수·slot)는 postgres_exporter의 커스텀 쿼리에서 온다.
+    <strong>"서비스가 처리했다고 주장하는 것"과 "DB에 실제로 있는 것"을 서로 다른 경로로 재서 교차 검증</strong>하는 구조다.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="run">
+  <h2>실행 방법</h2>
+  <p class="h2-sub">스크립트가 docker/podman을 자동 감지한다. Windows는 .ps1, macOS/Linux는 .sh.</p>
+
+  <pre><code># 1. 전체 기동 (네트워크 → DB 2개 → 모니터링 → 앱 빌드+기동)
+./scripts/up.ps1
+
+# 2. INSERT/UPDATE/DELETE를 흘려보내고 양쪽 DB를 비교
+./scripts/demo.ps1
+
+# 3. 정지 (데이터 유지)          # 완전 초기화
+./scripts/down.ps1               ./scripts/down.ps1 -Wipe</code></pre>
+
+  <div class="tablewrap"><table>
+    <tr><th>접속</th><th>주소</th></tr>
+    <tr><td>Grafana 대시보드</td><td><code>http://localhost:56300</code> (admin/admin, 익명 조회 가능)</td></tr>
+    <tr><td>Prometheus</td><td><code>http://localhost:56090</code></td></tr>
+    <tr><td>cdc-service 상태</td><td><code>http://localhost:56080/actuator/health</code></td></tr>
+    <tr><td>source DB</td><td><code>localhost:56432</code> · sourcedb · postgres/postgres</td></tr>
+    <tr><td>target DB</td><td><code>localhost:56433</code> · targetdb · postgres/postgres</td></tr>
+  </table></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="ops">
+  <h2>운영 시 주의</h2>
+
+  <div class="callout warn">
+    <div class="label">Replication slot — 가장 무거운 실패 모드</div>
+    <p>slot은 만료되지 않는다. cdc-service가 오래 죽어 있으면 slot이 붙잡은 WAL이 <strong>source DB에 무한정 쌓여
+    디스크를 고갈시킨다</strong> — 파이프라인 장애가 원천 DB 장애로 번지는 것이다.
+    대시보드의 <code>cdc_slot_lag_bytes</code>가 계속 자라면 서비스를 살리거나, 파이프라인을 접을 거면
+    slot을 삭제해야 한다: <code>SELECT pg_drop_replication_slot('embedded_cdc_slot');</code></p>
+  </div>
+
+  <div class="callout">
+    <div class="label">전달 보장</div>
+    <p>이 파이프라인은 <strong>at-least-once</strong>다. 같은 이벤트가 두 번 올 수 있는 것이 정상 동작이고,
+    모든 쓰기가 멱등이라 결과는 같다. 단, sink 오류를 삼키고 계속 가는 정책이므로
+    <code>cdc_sink_errors_total</code>이 0이 아니면 그 이벤트는 유실된 것 — 대시보드가 빨간불을 켠다.</p>
+  </div>
+
+  <div class="callout">
+    <div class="label">스키마 변경(DDL)</div>
+    <p>컬럼 추가 등 DDL은 자동으로 target에 전파되지 않는다. source에 컬럼을 더하면
+    target 스키마와 sink의 매핑 코드를 함께 고쳐야 한다.</p>
+  </div>
+</section>
+
+<footer>
+  Embedded CDC · PostgreSQL 16 → Debezium Embedded 3.6.1 (Java 21 / Spring Boot 3.5) → PostgreSQL 16 ·
+  2026-08 실행 검증 완료 (snapshot·INSERT·UPDATE·DELETE 4종 반영, 정합성 diff 0)
+</footer>
+
+</main>
+</body>
+</html>
