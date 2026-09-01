@@ -2,3 +2,6 @@
 dev/cdc-service/build/
 dev/cdc-service/test/verification/build/
 dev/cdc-service/bin/
+
+# 루트 .gitignore 의 Maven `target/` 규칙에 수신 측 DB 디렉터리가 걸린다.
+!infra/db/target/

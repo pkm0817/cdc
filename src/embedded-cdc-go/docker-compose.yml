@@ -1,0 +1,15 @@
+name: embedded-cdc-go
+
+include:
+    - path: infra/db/docker-compose.source.yml
+    - path: infra/db/docker-compose.target.yml
+    - path: infra/monitoring/docker-compose.monitoring.yml
+    - path: dev/docker-compose.app.yml
+
+services:
+    cdc-service:
+      depends_on:
+        source-postgres:
+          condition: service_healthy
+        target-postgres:
+          condition: service_healthy

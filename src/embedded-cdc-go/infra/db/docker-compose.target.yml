@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Target PostgreSQL — CDC 적재 대상 DB
+#
+# 특별한 복제 설정이 필요 없다. cdc-service 가 일반 커넥션(pgx)으로 UPSERT/DELETE 할 뿐이다.
+# ─────────────────────────────────────────────────────────────────────────────
+name: embedded-cdc-go-target-db
+
+networks:
+  emb-cdc-go-net:
+    external: true
+
+services:
+  target-postgres:
+    image: postgres:16
+    container_name: emb-cdc-go-target-pg
+    networks: [emb-cdc-go-net]
+    environment:
+      POSTGRES_DB: targetdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "57433:5432"
+    volumes:
+      - emb-go-target-pgdata:/var/lib/postgresql/data
+      - ./target/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d targetdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  emb-go-target-pgdata:
