@@ -21,3 +21,15 @@ scrape_configs:
   - job_name: target-db
     static_configs:
       - targets: ["target-exporter:9187"]
+      - targets: ["target-exporter:9187"]
+
+  # 컨테이너 리소스 — cAdvisor 는 도커 데몬 전체를 보므로 Java/Go 두 스택이 다 들어온다.
+  # 여기서 거르지 않고 대시보드 쿼리에서 이름으로 거른다(스택 비교 그래프를 그릴 수 있게).
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # 도커 VM 디스크·메모리 — WAL 고갈 감시
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
