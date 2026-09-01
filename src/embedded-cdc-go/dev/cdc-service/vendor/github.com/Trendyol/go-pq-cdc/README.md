@@ -1,0 +1,468 @@
+# go-pq-cdc [![Go Reference](https://pkg.go.dev/badge/github.com/Trendyol/go-dcp.svg)](https://pkg.go.dev/github.com/Trendyol/go-pq-cdc) [![Go Report Card](https://goreportcard.com/badge/github.com/Trendyol/go-pq-cdc)](https://goreportcard.com/report/github.com/Trendyol/go-pq-cdc) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Trendyol/go-pq-cdc/badge)](https://scorecard.dev/viewer/?uri=github.com/Trendyol/go-pq-cdc)
+
+go-pq-cdc is designed to provide efficient and lightweight Change Data Capture (CDC) for PostgreSQL databases.
+The architecture leverages PostgreSQL's built-in logical replication capabilities to capture changes in the database and
+stream these changes to downstream systems, such as Kafka, Elasticsearch etc. The entire system is written in Golang,
+ensuring low resource consumption and high performance.
+
+[Debezium vs go-pq-cdc benchmark](./benchmark)
+
+## Snapshot Feature
+
+**Capture existing data before starting CDC!** The new snapshot feature enables initial data synchronization, ensuring downstream systems receive both historical and real-time data.
+
+✨ **Key Highlights:**
+- **Zero Data Loss**: Consistent point-in-time snapshot using PostgreSQL's `pg_export_snapshot()`
+- **Chunk-Based Processing**: Memory-efficient processing of large tables
+- **Smart Partitioning**: Auto-selects optimal strategy (Integer Range, CTID Block, or Offset)
+- **Multi-Instance Support**: Parallel processing across multiple instances
+- **Crash Recovery**: Automatic resume from failures
+- **No Duplicates**: Seamless transition from snapshot to CDC
+- **Snapshot Only Mode**: One-time data export without CDC (no replication slot required)
+- **Protocol Flexibility**: `pgoutput` `proto_version` `1` and `2` support
+- **Safe Streaming TX Handling**: Streamed rollback transactions are discarded correctly
+
+📚 **[Read Full Documentation](docs/SNAPSHOT_FEATURE.md)** for detailed architecture, configuration, and best practices.
+📚 **[Protocol Version & Streaming Transactions](docs/PROTO_VERSION_SUPPORT.md)** for `proto_version` behavior and migration guidance.
+
+### Contents
+
+- [go-pq-cdc   ](#go-pq-cdc---)
+	- [Snapshot Feature](#snapshot-feature)
+		- [Contents](#contents)
+		- [Why?](#why)
+		- [Usage](#usage)
+		- [Examples](#examples)
+		- [PostgreSQL User Permissions](#postgresql-user-permissions)
+		- [Availability](#availability)
+		- [TOAST Handling](#toast-handling)
+		- [Heartbeat-based WAL Protection](#heartbeat-based-wal-protection)
+			- [Replica Identity Requirement](#replica-identity-requirement)
+		- [Configuration](#configuration)
+		- [Protocol Version \& Streaming Transactions](#protocol-version--streaming-transactions)
+		- [API](#api)
+		- [Exposed Metrics](#exposed-metrics)
+		- [Grafana Dashboard](#grafana-dashboard)
+		- [Compatibility](#compatibility)
+		- [Breaking Changes](#breaking-changes)
+
+### Why?
+
+CDC systems are crucial for real-time data synchronization, analytics, and event-driven architectures.
+Our main goal is to build a cdc base library for faster and stateful systems.
+
+#### Official
+- [Postgresql to Elasticsearch Connector](https://github.com/Trendyol/go-pq-cdc-elasticsearch)
+- [Postgresql to Kafka Connector](https://github.com/Trendyol/go-pq-cdc-kafka)
+
+#### 3rd party
+- [Postgresql to RabbitMQ Connector](https://github.com/ezeql/go-pq-cdc-rabbitmq)
+
+### Usage
+
+```sh
+go get github.com/Trendyol/go-pq-cdc
+```
+
+```go
+package main
+
+import (
+	"context"
+	cdc "github.com/Trendyol/go-pq-cdc"
+	"github.com/Trendyol/go-pq-cdc/config"
+	"github.com/Trendyol/go-pq-cdc/pq/message/format"
+	"github.com/Trendyol/go-pq-cdc/pq/publication"
+	"github.com/Trendyol/go-pq-cdc/pq/replication"
+	"github.com/Trendyol/go-pq-cdc/pq/slot"
+	"log/slog"
+	"os"
+)
+
+func main() {
+	ctx := context.Background()
+	cfg := config.Config{
+		Host:      "127.0.0.1",
+		Username:  "cdc_user",
+		Password:  "cdc_pass",
+		Database:  "cdc_db",
+		DebugMode: false,
+		Publication: publication.Config{
+			CreateIfNotExists: true,
+			Name: "cdc_publication",
+			Operations: publication.Operations{
+				publication.OperationInsert,
+				publication.OperationDelete,
+				publication.OperationTruncate,
+				publication.OperationUpdate,
+			},
+			Tables: publication.Tables{publication.Table{
+				Name:            "users",
+				ReplicaIdentity: publication.ReplicaIdentityFull,
+			}},
+		},
+		Slot: slot.Config{
+			Name:                        "cdc_slot",
+			CreateIfNotExists:           true,
+			SlotActivityCheckerInterval: 3000,
+			ProtoVersion:                2,
+		},
+		Metric: config.MetricConfig{
+			Port: 8081,
+		},
+		Logger: config.LoggerConfig{
+			LogLevel: slog.LevelInfo,
+		},
+	}
+
+	connector, err := cdc.NewConnector(ctx, cfg, Handler)
+	if err != nil {
+		slog.Error("new connector", "error", err)
+		os.Exit(1)
+	}
+
+	defer connector.Close()
+	connector.Start(ctx)
+}
+
+func Handler(ctx *replication.ListenerContext) {
+	switch msg := ctx.Message.(type) {
+	case *format.Insert:
+		slog.Info("insert message received", "new", msg.Decoded)
+	case *format.Delete:
+		slog.Info("delete message received", "old", msg.OldDecoded)
+	case *format.Update:
+		slog.Info("update message received", "new", msg.NewDecoded, "old", msg.OldDecoded)
+	case *format.Truncate:
+		slog.Info("truncate message received", "relations", msg.RelationOIDs, "cascade", msg.Cascade, "restartIdentity", msg.RestartIdentity)
+	}
+
+	if err := ctx.Ack(); err != nil {
+		slog.Error("ack", "error", err)
+	}
+}
+
+```
+
+### Examples
+
+* [Simple](./example/simple)
+* [Simple File Config](./example/simple-file-config)
+* [Simple With Heartbeat](./example/simple-with-heartbeat)
+* [Streaming Transactions](./example/streaming-transactions)
+* [Snapshot Mode (Initial Data Capture)](./example/snapshot-initial-mode)
+* [Snapshot Only Mode (One-Time Export)](./example/snapshot-only-mode)
+* [Snapshot with Query Condition](./example/snapshot-with-query-condition)
+* [Replica Identity Using Index](./example/replica-identity-using-index)
+* [Replica Identity Nothing](./example/replica-identity-nothing)
+* [PostgreSQL to Elasticsearch](https://github.com/Trendyol/go-pq-cdc-elasticsearch/tree/main/example/simple)
+* [PostgreSQL to Kafka](https://github.com/Trendyol/go-pq-cdc-kafka/tree/main/example/simple)
+* [PostgreSQL to PostgreSQL](./example/postgresql)
+* [Partitioned Tables](./example/partitioned-table-mapping)
+
+### PostgreSQL User Permissions
+
+go-pq-cdc connects to PostgreSQL with a regular role. For most deployments you do **not** need a superuser. A dedicated role with the right grants is enough. The exact privileges depend on which features you enable.
+
+Minimum role for streaming CDC against a fixed table list:
+
+```sql
+CREATE ROLE cdc_user WITH LOGIN REPLICATION PASSWORD 'change_me';
+
+GRANT USAGE ON SCHEMA public TO cdc_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO cdc_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT ON TABLES TO cdc_user;
+```
+
+Add these grants when the corresponding feature is enabled:
+
+| Feature                                       | Extra grants needed                                                                                                                       |
+|-----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| `publication.createIfNotExists: true`         | `GRANT CREATE ON DATABASE <db> TO cdc_user;` so the publication can be created.                                                           |
+| `slot.createIfNotExists: true`                | `REPLICATION` role attribute (already in the example above).                                                                              |
+| Heartbeat with auto-created table             | `GRANT CREATE ON SCHEMA <schema> TO cdc_user;` for the initial `CREATE TABLE`, plus `GRANT INSERT, UPDATE ON <heartbeat_table>` for the auto-managed singleton row. |
+| Snapshot mode (initial / only)                | `SELECT` on the source tables (already covered above).                                                                                    |
+| Adding tables to an existing publication      | The role must own the publication, e.g. `ALTER PUBLICATION cdc_publication OWNER TO cdc_user;`.                                           |
+
+Common failure modes when grants are missing:
+
+- `must be superuser or replication role to start walsender` — role missing `REPLICATION`.
+- `permission denied for schema <schema>` — missing `USAGE` on the schema.
+- `permission denied to create publication` — missing `CREATE` on the database.
+- `permission denied for table <heartbeat_table>` — heartbeat enabled but the role cannot `INSERT`/`UPDATE` the singleton row.
+
+`pg_hba.conf` must also allow `replication` connections from the CDC host, for example:
+
+```
+host replication cdc_user 10.0.0.0/8 scram-sha-256
+```
+
+### Availability
+
+The go-pq-cdc operates in passive/active modes for PostgreSQL change data capture (CDC). Here's how it ensures
+availability:
+
+* **Active Mode:** When the PostgreSQL replication slot (slot.name) is active, go-pq-cdc continuously monitors changes
+  and streams them to downstream systems as configured.
+* **Passive Mode:** If the PostgreSQL replication slot becomes inactive (detected via slot.slotActivityCheckerInterval),
+  go-pq-cdc automatically captures the slot again and resumes data capturing. Other deployments also monitor slot
+  activity,
+  and when detected as inactive, they initiate data capturing.
+
+This setup ensures continuous data synchronization and minimal downtime in capturing database changes.
+
+### TOAST Handling
+
+PostgreSQL does not send TOASTed column values during an update unless the TOASTed column itself is modified.
+For example, if only a small field changes, large columns such as TEXT, JSONB, or BYTEA are sent as TOAST placeholders instead of real values.
+
+To guarantee that UPDATE messages include full, correct data, go-pq-cdc automatically merges old and new tuples, restoring any missing TOASTed fields:
+
+```go
+if m.OldTupleData != nil {
+    for i, col := range m.NewTupleData.Columns {
+        // Toasted columns are not sent unless the column itself changed
+        if col.DataType == tuple.DataTypeToast {
+            m.NewTupleData.Columns[i] = m.OldTupleData.Columns[i]
+        }
+    }
+}
+```
+
+### Heartbeat-based WAL Protection
+
+Logical replication slots in PostgreSQL retain WAL segments until all consumers have confirmed they no longer need them.
+In low-traffic databases, this can cause **WAL bloat** when other databases on the same Postgres instance generate a lot of
+traffic while the CDC database itself remains mostly idle. In this situation the replication slot's `restart_lsn` and
+`confirmed_flush_lsn` may lag far behind `pg_current_wal_lsn()`, preventing WAL segments from being recycled.
+
+go-pq-cdc provides a **table-based heartbeat mechanism** for this scenario.
+When `heartbeat.table.name` is configured, the connector:
+
+- Creates the heartbeat table automatically (if missing).
+- Ensures a single row exists.
+- Periodically runs an internal `UPDATE` to generate small committed WAL records.
+- Auto-acknowledges heartbeat events internally.
+- Does not forward heartbeat events to your listener.
+
+Each heartbeat:
+
+- Produces a real transaction and COMMIT in the CDC database.
+- Is decoded and acknowledged by go-pq-cdc via the replication stream.
+- Advances the slot's `confirmed_flush_lsn` and, over time, `restart_lsn`, allowing PostgreSQL to safely recycle old WAL.
+
+This makes WAL retention **predictable** even when application traffic on the CDC database is very low, while other
+databases on the same instance are generating heavy write load.
+
+> **Heartbeat only cleans WAL when its writes flow through the replication slot.**
+>
+> The heartbeat table must satisfy **both** conditions below — otherwise the auto-`UPDATE`s commit successfully but the slot never decodes them, `confirmed_flush_lsn` stays frozen, and WAL keeps growing as if heartbeat were disabled:
+>
+> 1. The heartbeat table is listed in `publication.tables`. If it is not part of the publication the change is filtered out before reaching the slot.
+>    The connector validates this at startup for selective publications and returns an error if the heartbeat table is missing.
+> 2. The heartbeat table has a `REPLICA IDENTITY` that allows the auto-`UPDATE` to be decoded — `DEFAULT` (the auto-created table already has a primary key, so this works out of the box) or `FULL`. `REPLICA IDENTITY NOTHING` will silently break WAL advancement because the `UPDATE` cannot be decoded by `pgoutput`.
+>
+> Use a dedicated heartbeat table — never reuse a business table.
+
+```yaml
+heartbeat:
+  table:
+    name: "my_heartbeat"
+    schema: "public"
+  interval: 100ms
+```
+
+Make sure the heartbeat table is included in the publication, for example:
+
+```go
+Publication: publication.Config{
+    Name:              "cdc_publication",
+    CreateIfNotExists: true,
+    Tables: publication.Tables{
+        publication.Table{Name: "users"},
+        publication.Table{Name: "my_heartbeat"}, // must be present
+    },
+},
+```
+
+#### Migration (breaking change)
+
+Before:
+
+```yaml
+heartbeat:
+  enabled: true
+  query: "INSERT INTO heartbeat_table(txt) VALUES ('hb')"
+  interval: 5s
+```
+
+After:
+
+```yaml
+heartbeat:
+  table:
+    name: "heartbeat_table"
+    schema: "public"
+  interval: 100ms
+```
+
+You can run [Simple With Heartbeat](./example/simple-with-heartbeat) example.
+
+#### Upgrade: heartbeat table must be in publication
+
+If you use heartbeat with a **selective publication** (`publication.tables` is non-empty and the publication is not `FOR ALL TABLES`), the connector now **fails at startup** when the heartbeat table is missing from `publication.tables`.
+
+Previously, this misconfiguration could still start successfully, but heartbeat writes would not reach the replication slot and WAL retention would not improve.
+
+Before upgrading, add the heartbeat table to your publication config (or switch to a `FOR ALL TABLES` publication):
+
+```yaml
+publication:
+  name: cdc_publication
+  createIfNotExists: true
+  tables:
+    - name: users
+      schema: public
+    - name: my_heartbeat
+      schema: public
+```
+
+#### Replica Identity Requirement
+
+For this TOAST reconstruction to work, PostgreSQL must send the old tuple.
+This requires setting the table's replica identity to FULL:
+
+`ALTER TABLE your_table REPLICA IDENTITY FULL;`
+
+- With `REPLICA IDENTITY DEFAULT`, PostgreSQL only sends primary keys for updates/deletes.
+- In that mode, old tuple values (including TOASTed fields) are not provided.
+- Therefore, `FULL` is required to correctly handle TOASTed columns in CDC.
+
+For large tables, `REPLICA IDENTITY USING INDEX` can be a better trade-off for network traffic and matching performance:
+
+- `FULL` sends old values of all columns (`O` tuple data).
+- `USING INDEX` sends only old values of the columns from the selected unique index (`K` tuple data).
+- This reduces payload size, but unlike `FULL`, old non-index columns are not available.
+
+You can run [Replica Identity Using Index](./example/replica-identity-using-index) for a minimal `USING INDEX` setup.
+
+`REPLICA IDENTITY NOTHING` is best paired with insert-only publications because PostgreSQL does not provide old-row data for updates and deletes in that mode.
+
+You can run [Replica Identity Nothing](./example/replica-identity-nothing) for an insert-only `NOTHING` example.
+
+### Configuration
+
+| Variable                                |   Type   | Required | Default | Description                                                                                           | Options                                                                                                                                            |
+|-----------------------------------------|:--------:|:--------:|:-------:|-------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| `host`                                  |  string  |   yes    |    -    | PostgreSQL host                                                                                       | Should be a valid hostname or IP address. Example: `localhost`.                                                                                    |
+| `username`                              |  string  |   yes    |    -    | PostgreSQL username                                                                                   | Should have sufficient privileges to perform required database operations.                                                                         |
+| `password`                              |  string  |   yes    |    -    | PostgreSQL password                                                                                   | Keep secure and avoid hardcoding in the source code.                                                                                               |
+| `database`                              |  string  |   yes    |    -    | PostgreSQL database                                                                                   | The database must exist and be accessible by the specified user.                                                                                   |
+| `debugMode`                             |   bool   |    no    |  false  | For debugging purposes                                                                                | Enables pprof for trace.                                                                                                                           |
+| `metric.port`                           |   int    |    no    |  8080   | Set API port                                                                                          | Choose a port that is not in use by other applications.                                                                                            |
+| `logger.logLevel`                       |  string  |    no    |  info   | Set logging level                                                                                     | [`DEBUG`, `WARN`, `INFO`, `ERROR`]                                                                                                                 |
+| `logger.logger`                         |  Logger  |    no    |  slog   | Set logger                                                                                            | Can be customized with other logging frameworks if `slog` is not used.                                                                             |
+| `publication.createIfNotExists`         |   bool   |    no    |    -    | Create publication if not exists. Otherwise, return `publication is not exists` error.                |                                                                                                                                                    |
+| `publication.name`                      |  string  |   yes    |    -    | Set PostgreSQL publication name                                                                       | Should be unique within the database.                                                                                                              |
+| `publication.operations`                | []string |   yes    |    -    | Set PostgreSQL publication operations. List of operations to track; all or a subset can be specified. | **INSERT:** Track insert operations. <br> **UPDATE:** Track update operations. <br> **DELETE:** Track delete operations.                           |
+| `publication.tables`                    | []Table  |   yes    |    -    | Set tables which are tracked by data change capture                                                   | Define multiple tables as needed.                                                                                                                  |
+| `publication.tables[i].name`            |  string  |   yes    |    -    | Set the data change captured table name                                                               | Must be a valid table name in the specified database.                                                                                              |
+| `publication.tables[i].replicaIdentity` |  string  |   yes    |    -    | Set the data change captured table replica identity [`DEFAULT`, `FULL`, `NOTHING`, `USING INDEX`]     | **DEFAULT:** Captures primary key old values. <br> **FULL:** Captures all old row columns. <br> **NOTHING:** Captures no old row data (typically insert-only scenarios; update/delete matching can fail). <br> **USING INDEX:** Captures old values from a chosen unique index. <br><br> Applied independently of `createIfNotExists`: if set, the connector runs `ALTER TABLE ... REPLICA IDENTITY` when the table's current identity differs (requires DDL privilege on the table). |
+| `publication.tables[i].replicaIdentityIndex` |  string  |    no*   |    -    | Unique index name used when `replicaIdentity` is `USING INDEX`.                                        | Required only for `USING INDEX`, ignored otherwise.                                                   |
+| `publication.tables[i].schema`          |  string  |    no    | public  | Set the data change captured table schema name                                                        | Must be a valid table name in the specified database.                                                                                              |
+| `publication.tables[i].columns`                   | []string |    no    |   -   | Only include these columns in replication and snapshotting                                            | Must not be set when `replicaIdentity` is `FULL`; only compatible with `DEFAULT`.                                                                 |
+| `publication.tables[i].partitioned`               |   bool   |    no    | false | Flag for replicating a partitioned table via the root table name instead of listing out the individual table parts. Sets `publish_via_partition_root = true` when creating the publication. | Only avaible with PostgreSQL 13+. This is a publication-wide setting, Setting any table with this will include it for all tables in the publication.                                                                                                                                                   |
+| `publication.tables[i].snapshotPartitionStrategy` |  string  |    no    | auto  | Override partition strategy for snapshot                                                              | **auto:** Auto-detect best strategy (sparse integer PKs fall back to `ctid_block`). **integer_range:** Sequential integer PKs. **ctid_block:** String/UUID/hash/sparse PKs. **offset:** Slow fallback. |
+| `publication.tables[i].queryCondition`  |  string  |    no    |    -    | Per-table query condition for snapshot queries (SNAPSHOT-ONLY, does NOT affect CDC). Takes precedence over global `snapshot.queryCondition`. | Example: `"deleted_at IS NULL"`. Appended to WHERE clause with `AND`. |
+| `slot.createIfNotExists`                |   bool   |    no    |    -    | Create replication slot if not exists. Otherwise, return `replication slot is not exists` error.      |                                                                                                                                                    |
+| `slot.name`                             |  string  |   yes    |    -    | Set the logical replication slot name                                                                 | Should be unique and descriptive.                                                                                                                  |
+| `slot.slotActivityCheckerInterval`      |   int    |    no    |  1000   | Set the slot activity check interval time in milliseconds                                             | Specify as an integer value in milliseconds (e.g., `1000` for 1 second).                                                                           |
+| `slot.protoVersion`                     |   int    |    no    |    2    | `pgoutput` protocol version used in `START_REPLICATION`                                               | `1`: PostgreSQL 10+ compatibility, no streaming transaction protocol messages. `2`: PostgreSQL 14+, enables streaming/messages options.           |
+| `snapshot.enabled`                      |   bool   |    no    |  false  | Enable initial snapshot feature                                                                       | When enabled, captures existing data before starting CDC.                                                                                          |
+| `snapshot.mode`                         |  string  |    no    |  never  | Snapshot mode: `initial`, `never`, or `snapshot_only`                                                 | **initial:** Take snapshot only if no previous snapshot exists, then start CDC. <br> **never:** Skip snapshot, start CDC immediately. <br> **snapshot_only:** Take snapshot and exit (no CDC, no replication slot required). |
+| `snapshot.chunkSize`                    |  int64   |    no    |  8000   | Number of rows per chunk during snapshot                                                              | Adjust based on table size. Larger chunks = fewer chunks but more memory per chunk.                                                               |
+| `snapshot.claimTimeout`                 | duration |    no    |  30s    | Timeout to reclaim stale chunks                                                                       | If a worker doesn't send heartbeat for this duration, chunk is reclaimed by another worker.                                                        |
+| `snapshot.heartbeatInterval`            | duration |    no    |  5s     | Interval for worker heartbeat updates                                                                 | Workers send heartbeat every N seconds to indicate they're processing a chunk.                                                                     |
+| `snapshot.instanceId`                   |  string  |    no    |  auto   | Custom instance identifier (optional)                                                                 | Auto-generated as `hostname-pid` if not specified. Useful for tracking workers.                                                                    |
+| `snapshot.tables`                       | []Table  |    no*   |    -    | Tables to snapshot (required for `snapshot_only` mode, optional for `initial` mode)                  | **snapshot_only:** Must be specified here (independent from publication). <br> **initial:** If specified, must be a subset of publication tables. If not specified, all publication tables are snapshotted. |
+| `snapshot.queryCondition`               |  string  |    no    |    -    | Global query condition applied to all snapshot queries (SNAPSHOT-ONLY, does NOT affect CDC). Per-table `queryCondition` overrides this value. | Example: `"status = 'active'"`. Appended to WHERE clause with `AND`. |
+| `heartbeat.table.name`                  |  string  |    no    |    -    | Name of the heartbeat table. Setting this enables heartbeat behavior.                                  | Table is auto-created if missing and should be included in `publication.tables` if you want it replicated.   |
+| `heartbeat.table.schema`                |  string  |    no    | public  | Schema of the heartbeat table.                                                                          | Defaults to `public` when omitted.                                                                            |
+| `heartbeat.interval`                    | duration |    no    | 100ms   | Interval between heartbeat updates when heartbeat is configured. Must be greater than 0.               | Any valid Go duration string (e.g. `100ms`, `1s`, `5s`, `1m`).                                                |
+| `extensionSupport.enableTimescaleDB`    |   bool   |    no    |  false  | Enable support for TimescaleDB hypertables. Ensures proper handling of compressed chunks during replication. |                                                                                                                                                    |
+
+### API
+
+| Endpoint             | Description                                                                               |
+|----------------------|-------------------------------------------------------------------------------------------|
+| `GET /status`        | Returns a 200 OK status if the client is able to ping the PostgreSQL server successfully. |
+| `GET /metrics`       | Prometheus metric endpoint.                                                               |
+| `GET /debug/pprof/*` | (Only for `debugMode=true`) [pprof](https://pkg.go.dev/net/http/pprof)                    |
+
+### Protocol Version & Streaming Transactions
+
+`go-pq-cdc` now supports both `pgoutput` protocol versions:
+
+- **`slot.protoVersion: 1`**
+  - Works with PostgreSQL 10+
+  - Starts replication with `proto_version '1'`
+  - Does not request `messages 'true'` or `streaming 'true'`
+  - Best choice for older PostgreSQL versions or simpler CDC setups
+
+- **`slot.protoVersion: 2` (default)**
+  - Requires PostgreSQL 14+
+  - Starts replication with `proto_version '2'`, `messages 'true'`, and `streaming 'true'`
+  - Supports streamed in-progress transactions (`STREAM START/STOP/COMMIT/ABORT`)
+
+Streaming behavior for `proto_version: 2`:
+
+- Streamed DML events are buffered per transaction XID.
+- Events are emitted only on `STREAM COMMIT`.
+- `STREAM ABORT` discards all buffered events for that transaction.
+- This prevents rolled-back streamed transactions from leaking to consumers.
+
+### Exposed Metrics
+
+The client collects relevant metrics related to PostgreSQL change data capture (CDC) and makes them available at
+the `/metrics` endpoint.
+
+| Metric Name                                         | Description                                                                                           | Labels         | Value Type |
+|-----------------------------------------------------|-------------------------------------------------------------------------------------------------------|----------------|------------|
+| go_pq_cdc_update_total                              | The total number of `UPDATE` operations captured on specific tables.                                  | slot_name, host| Counter    |
+| go_pq_cdc_delete_total                              | The total number of `DELETE` operations captured on specific tables.                                  | slot_name, host| Counter    |
+| go_pq_cdc_insert_total                              | The total number of `INSERT` operations captured on specific tables.                                  | slot_name, host| Counter    |
+| go_pq_cdc_cdc_latency_current                       | The current latency in capturing data changes from PostgreSQL, in nanoseconds.                       | slot_name, host| Gauge      |
+| go_pq_cdc_cdc_latency_current_milliseconds          | The current latency in capturing data changes from PostgreSQL, in milliseconds.                      | slot_name, host| Gauge      |
+| go_pq_cdc_process_latency_current                   | The current latency in processing the captured data changes, in nanoseconds.                         | slot_name, host| Gauge      |
+| go_pq_cdc_process_latency_current_milliseconds      | The current latency in processing the captured data changes, in milliseconds.                        | slot_name, host| Gauge      |
+| go_pq_cdc_replication_slot_slot_confirmed_flush_lsn | The last confirmed flush Log Sequence Number (LSN) in the PostgreSQL replication slot.                | slot_name, host| Gauge      |
+| go_pq_cdc_replication_slot_slot_current_lsn         | The current Log Sequence Number (LSN) being processed in the PostgreSQL replication slot.             | slot_name, host| Gauge      |
+| go_pq_cdc_replication_slot_slot_is_active           | Indicates whether the PostgreSQL replication slot is currently active (1 for active, 0 for inactive). | slot_name, host| Gauge      |
+| go_pq_cdc_replication_slot_slot_lag                 | The replication lag measured by the difference between the current LSN and the confirmed flush LSN.   | slot_name, host| Gauge      |
+| go_pq_cdc_replication_slot_slot_retained_wal_size   | The size of Write-Ahead Logging (WAL) files retained for the replication slot in bytes.               | slot_name, host| Gauge      |
+| go_pq_cdc_snapshot_in_progress                      | Indicates whether snapshot is currently in progress (1 for active, 0 for inactive).                   | slot_name, host| Gauge      |
+| go_pq_cdc_snapshot_total_tables                     | Total number of tables to snapshot.                                                                    | slot_name, host| Gauge      |
+| go_pq_cdc_snapshot_total_chunks                     | Total number of chunks to process across all tables.                                                   | slot_name, host| Gauge      |
+| go_pq_cdc_snapshot_completed_chunks                 | Number of chunks completed in snapshot.                                                                | slot_name, host| Gauge      |
+| go_pq_cdc_snapshot_total_rows                       | Total number of rows read during snapshot.                                                             | slot_name, host| Counter    |
+| go_pq_cdc_snapshot_duration_seconds                 | Duration of the last snapshot operation in seconds.                                                    | slot_name, host| Gauge      |
+| runtime metrics                                     | [Prometheus Collector](https://golang.bg/src/runtime/metrics/description.go)                          | N/A            | N/A        |
+
+### Grafana Dashboard
+
+Import the grafana dashboard [json file](./grafana/dashboard.json).
+![Dashboard](./grafana/dashboard.png)
+
+### Compatibility
+
+| go-pq-cdc Version | slot.protoVersion | Minimum PostgreSQL Server Version | Notes |
+|-------------------|-------------------|-----------------------------------|-------|
+| 0.0.2 or higher   | 1                 | 10                                | No streaming transaction protocol messages |
+| 0.0.2 or higher   | 2                 | 14                                | Supports streamed in-progress transactions |
+
+### Breaking Changes
+
+| Date taking effect | Version | Change | How to check |
+|--------------------|---------|--------|--------------|
+| Next release       | TBD     | Startup fails when heartbeat is enabled but the heartbeat table is missing from a selective publication. | Ensure `publication.tables` includes your heartbeat table, or use a `FOR ALL TABLES` publication. See [Upgrade: heartbeat table must be in publication](#upgrade-heartbeat-table-must-be-in-publication). |
