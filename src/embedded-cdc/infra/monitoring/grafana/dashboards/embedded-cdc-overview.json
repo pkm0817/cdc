@@ -1,0 +1,240 @@
+{
+  "uid": "embedded-cdc",
+  "title": "Embedded CDC Overview",
+  "tags": ["cdc", "embedded", "debezium"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Source 행 수",
+      "description": "source DB 테이블별 정확한 행 수. publication 에 든 테이블이 자동으로 잡힌다",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "emb-cdc-prom" },
+      "targets": [
+        { "refId": "A", "expr": "cdc_source_rows", "legendFormat": "{{table_name}}", "instant": true }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Target 행 수 (활성)",
+      "description": "target DB 테이블별 행 수. deleted 컬럼이 있는 테이블은 소프트 삭제(deleted=true)를 제외하고 센다 — 대상 테이블은 카탈로그에서 자동 발견",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "emb-cdc-prom" },
+      "targets": [
+        { "refId": "A", "expr": "cdc_target_rows", "legendFormat": "{{table_name}}", "instant": true }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "purple" },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "정합성 차이 |source − target|",
+      "description": "0 이면 양쪽 행 수 일치(정합). 0 이 아니면 아직 따라잡는 중이거나 문제 발생",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "emb-cdc-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "abs(cdc_source_rows - on(table_name) cdc_target_rows)",
+          "legendFormat": "{{table_name}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "소프트 삭제 / Sink 오류",
+      "description": "소프트 삭제를 쓰는 테이블의 누적 삭제 행 수와 cdc-service 의 sink 처리 실패 누적",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "emb-cdc-prom" },
+      "targets": [
+        { "refId": "A", "expr": "cdc_target_deleted_rows", "legendFormat": "soft-deleted ({{table_name}})", "instant": true },
+        { "refId": "B", "expr": "sum(cdc_sink_errors_total) or vector(0)", "legendFormat": "sink errors", "instant": true }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "text", "value": null }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "sink errors" },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "red", "value": 1 }
+                  ]
+                }
+              },
+              { "id": "color", "value": { "mode": "thresholds" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "CDC 이벤트 처리량 (events/sec)",
+      "description": "cdc-service 가 처리한 변경 이벤트. op: r=snapshot, c=insert, u=update, d=delete",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "emb-cdc-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (table, op) (rate(cdc_events_total[1m]))",
+          "legendFormat": "{{table}} · {{op}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "End-to-End 지연 (source 커밋 → target 반영)",
+      "description": "이벤트의 source.ts_ms 와 target 적재 시각의 차이. max 는 구간 내 최악값",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "emb-cdc-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_end_to_end_lag_seconds_max",
+          "legendFormat": "max · {{table}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(cdc_end_to_end_lag_seconds_sum[1m]) / rate(cdc_end_to_end_lag_seconds_count[1m])",
+          "legendFormat": "avg · {{table}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "행 수 추이 — source vs target",
+      "description": "두 선이 겹쳐 움직이면 정합. target 선이 뒤처지면 지연/장애",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "emb-cdc-prom" },
+      "targets": [
+        { "refId": "A", "expr": "cdc_source_rows", "legendFormat": "source · {{table_name}}" },
+        { "refId": "B", "expr": "cdc_target_rows", "legendFormat": "target · {{table_name}}" }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Replication Slot 지연 (WAL bytes)",
+      "description": "cdc-service 가 아직 확인하지 않은 WAL 양. 서비스가 죽으면 계속 자란다 → source DB 디스크 고갈 위험 신호",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "emb-cdc-prom" },
+      "targets": [
+        { "refId": "A", "expr": "cdc_slot_lag_bytes", "legendFormat": "lag · {{slot_name}}" },
+        { "refId": "B", "expr": "cdc_slot_active * 1000000", "legendFormat": "active(×1MB 스케일) · {{slot_name}}" }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

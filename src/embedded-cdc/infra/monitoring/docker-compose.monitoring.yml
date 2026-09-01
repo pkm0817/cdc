@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 모니터링 스택 — Prometheus + Grafana + postgres_exporter × 2
+#
+#   source-exporter : source DB 의 테이블별 행 수 + replication slot 지연
+#   target-exporter : target DB 의 테이블별 행 수 + 소프트 삭제 행 수
+#   prometheus      : 위 exporter 2개 + cdc-service(/actuator/prometheus) 수집
+#   grafana         : 정합성(행 수 비교)·처리량·지연 대시보드 자동 프로비저닝
+#
+# 접속: Grafana http://localhost:56300 (admin/admin, 익명 Viewer 허용)
+#       Prometheus http://localhost:56090
+# ─────────────────────────────────────────────────────────────────────────────
+name: embedded-cdc-monitoring
+
+networks:
+  emb-cdc-net:
+    external: true
+
+services:
+  source-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: emb-cdc-source-exporter
+    networks: [emb-cdc-net]
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@source-postgres:5432/sourcedb?sslmode=disable"
+      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/pgexporter/queries-source.yaml
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "false"
+    volumes:
+      - ./exporter:/etc/pgexporter:ro
+    ports:
+      - "56187:9187"
+
+  target-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: emb-cdc-target-exporter
+    networks: [emb-cdc-net]
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@target-postgres:5432/targetdb?sslmode=disable"
+      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/pgexporter/queries-target.yaml
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "false"
+    volumes:
+      - ./exporter:/etc/pgexporter:ro
+    ports:
+      - "56188:9187"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: emb-cdc-prometheus
+    networks: [emb-cdc-net]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - emb-prometheus-data:/prometheus
+    ports:
+      - "56090:9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: emb-cdc-grafana
+    networks: [emb-cdc-net]
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: light
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - emb-grafana-data:/var/lib/grafana
+    ports:
+      - "56300:3000"
+
+volumes:
+  emb-prometheus-data:
+  emb-grafana-data:

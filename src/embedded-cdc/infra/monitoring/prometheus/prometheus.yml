@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # cdc-service (Spring Boot / Micrometer) — 처리량, end-to-end 지연, 에러
+  - job_name: cdc-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["cdc-service:8080"]
+
+  # source DB — 테이블별 행 수 + replication slot 지연
+  - job_name: source-db
+    static_configs:
+      - targets: ["source-exporter:9187"]
+
+  # target DB — 테이블별 행 수 + 소프트 삭제 행 수
+  - job_name: target-db
+    static_configs:
+      - targets: ["target-exporter:9187"]
