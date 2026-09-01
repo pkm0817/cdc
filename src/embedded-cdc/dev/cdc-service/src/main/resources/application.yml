@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: cdc-service
+  datasource: # target DB (JPA 로 UPSERT/DELETE)
+    url: jdbc:postgresql://${TARGET_DB_HOST:localhost}:${TARGET_DB_PORT:56433}/${TARGET_DB_NAME:targetdb}
+    username: ${TARGET_DB_USER:postgres}
+    password: ${TARGET_DB_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      # 스키마는 init SQL 이 만든다. validate 는 기동 시점에 엔티티와 실제 테이블을 대조하므로
+      # target 테이블이 지워지거나 컬럼이 바뀌면 조용히 도는 대신 기동이 실패한다.
+      ddl-auto: validate
+    open-in-view: false # 웹 요청이 없는 서비스다. 켜두면 커넥션을 불필요하게 오래 잡는다
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50 # 지금은 이벤트당 한 문장이라 효과가 없다. 배치 적용을 넣을 때 살아난다
+        order_inserts: true
+        order_updates: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, metrics
+  endpoint:
+    health:
+      show-details: always
+
+cdc:
+  source: # source DB (Debezium 이 logical replication 으로 직접 접속)
+    # 커넥터의 정체성. 같은 DB 에 커넥터를 둘 이상 붙일 때(테이블별 샤딩 등)
+    # name / topic-prefix / slot-name / publication-name / offset-file 다섯 개가
+    # 인스턴스마다 전부 달라야 한다. 겹치면 슬롯을 다투거나 오프셋을 서로 덮어쓴다.
+    name: ${CDC_NAME:embedded-cdc}
+    topic-prefix: ${CDC_TOPIC_PREFIX:embedded}
+    hostname: ${SOURCE_DB_HOST:localhost}
+    port: ${SOURCE_DB_PORT:56432}
+    user: ${SOURCE_DB_USER:cdc_user}
+    password: ${SOURCE_DB_PASSWORD:cdc_pass}
+    dbname: ${SOURCE_DB_NAME:sourcedb}
+    slot-name: ${CDC_SLOT_NAME:embedded_cdc_slot}
+    publication-name: ${CDC_PUBLICATION_NAME:embedded_cdc_pub}
+    table-include-list: ${CDC_TABLE_INCLUDE_LIST:public.car,public.computer,public.grade,public.member}
+    snapshot-mode: ${CDC_SNAPSHOT_MODE:initial}
+    offset-file: ${CDC_OFFSET_FILE:./data/offsets.dat}
+    # 되받을 수 없는 구간을 발견하면 기동을 거부한다.
+    # 조용히 어긋난 채로 도는 것보다 멈추고 재동기화를 요구하는 편이 낫다.
+    fail-on-capture-gap: ${CDC_FAIL_ON_CAPTURE_GAP:true}
+
+  apply: # 적용 실패를 다루는 정책
+    # 배치 전체를 다시 시도하는 횟수. 소진하면 건 단위로 좁혀 범인만 격리한다.
+    max-batch-retries: ${CDC_MAX_BATCH_RETRIES:3}
+    # 첫 재시도 대기. 시도마다 두 배로 늘어난다 (200, 400, 800ms)
+    retry-backoff-ms: ${CDC_RETRY_BACKOFF_MS:200}
+    # 한 배치에서 이 비율을 넘게 격리되면 구조 문제로 보고 멈춘다.
+    # 그러지 않으면 수신 테이블이 통째로 사라졌을 때 DLQ 가 전체 트래픽을 삼킨다.
+    halt-on-dead-letter-ratio: ${CDC_HALT_DLQ_RATIO:0.5}
+
+  dead-letter: # 격리된 이벤트 재처리
+    # PENDING 은 자동으로 집지 않는다. 원인을 고친 뒤
+    #   UPDATE cdc_dead_letter SET status = 'RETRY_REQUESTED' WHERE id = ...;
+    # 로 표시한 건만 재처리된다.
+    reprocess-enabled: ${CDC_DLQ_REPROCESS:true}
+    reprocess-interval-ms: ${CDC_DLQ_INTERVAL_MS:30000}
+    reprocess-batch-size: ${CDC_DLQ_BATCH_SIZE:50}
+
+logging:
+  level:
+    dev.embeddedcdc: info
+    io.debezium: info
