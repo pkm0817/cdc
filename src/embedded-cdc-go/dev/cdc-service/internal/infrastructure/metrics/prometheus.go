@@ -26,10 +26,7 @@ type Prometheus struct {
 	sinkErrors  *prometheus.CounterVec
 	deadLetters *prometheus.CounterVec
 	lag         *prometheus.SummaryVec
-	lagMax      *prometheus.GaugeVec
-
-	mu      sync.Mutex
-	windows map[string]*rollingMax
+	lagMax      *lagMaxCollector
 }
 
 func New() *Prometheus {
@@ -50,11 +47,7 @@ func New() *Prometheus {
 			Name: "cdc_end_to_end_lag_seconds",
 			Help: "source 가 변경을 보낸 시각과 target 반영 시각의 차 (분위수 없이 합계·건수만)",
 		}, []string{"table"}),
-		lagMax: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cdc_end_to_end_lag_seconds_max",
-			Help: "최근 1분 구간의 end-to-end 지연 최댓값",
-		}, []string{"table"}),
-		windows: make(map[string]*rollingMax),
+		lagMax: newLagMaxCollector(),
 	}
 }
 
@@ -71,6 +64,14 @@ func (p *Prometheus) Collectors() []prometheus.Collector {
 
 func (p *Prometheus) EventApplied(table, op string) {
 	p.events.WithLabelValues(table, op).Inc()
+
+	// 지연 지표의 자식을 미리 만들어 둔다. Vec 계열은 라벨 조합이 한 번은 쓰여야
+	// 시계열이 생기는데, 스냅샷 행에는 커밋 시각이 없어(아래 EndToEndLag 참고)
+	// 최초 적재만으로는 cdc_end_to_end_lag_seconds* 가 하나도 노출되지 않는다.
+	// 그러면 기동 직후 Grafana 가 "No data" 를 띄운다 — Debezium 판은 스냅샷 행에도
+	// ts_ms 가 실려 오므로 같은 시점에 0 을 보여 준다. 눈금을 맞추려고 여기서 연다.
+	p.lag.WithLabelValues(table)
+	p.lagMax.track(table)
 }
 
 func (p *Prometheus) ApplyFailed(table string) {
@@ -94,19 +95,71 @@ func (p *Prometheus) EndToEndLag(table string, sourceCommittedAtMs int64) {
 	seconds := float64(lagMs) / 1000
 
 	p.lag.WithLabelValues(table).Observe(seconds)
-	p.lagMax.WithLabelValues(table).Set(p.observeMax(table, seconds))
+	p.lagMax.observe(table, seconds)
 }
 
-func (p *Prometheus) observeMax(table string, value float64) float64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+// lagMaxCollector 는 cdc_end_to_end_lag_seconds_max 를 스크랩 시점에 계산해 내보낸다.
+//
+// GaugeVec 으로는 이 지표를 만들 수 없다. 게이지는 Set 을 불러야 값이 바뀌는데,
+// 변경 트래픽이 멎으면 부를 일이 없어 한 번 튄 최댓값이 영원히 남는다.
+// (실제로 그랬다 — 부하가 끝난 뒤에도 대시보드의 최대 지연이 내려오지 않았다)
+//
+// Micrometer 의 Timer.max 는 관측이 없어도 시간이 지나면 0 으로 내려간다.
+// 같은 성질을 내려면 "쓸 때" 가 아니라 "읽을 때" 기준으로 창을 굴려야 한다.
+// 그래서 Collector 를 직접 구현해 Collect 안에서 현재 시각으로 창을 정리한다.
+type lagMaxCollector struct {
+	desc *prometheus.Desc
 
-	w, ok := p.windows[table]
+	mu      sync.Mutex
+	windows map[string]*rollingMax
+}
+
+func newLagMaxCollector() *lagMaxCollector {
+	return &lagMaxCollector{
+		desc: prometheus.NewDesc(
+			"cdc_end_to_end_lag_seconds_max",
+			"최근 1분 구간의 end-to-end 지연 최댓값 (관측이 끊기면 0 으로 내려간다)",
+			[]string{"table"}, nil,
+		),
+		windows: make(map[string]*rollingMax),
+	}
+}
+
+func (c *lagMaxCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.desc
+}
+
+func (c *lagMaxCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	for table, w := range c.windows {
+		ch <- prometheus.MustNewConstMetric(c.desc, prometheus.GaugeValue, w.valueAt(now), table)
+	}
+}
+
+// track 은 값 없이 시계열만 연다. 관측이 오기 전에는 0 이 나간다.
+func (c *lagMaxCollector) track(table string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.window(table)
+}
+
+func (c *lagMaxCollector) observe(table string, value float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.window(table).observe(value, time.Now())
+}
+
+// window 는 호출자가 c.mu 를 쥐고 있다고 가정한다.
+func (c *lagMaxCollector) window(table string) *rollingMax {
+	w, ok := c.windows[table]
 	if !ok {
 		w = &rollingMax{}
-		p.windows[table] = w
+		c.windows[table] = w
 	}
-	return w.observe(value, time.Now())
+	return w
 }
 
 // rollingMax 는 두 칸짜리 회전 창이다. 창이 넘어가면 이전 칸을 버린다.
@@ -116,9 +169,27 @@ type rollingMax struct {
 	previous     float64
 }
 
-func (w *rollingMax) observe(value float64, now time.Time) float64 {
+func (w *rollingMax) observe(value float64, now time.Time) {
+	w.roll(now)
+	if value > w.current {
+		w.current = value
+	}
+}
+
+// valueAt 은 읽는 시각 기준으로 창을 정리한 뒤 최댓값을 준다.
+// 관측이 두 창을 넘도록 없으면 0 이 된다 — 이 정리를 여기서 해야 감쇠가 성립한다.
+func (w *rollingMax) valueAt(now time.Time) float64 {
+	w.roll(now)
+	if w.previous > w.current {
+		return w.previous
+	}
+	return w.current
+}
+
+func (w *rollingMax) roll(now time.Time) {
 	if w.currentStart.IsZero() {
 		w.currentStart = now
+		return
 	}
 	switch elapsed := now.Sub(w.currentStart); {
 	case elapsed >= 2*maxWindow:
@@ -127,12 +198,4 @@ func (w *rollingMax) observe(value float64, now time.Time) float64 {
 	case elapsed >= maxWindow:
 		w.previous, w.current, w.currentStart = w.current, 0, now
 	}
-
-	if value > w.current {
-		w.current = value
-	}
-	if w.previous > w.current {
-		return w.previous
-	}
-	return w.current
 }
