@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# sync-service — outbox 기반 동기화 서비스 (Spring Boot)
+#
+#   source-postgres (sync_outbox) ──JDBC 폴링──▶ sync-service ──JDBC 벌크──▶ target-postgres
+#
+# CDC 판과 달리 오프셋 파일도, 복제 슬롯도 없다. 진행 지점은 타깃 DB 의
+# sync_checkpoint 한 줄이라 컨테이너를 지웠다 다시 만들어도 이어서 돈다.
+# ─────────────────────────────────────────────────────────────────────────────
+# 루트 docker-compose.yml 의 include 로만 쓴다 — 단독으로 -f 지정해 올리면 프로젝트가
+# 따로 잡혀 같은 container_name/네트워크를 두고 충돌한다.
+networks:
+  cdc-custom-net:
+    name: cdc-custom-net
+
+services:
+  sync-service:
+    # 두 DB 가 healthy 가 된 뒤에 올라온다. 소스가 아직 초기화 중이면 outbox 표가
+    # 없어 첫 폴링이 실패하고, 그 실패를 백오프로 견디느라 기동만 느려진다.
+    depends_on:
+      source-postgres:
+        condition: service_healthy
+      target-postgres:
+        condition: service_healthy
+    build:
+      context: ./sync-service
+    image: cdc-custom/sync-service:local
+    container_name: cdc-custom-service
+    networks: [cdc-custom-net]
+    environment:
+      SOURCE_DB_HOST: source-postgres
+      SOURCE_DB_PORT: "5432"
+      TARGET_DB_HOST: target-postgres
+      TARGET_DB_PORT: "5432"
+      # 한 주기에 읽을 outbox 줄 수. 처리량을 올리는 유일한 손잡이다.
+      # 측정 시 이 값만 바꿔가며 비교하면 배치 크기와 처리량의 관계가 그대로 보인다.
+      SYNC_BATCH_SIZE: ${SYNC_BATCH_SIZE:-5000}
+      SYNC_POLL_INTERVAL_MS: ${SYNC_POLL_INTERVAL_MS:-200}
+      # 힙을 CDC 판과 같은 조건으로 맞춘다. 세 스택의 메모리 비교가 성립하려면
+      # 상한이 같아야 한다.
+      JAVA_TOOL_OPTIONS: "-Xmx1g"
+    ports:
+      - "58280:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
