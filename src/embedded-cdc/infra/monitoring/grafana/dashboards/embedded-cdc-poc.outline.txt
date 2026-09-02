@@ -352,3 +352,16 @@ tags=cdc,poc,debezium,embedded
     B  cdc_clock_skew_seconds  legend="시계 편차 (DB − 앱)"
     C  0.5  legend="편차 허용치"
     desc: 편차(초록)가 허용치 0.5s(빨강 기준선)를 넘는 구간의 지연값은 버린다. V1 1차 실행에서 편차 3.5초에 지연 0.5초가 나와 재려던 값보다 오차가 7배 컸다.
+  panel #78 table "변경 이력 — 무엇이 무엇으로 바뀌었나" @ x0 y210 14x9
+    overrides 4건
+    A  SELECT to_char(source_ts, 'HH24:MI:SS') AS "원천 커밋", source_table AS "테이블", row_key AS "행", changed_fields AS "바뀐 필드", before_values AS "이전", after_values AS "이후" FROM cdc_change_audit WHERE $__timeFilter(source_ts) ORDER BY id DESC LIMIT 100
+    desc: 지표로는 답할 수 없는 질문이라 표를 직접 읽는다. 변경 필드명을 Prometheus 레이블로 올리면 시계열이 (테이블 x 컬럼 조합) 수만큼 생겨 터지기 때문이다. 대시보드 시간 범위를 따른다.
+  panel #79 table "어떤 필드가 자주 바뀌나" @ x14 y210 6x9
+    A  SELECT changed_fields AS "바뀐 필드 조합", count(*) AS "건수" FROM cdc_change_audit WHERE $__timeFilter(source_ts) GROUP BY 1 ORDER BY 2 DESC LIMIT 20
+    desc: 같은 조합이 반복되면 그 UPDATE 는 정형 작업이다. 예상 못 한 조합이 올라오면 원천 쪽에 새 경로가 생긴 것이다. 대시보드 시간 범위를 따른다.
+  panel #80 stat "판정 불가 누적" @ x20 y210 4x9
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  SELECT count(*) AS value FROM cdc_change_audit WHERE identifiable = false
+    desc: identifiable=false 는 "안 바뀌었다" 가 아니라 "판정을 못 했다" 는 뜻이다. before 가 비어 있었다는 것이고 곧 그 테이블의 REPLICA IDENTITY 가 FULL 이 아니라는 신호다. 0 이 아니면 설정 사고다. 시간 범위와 무관한 누적치.

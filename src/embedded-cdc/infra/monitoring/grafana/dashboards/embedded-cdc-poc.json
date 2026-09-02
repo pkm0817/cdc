@@ -3487,6 +3487,202 @@
           }
         ]
       }
+    },
+    {
+      "id": 78,
+      "type": "table",
+      "title": "변경 이력 — 무엇이 무엇으로 바뀌었나",
+      "description": "지표로는 답할 수 없는 질문이라 표를 직접 읽는다. 변경 필드명을 Prometheus 레이블로 올리면 시계열이 (테이블 x 컬럼 조합) 수만큼 생겨 터지기 때문이다. 대시보드 시간 범위를 따른다.",
+      "gridPos": {
+        "h": 9,
+        "w": 14,
+        "x": 0,
+        "y": 210
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "emb-cdc-target-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(source_ts, 'HH24:MI:SS') AS \"원천 커밋\",\n       source_table AS \"테이블\",\n       row_key AS \"행\",\n       changed_fields AS \"바뀐 필드\",\n       before_values AS \"이전\",\n       after_values AS \"이후\"\n  FROM cdc_change_audit\n WHERE $__timeFilter(source_ts)\n ORDER BY id DESC\n LIMIT 100",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "emb-cdc-target-db"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "원천 커밋"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 95
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "테이블"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "행"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "바뀐 필드"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 79,
+      "type": "table",
+      "title": "어떤 필드가 자주 바뀌나",
+      "description": "같은 조합이 반복되면 그 UPDATE 는 정형 작업이다. 예상 못 한 조합이 올라오면 원천 쪽에 새 경로가 생긴 것이다. 대시보드 시간 범위를 따른다.",
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 14,
+        "y": 210
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "emb-cdc-target-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT changed_fields AS \"바뀐 필드 조합\", count(*) AS \"건수\"\n  FROM cdc_change_audit\n WHERE $__timeFilter(source_ts)\n GROUP BY 1\n ORDER BY 2 DESC\n LIMIT 20",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "emb-cdc-target-db"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 80,
+      "type": "stat",
+      "title": "판정 불가 누적",
+      "description": "identifiable=false 는 \"안 바뀌었다\" 가 아니라 \"판정을 못 했다\" 는 뜻이다. before 가 비어 있었다는 것이고 곧 그 테이블의 REPLICA IDENTITY 가 FULL 이 아니라는 신호다. 0 이 아니면 설정 사고다. 시간 범위와 무관한 누적치.",
+      "gridPos": {
+        "h": 9,
+        "w": 4,
+        "x": 20,
+        "y": 210
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "emb-cdc-target-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS value FROM cdc_change_audit WHERE identifiable = false",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "emb-cdc-target-db"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ]
 }
