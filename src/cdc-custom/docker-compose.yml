@@ -1,0 +1,23 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 루트 compose — cdc-custom (outbox 기반 동기화) 스택의 유일한 진입점
+#
+#   docker compose up -d --build     # DB 2개 + 모니터링 + 앱까지 한 번에
+#   docker compose down              # 정지 (데이터 유지)
+#   docker compose down -v           # 볼륨까지 삭제
+#
+# 네트워크(cdc-custom-net)와 볼륨은 compose 가 만들고 지운다. 미리 만들 필요 없다.
+#
+# include 는 -f 여러 개(병합)와 다르다. 가져온 서비스를 이 파일에서 다시 선언해
+# 덮어쓰려 하면 "services.<이름> conflicts with imported resource" 로 기동이 막힌다.
+# 그래서 sync-service 의 depends_on 은 dev/docker-compose.app.yml 안에 둔다.
+#
+# 포트 대역은 58xxx 다. embedded-cdc(56xxx) · embedded-cdc-go(57xxx) 와 겹치지 않아
+# 세 스택을 동시에 띄우고 같은 부하로 비교할 수 있다.
+# ─────────────────────────────────────────────────────────────────────────────
+name: cdc-custom
+
+include:
+  - path: infra/db/docker-compose.source.yml
+  - path: infra/db/docker-compose.target.yml
+  - path: infra/monitoring/docker-compose.monitoring.yml
+  - path: dev/docker-compose.app.yml

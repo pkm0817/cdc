@@ -1,0 +1,92 @@
+# target DB 전용 커스텀 쿼리
+# 메트릭 이름 = <최상위 키>_<컬럼명>  (예: cdc_target_rows{table_name="computer"})
+#
+# ── 테이블 목록도, 소프트 삭제 여부도 적지 않는다 ────────────────────────────
+# source 쪽은 publication 이 "감시 대상"의 정의였지만, target 에는 그런 것이 없다.
+# 그래서 두 가지를 카탈로그에서 읽어 낸다.
+#
+#   1) 어떤 테이블을 셀 것인가
+#      public 스키마의 테이블 전부. 단 파이프라인 자신의 살림살이(sync_checkpoint,
+#      sync_dead_letter)와 검증 테스트가 만드는 임시 테이블(verify_*)은 뺀다.
+#      테이블 이름이 아니라 접두사 규칙이므로, 동기화 테이블이 늘어도 손댈 것이 없다.
+#
+#   2) 소프트 삭제를 쓰는 테이블인가
+#      deleted 컬럼의 존재 여부로 판정한다. 있으면 살아있는 행만(WHERE deleted = false),
+#      없으면(car 처럼 하드 삭제) 전체를 센다. source 와 같은 기준으로 비교하기 위해서다.
+# ───────────────────────────────────────────────────────────────────────────
+cdc_target:
+  query: |
+    SELECT t.tablename AS table_name,
+           (xpath('/row/c/text()',
+                  query_to_xml(format('SELECT count(*) AS c FROM %I.%I%s',
+                                      t.schemaname, t.tablename,
+                                      CASE WHEN c.column_name IS NULL THEN '' ELSE ' WHERE deleted = false' END),
+                               false, true, '')))[1]::text::float AS rows
+    FROM pg_tables t
+    LEFT JOIN information_schema.columns c
+           ON c.table_schema = t.schemaname
+          AND c.table_name = t.tablename
+          AND c.column_name = 'deleted'
+    WHERE t.schemaname = 'public'
+      AND t.tablename NOT LIKE 'sync\_%'
+      AND t.tablename NOT LIKE 'verify\_%'
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name (discovered from the catalog)"
+    - rows:
+        usage: "GAUGE"
+        description: "active (non-soft-deleted) row count in target table"
+
+# 소프트 삭제된 행 수 — DELETE 이벤트가 실제로 반영되는지 확인한다.
+# deleted 컬럼이 있는 테이블만 자동으로 대상이 된다 (JOIN 이 곧 필터다).
+cdc_target_deleted:
+  query: |
+    SELECT t.tablename AS table_name,
+           (xpath('/row/c/text()',
+                  query_to_xml(format('SELECT count(*) AS c FROM %I.%I WHERE deleted = true',
+                                      t.schemaname, t.tablename),
+                               false, true, '')))[1]::text::float AS rows
+    FROM pg_tables t
+    JOIN information_schema.columns c
+      ON c.table_schema = t.schemaname
+     AND c.table_name = t.tablename
+     AND c.column_name = 'deleted'
+    WHERE t.schemaname = 'public'
+      AND t.tablename NOT LIKE 'sync\_%'
+      AND t.tablename NOT LIKE 'verify\_%'
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name (only tables that use soft delete)"
+    - rows:
+        usage: "GAUGE"
+        description: "soft-deleted row count in target table"
+
+# ── WAL 디렉터리 사용량 ──────────────────────────────────────────────────────
+# target 에는 복제 슬롯이 없어서 WAL 이 밀릴 일은 없지만, 대량 UPSERT 구간에는
+# 여기도 WAL 이 크게 뛴다. source 와 같은 축에 놓고 보기 위해 같은 지표를 낸다.
+cdc_wal:
+  query: |
+    SELECT COALESCE(sum(size), 0)::float AS size_bytes,
+           count(*)::float               AS files
+    FROM pg_ls_waldir()
+  metrics:
+    - size_bytes:
+        usage: "GAUGE"
+        description: "total bytes held in pg_wal/"
+    - files:
+        usage: "GAUGE"
+        description: "number of WAL segment files"
+
+cdc_db:
+  query: |
+    SELECT pg_database_size(current_database())::float AS size_bytes,
+           (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database())::float AS connections
+  metrics:
+    - size_bytes:
+        usage: "GAUGE"
+        description: "database size on disk"
+    - connections:
+        usage: "GAUGE"
+        description: "current backend connections to this database"

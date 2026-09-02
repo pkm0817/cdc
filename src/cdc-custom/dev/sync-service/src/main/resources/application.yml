@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: cdc-custom-sync
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DataSource 두 벌. spring.datasource 가 아니라 datasource.* 를 쓰는 이유는
+# 자동 구성이 단일 DataSource 를 잡아버리는 것을 피하기 위해서다.
+#
+# reWriteBatchedInserts=true : pgjdbc 가 배치 INSERT 를 다중 VALUES 한 문장으로 다시
+#   써서 보낸다. 5,000행 배치의 왕복이 5,000번에서 몇 번으로 줄어든다 —
+#   이 방식이 빠른 이유의 큰 몫이다.
+# ─────────────────────────────────────────────────────────────────────────────
+datasource:
+  source:
+    url: jdbc:postgresql://${SOURCE_DB_HOST:localhost}:${SOURCE_DB_PORT:58432}/${SOURCE_DB_NAME:sourcedb}
+    username: ${SOURCE_DB_USER:postgres}
+    password: ${SOURCE_DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 4
+      pool-name: source-pool
+  target:
+    url: jdbc:postgresql://${TARGET_DB_HOST:localhost}:${TARGET_DB_PORT:58433}/${TARGET_DB_NAME:targetdb}?reWriteBatchedInserts=true
+    username: ${TARGET_DB_USER:postgres}
+    password: ${TARGET_DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 4
+      pool-name: target-pool
+
+sync:
+  # 한 주기에 읽을 outbox 줄 수. 이 방식에서 처리량을 올리는 유일한 손잡이다.
+  # 크게 잡을수록 더 많이 접히고 왕복도 줄지만, 한 트랜잭션이 길어진다.
+  batch-size: ${SYNC_BATCH_SIZE:5000}
+  # 밀린 것이 없을 때만 쉬는 시간. 밀려 있는 동안은 쉬지 않는다.
+  poll-interval-ms: ${SYNC_POLL_INTERVAL_MS:200}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      pipeline: cdc-custom
+
+logging:
+  level:
+    dev.cdccustom: ${LOG_LEVEL:INFO}
+
+server:
+  port: 8080

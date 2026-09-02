@@ -1,0 +1,79 @@
+# source DB 전용 커스텀 쿼리 (cdc-custom)
+# 메트릭 이름 = <최상위 키>_<컬럼명>  (예: cdc_source_rows{table_name="car"})
+#
+# CDC 판과 이름을 맞춘다(cdc_source_rows 등). 세 스택을 같은 대시보드·같은 쿼리로
+# 비교하기 위해서다. 다만 중신은 다르다 — 여기에는 publication 도 슬롯도 없다.
+#
+# 대상 테이블은 카탈로그에서 읽는다. 업무 표만 세고 살림살이(sync_*)는 뺀다.
+# 표가 늘어도 이 파일을 고칠 일이 없다.
+cdc_source:
+  query: |
+    SELECT t.tablename AS table_name,
+           (xpath('/row/c/text()',
+                  query_to_xml(format('SELECT count(*) AS c FROM %I.%I', t.schemaname, t.tablename),
+                               false, true, '')))[1]::text::float AS rows
+    FROM pg_tables t
+    WHERE t.schemaname = 'public'
+      AND t.tablename NOT LIKE 'sync\_%'
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name (discovered from the catalog)"
+    - rows:
+        usage: "GAUGE"
+        description: "exact row count in source table"
+
+# ── outbox 적체 ──────────────────────────────────────────────────────────────
+# CDC 의 cdc_slot_lag_bytes 에 해당하는 지표다. 반영이 멈추면 여기가 자란다.
+#
+#   pending    : 아직 반영되지 않은 줄 수
+#   oldest_age : 가장 오래 기다린 줄의 나이(초). 지연을 소스 쪽에서 본 값이다.
+#   size_bytes : outbox 표가 차지하는 디스크. 비우기가 도는지 확인하는 용도다.
+#
+# 슬롯과 달리 이 표는 우리가 지운다. 즉 적체가 커져도 원천 DB 가 죽지는 않고,
+# 대신 이 표만 커진다 — 위험의 성격이 "디스크 고갈"에서 "표 비대"로 바뀐다.
+cdc_outbox:
+  query: |
+    SELECT count(*)::float AS pending,
+           COALESCE(EXTRACT(EPOCH FROM (now() - min(changed_at))), 0)::float AS oldest_age_seconds,
+           pg_total_relation_size('sync_outbox')::float AS size_bytes
+    FROM sync_outbox
+  metrics:
+    - pending:
+        usage: "GAUGE"
+        description: "outbox rows not yet applied"
+    - oldest_age_seconds:
+        usage: "GAUGE"
+        description: "age of the oldest unapplied outbox row"
+    - size_bytes:
+        usage: "GAUGE"
+        description: "disk size of the outbox table"
+
+# ── WAL 사용량 ───────────────────────────────────────────────────────────────
+# 이 방식은 WAL 을 읽지 않지만 WAL 은 여전히 쓰인다(모든 쓰기가 그렇다).
+# 세 스택을 나란히 보면 REPLICA IDENTITY FULL 이 없는 쪽이 얼마나 적게 쓰는지가
+# 이 그래프에서 그대로 드러난다 — 그 차이가 이 방식을 만든 이유다.
+cdc_wal:
+  query: |
+    SELECT COALESCE(sum(size), 0)::float AS size_bytes,
+           count(*)::float               AS files
+    FROM pg_ls_waldir()
+  metrics:
+    - size_bytes:
+        usage: "GAUGE"
+        description: "total bytes held in pg_wal/"
+    - files:
+        usage: "GAUGE"
+        description: "number of WAL segment files"
+
+cdc_db:
+  query: |
+    SELECT pg_database_size(current_database())::float AS size_bytes,
+           (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database())::float AS connections
+  metrics:
+    - size_bytes:
+        usage: "GAUGE"
+        description: "database size on disk"
+    - connections:
+        usage: "GAUGE"
+        description: "current backend connections to this database"
