@@ -304,6 +304,7 @@ tags=cdc,embedded,debezium,verification,report
     desc: 커넥터가 원천에 마지막으로 쓴 뒤 지난 시간. up == 1 이어도 이 값이 자라면 silent failure 다. V6 결과: interval.ms 만 켜면 슬롯 전진 0 bytes, action.query 를 같이 걸어야 33,440 bytes 전진했다.
   panel #66 timeseries "격리 발생 추이 — 테이블별 (cdc_dead_letters_total)" @ x6 y160 18x7
     decimals=3
+    overrides 1건
     A  sum by (table) (rate(cdc_dead_letters_total[5m]))  legend="{{table}} 격리/s"
     B  sum(cdc_dlq_rows{status="PENDING"}) or vector(0)  legend="DLQ PENDING 잔량"
     desc: PDF 지적사항: 대사 불일치가 났을 때 진짜 유실인지 격리 때문인지 구분이 안 됐다. 격리된 이벤트는 유실이 아니라 추적되는 미반영이라 불일치의 정당한 사유다. 판정식(패널 "대사 판정")은 이미 |source − target| − DLQ(PENDING) 으로 보정돼 있고, 이 패널은
@@ -334,12 +335,14 @@ tags=cdc,embedded,debezium,verification,report
     desc: 1시간 최소 힙. 누수면 GC 를 해도 이 바닥값이 계단식으로 올라간다. 순간 힙 사용량은 부하에 따라 출렁이므로 바닥값을 봐야 한다.
   panel #72 timeseries "행업 판정 3요소 — up · 이벤트 유입 · 슬롯 전진" @ x0 y173 12x8
     decimals=2
+    overrides 1건
     A  max(up{job="cdc-service"})  legend="up (1=살아있음)"
     B  sum(rate(cdc_events_total[10m]))  legend="이벤트 유입 (events/s)"
     C  max(increase(cdc_slot_confirmed_lsn_bytes[10m]))  legend="10분간 슬롯 전진 (bytes)"
     desc: 셋을 겹쳐 봐야 유휴(이벤트도 0, 슬롯도 0, 그러나 원천에 변경이 없음)와 행업(원천에 변경이 있는데 0)이 갈린다. heartbeat 를 걸면 유휴 구간에서도 슬롯이 전진한다.
   panel #73 timeseries "JVM 힙 · GC 정지" @ x12 y173 12x8
-    decimals=3
+    unit=bytes  decimals=3
+    overrides 1건
     A  sum(jvm_memory_used_bytes{job="cdc-service", area="heap"})  legend="힙 사용"
     B  min_over_time(sum(jvm_memory_used_bytes{job="cdc-service", area="heap"})[1h:1m])  legend="1시간 힙 바닥"
     C  rate(jvm_gc_pause_seconds_sum{job="cdc-service"}[1m])  legend="초당 GC 정지 (s/s)"
