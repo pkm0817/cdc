@@ -108,3 +108,45 @@ CREATE TABLE cdc_dead_letter (
 
 -- 미처리 건 조회가 경보의 기준이므로 인덱스를 건다.
 CREATE INDEX cdc_dead_letter_status_idx ON cdc_dead_letter (pipeline, status, id);
+
+-- ============================================================================
+-- 필드 단위 변경 이력 (감사 로그)
+--
+-- V1 통과 기준의 나머지 절반이 "어떤 필드가 무엇에서 무엇으로 바뀌었는지"다.
+-- 이벤트에는 REPLICA IDENTITY FULL 덕에 before/after 가 다 실려 오지만,
+-- 핸들러는 after 를 통째로 upsert 하므로(멱등해서 그 편이 단순하다) 그 정보가
+-- 어디에도 남지 않는다. 남길 곳을 여기로 정했다.
+--
+-- 지표(Prometheus)가 아니라 표인 이유: 변경 필드명을 레이블로 쓰면 시계열이
+-- (테이블 × 컬럼 조합) 수만큼 생겨 카디널리티가 터진다. 지표로는 건수만 낸다
+-- (cdc_change_audit_rows_total{table}).
+--
+-- UPDATE 만 기록한다. INSERT 는 모든 필드가 새 값이라 "바뀐 필드"가 성립하지 않고,
+-- DELETE 는 행 전체가 사라지는 것이라 필드 목록이 정보를 주지 않는다.
+--
+-- identifiable = false 는 "안 바뀌었다"가 아니라 "판정을 못 했다"는 뜻이다.
+-- before 가 비어 있었다는 것이고, 곧 그 테이블의 REPLICA IDENTITY 가 FULL 이
+-- 아니라는 신호다. 둘을 같은 값으로 뭉개면 설정 사고를 사후에 못 찾는다.
+--
+-- 보관: 이 표는 원본 UPDATE 수만큼 자란다. 운영에서는 파티셔닝하거나
+-- recorded_at 기준 보관 기간을 정해 잘라내야 한다.
+-- ============================================================================
+CREATE TABLE cdc_change_audit (
+    id                BIGSERIAL   PRIMARY KEY,
+    pipeline          TEXT        NOT NULL,
+    source_table      TEXT        NOT NULL,
+    row_key           TEXT        NOT NULL,   -- 변경된 행의 PK 값
+    source_lsn        BIGINT      NOT NULL,
+    source_ts         TIMESTAMPTZ NOT NULL,   -- 원천 커밋 시각 (적재 시각이 아니다)
+    identifiable      BOOLEAN     NOT NULL,
+    changed_fields    TEXT        NOT NULL,   -- 쉼표 구분 컬럼명
+    unreadable_fields TEXT,                   -- TOAST 자리표시자로 판정 못 한 컬럼 (V5)
+    before_values     TEXT,                   -- 바뀐 필드에 한정한 JSON
+    after_values      TEXT,
+    recorded_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- "이 행이 언제 어떻게 바뀌었나"가 이 표의 주된 질문이다.
+CREATE INDEX cdc_change_audit_row_idx ON cdc_change_audit (source_table, row_key, source_lsn);
+-- 보관 기간을 잘라낼 때 쓴다.
+CREATE INDEX cdc_change_audit_recorded_idx ON cdc_change_audit (recorded_at);

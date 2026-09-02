@@ -2,6 +2,7 @@ package dev.embeddedcdc.application;
 
 import dev.embeddedcdc.domain.model.ChangeEvent;
 import dev.embeddedcdc.domain.model.FailureVerdict;
+import dev.embeddedcdc.domain.model.SourceTable;
 import dev.embeddedcdc.domain.port.in.ChangeEventHandler;
 import dev.embeddedcdc.domain.port.out.DeadLetterStore;
 import dev.embeddedcdc.domain.port.out.FailureClassifier;
@@ -88,9 +89,8 @@ public class ChangeEventService implements ChangeEventHandler {
 
         for (ChangeEvent event : batch) {
             try {
-                applier.applyOne(event);
-                metrics.eventApplied(event.table(), event.op().code());
-                metrics.endToEndLag(event.table(), event.sourceTsMs());
+                applier.applyOne(pipeline, event);
+                recordApplied(event);
             } catch (Exception e) {
                 haltIfUnrecoverable(e);
                 failures.add(new Failure(event, e));
@@ -103,6 +103,7 @@ public class ChangeEventService implements ChangeEventHandler {
         // 기록해 두면 재기동 후 정상 적용된 뒤에도 DLQ 에 남아 회계가 어긋난다.
         double ratio = (double) failures.size() / batch.size();
         if (ratio > props.haltOnDeadLetterRatio()) {
+            metrics.pipelineHalted("DLQ_RATIO");
             throw new PipelineHaltedException(String.format(
                     "격리 비율이 임계를 넘었다 (%d/%d = %.0f%%, 임계 %.0f%%). "
                             + "개별 데이터 문제가 아니라 구조 문제로 본다. 오프셋을 전진시키지 않고 멈춘다",
@@ -133,9 +134,10 @@ public class ChangeEventService implements ChangeEventHandler {
 
     private void haltIfUnrecoverable(Exception e) {
         if (e instanceof PipelineHaltedException halted) {
-            throw halted;
+            throw halted;   // 재던지기 — 여기서는 세지 않는다 (중복 계수)
         }
         if (classifier.classify(e) == FailureVerdict.HALT) {
+            metrics.pipelineHalted("UNRECOVERABLE");
             throw new PipelineHaltedException(
                     "계속 돌리면 안 되는 실패다. 오프셋을 전진시키지 않고 멈춘다: " + e, e);
         }
@@ -143,9 +145,24 @@ public class ChangeEventService implements ChangeEventHandler {
 
     private void recordSuccess(List<ChangeEvent> batch) {
         for (ChangeEvent event : batch) {
-            metrics.eventApplied(event.table(), event.op().code());
-            metrics.endToEndLag(event.table(), event.sourceTsMs());
+            recordApplied(event);
         }
+    }
+
+    /**
+     * 반영된 이벤트만 센다.
+     *
+     * 배치에는 우리가 다루지 않는 테이블의 이벤트도 섞여 온다 — heartbeat 테이블이 그렇다.
+     * 그것까지 세면 유휴 구간에도 cdc_events_total 이 꾸준히 오르고, 처리량 패널이
+     * "일이 있다"고 말한다. 진행 지점(체크포인트)은 그 이벤트로도 전진해야 하지만
+     * (그래야 슬롯과 어긋나지 않는다) 처리량은 아니다. 둘은 다른 질문이다.
+     */
+    private void recordApplied(ChangeEvent event) {
+        if (SourceTable.fromName(event.table()).isEmpty()) {
+            return;
+        }
+        metrics.eventApplied(event.table(), event.op().code());
+        metrics.endToEndLag(event.table(), event.sourceTsMs());
     }
 
     private void backoff(int attempt) {

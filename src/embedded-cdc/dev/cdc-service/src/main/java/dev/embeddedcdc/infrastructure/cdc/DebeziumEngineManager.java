@@ -48,16 +48,36 @@ public class DebeziumEngineManager implements SmartLifecycle {
     private ExecutorService executor;
     private volatile boolean running;
 
+    /** 캡처 갭으로 엔진을 띄우지 못했을 때의 사유. null 이면 정상이다. */
+    private volatile String haltedReason;
+
+    /** health 지표가 읽는다. 프로세스는 살아 있으므로 이걸 안 보면 정상으로 오인된다. */
+    public String haltedReason() {
+        return haltedReason;
+    }
+
     @Override
     public void start() {
         // 되받을 수 없는 구간이 생겼는데 모르고 기동하면 그 뒤로는 계속 어긋난 채로 돈다.
-        // 조용히 도는 것보다 기동을 거부하는 편이 낫다 — 재동기화는 사람이 판단할 일이다.
-        continuityGuard.detectGap().ifPresent(gap -> {
-            if (props.failOnCaptureGap()) {
-                throw new IllegalStateException("캡처 연결고리 유실: " + gap.describe());
-            }
-            log.error("캡처 연결고리 유실(기동은 계속함): {}", gap.describe());
-        });
+        // 조용히 도는 것보다 멈추는 편이 낫다 — 재동기화는 사람이 판단할 일이다.
+        var gap = continuityGuard.detectGap();
+        metrics.captureGap(gap.isPresent());
+
+        if (gap.isPresent() && props.failOnCaptureGap()) {
+            // 여기서 예외를 던지면 스프링 컨텍스트가 그대로 죽어 Prometheus 가 한 번도 못 긁는다.
+            // 탐지해 놓고 신호를 못 내보내면 탐지한 적 없는 것과 같다.
+            // 그래서 엔진만 띄우지 않고 앱은 살려 cdc_capture_gap=1 과 health DOWN 을 노출한다.
+            // "조용히 어긋난 채 도는 것보다 멈춘다"는 원래 의도는 그대로다 — 엔진이 안 도니까.
+            haltedReason = gap.get().describe();
+            // 여기서는 cdc_pipeline_halts_total 을 올리지 않는다. 이 정지는 첫 스크랩
+            // 이전에 확정되므로 카운터가 처음부터 1 인 채로 평평하고,
+            // increase() 기반 경보가 영원히 안 걸린다 — 있으나 마나 한 신호가 된다.
+            // 기동 시 정지는 게이지(cdc_capture_gap)가 맡고, 카운터는 런타임 정지
+            // (DLQ_RATIO / UNRECOVERABLE)만 센다. 그쪽은 0 에서 1 로 오르는 것이 보인다.
+            log.error("캡처 연결고리 유실 — 엔진을 기동하지 않는다: {}", haltedReason);
+            return;
+        }
+        gap.ifPresent(g -> log.error("캡처 연결고리 유실(기동은 계속함): {}", g.describe()));
 
         try {
             Path offsetPath = Path.of(props.offsetFile());
@@ -158,6 +178,17 @@ public class DebeziumEngineManager implements SmartLifecycle {
         p.setProperty("tombstones.on.delete", "false");     // Kafka 로그 압축용 null 메시지 불필요
         p.setProperty("decimal.handling.mode", "string");   // NUMERIC 을 base64 대신 "1234.56" 문자열로
         p.setProperty("converter.schemas.enable", "false"); // 거대한 schema 블록 제거
+
+        // ── heartbeat ──────────────────────────────────────────────────
+        // 관심 테이블에 변경이 없으면 confirmed_flush_lsn 이 전혀 움직이지 않아
+        // WAL 이 계속 쌓인다. interval 만으로는 부족하고(V6 측정: 0 bytes),
+        // action.query 가 publication 에 든 테이블에 쓰기를 만들어야 전진한다.
+        if (props.heartbeatIntervalMs() > 0) {
+            p.setProperty("heartbeat.interval.ms", String.valueOf(props.heartbeatIntervalMs()));
+            if (props.heartbeatActionQuery() != null && !props.heartbeatActionQuery().isBlank()) {
+                p.setProperty("heartbeat.action.query", props.heartbeatActionQuery());
+            }
+        }
         return p;
     }
 

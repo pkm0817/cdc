@@ -32,6 +32,14 @@ services:
       SOURCE_DB_PORT: "5432"
       TARGET_DB_HOST: target-postgres
       TARGET_DB_PORT: "5432"
+      # V1 — UPDATE 의 변경 필드를 cdc_change_audit 에 남길 테이블.
+      # 기본은 비어 있다(끔). 이벤트당 INSERT 한 건이 더 붙어 1만 건 UPDATE
+      # 버스트에서 처리량이 3분의 1 줄고 최대 지연이 목표 5초를 넘겼다(10.1초).
+      # PoC 에서는 감사 동작을 보여주기 위해 car 한 테이블에만 켠다.
+      # 성능 비교 측정처럼 조건을 맞춰야 할 때는 빈 값으로 덮어쓴다.
+      #   CDC_AUDIT_CHANGED_FIELDS= docker compose up -d cdc-service
+      # (`:-` 가 아니라 `-` 라 명시적으로 빈 값을 주면 그대로 빈 값이 된다)
+      CDC_AUDIT_CHANGED_FIELDS: ${CDC_AUDIT_CHANGED_FIELDS-car}
     ports:
       - "56080:8080"
     volumes:

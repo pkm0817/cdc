@@ -59,7 +59,7 @@ public class DeadLetterReprocessor {
             try {
                 // 체크포인트를 올리지 않는 경로다 — 지나간 LSN 을 다시 적용하는 것이므로
                 // 진행 지점을 건드리면 안 된다.
-                applier.applyOne(pending.event());
+                applier.applyOne(source.name(), pending.event());
                 deadLetters.markResolved(pending.id());
                 resolved++;
                 log.info("재처리 성공 dlqId={} table={} op={} lsn={}",
