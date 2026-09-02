@@ -25,6 +25,10 @@ cdc_source:
                                false, true, '')))[1]::text::float AS rows
     FROM pg_publication_tables t
     WHERE t.pubname = 'embedded_cdc_pub'
+      -- 파이프라인 자신의 살림살이는 대사 대상이 아니다.
+      -- cdc_heartbeat 는 publication 에는 들어가지만 target 에는 없다 —
+      -- 거르지 않으면 source/target 행 수 판정이 영구 불일치가 된다.
+      AND t.tablename NOT LIKE 'cdc\_%'
   metrics:
     - table_name:
         usage: "LABEL"
@@ -271,3 +275,24 @@ cdc_column:
     - avg_width_bytes:
         usage: "GAUGE"
         description: "ANALYZE 기준 평균 저장 폭. 2KB 근처면 TOAST 후보"
+
+# heartbeat 신선도 — "프로세스는 살아 있는데 실제로는 아무것도 안 하는" 상태의 판별식
+#
+# heartbeat.action.query 는 커넥터 자신의 커넥션으로 이 표에 쓴다. 따라서 age 가
+# 자라는 것은 곧 "커넥터가 원천에 붙어 있지 않다" 는 뜻이다 — up==1 이어도 그렇다.
+# 이벤트 처리량은 원천에 변경이 없으면 0 이 정상이라 이 판별에 쓸 수 없다.
+# 그래서 silent failure 탐지는 이 지표가 맡는다.
+#
+# 권한이 없어 쿼리가 실패해도 증상이 같다(age 가 자란다) — 그 경우도 여기서 잡힌다.
+cdc_heartbeat:
+  query: |
+    SELECT pipeline,
+           EXTRACT(EPOCH FROM (now() - beat_at))::float AS age_seconds
+    FROM cdc_heartbeat
+  metrics:
+    - pipeline:
+        usage: "LABEL"
+        description: "pipeline name that wrote the beat"
+    - age_seconds:
+        usage: "GAUGE"
+        description: "seconds since the connector last wrote a heartbeat (silent-failure detector)"
