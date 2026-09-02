@@ -33,6 +33,13 @@ services:
       SOURCE_DB_PORT: "5432"
       TARGET_DB_HOST: target-postgres
       TARGET_DB_PORT: "5432"
+      # 되받을 수 없는 WAL 구간을 발견해도 기동을 계속할지. 기본은 거부(true)다.
+      #
+      # 갭이 확인된 뒤 "그 구간은 포기하고 나머지 backlog 라도 따라잡겠다" 고
+      # 사람이 판단했을 때만 false 로 한 번 띄운다 — 복구 전용 스위치다:
+      #   CDC_FAIL_ON_CAPTURE_GAP=false podman compose up -d cdc-service
+      # 따라잡은 뒤에는 반드시 기본값으로 되돌려 가드를 다시 무장시킬 것.
+      CDC_FAIL_ON_CAPTURE_GAP: ${CDC_FAIL_ON_CAPTURE_GAP:-true}
     ports:
       - "57080:8080"
     healthcheck:
