@@ -1,16 +1,25 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 루트 compose — Debezium Embedded (Java) 스택의 유일한 진입점
+#
+#   docker compose up -d --build     # DB 2개 + 모니터링 + 앱까지 한 번에
+#   docker compose down              # 정지 (데이터 유지)
+#   docker compose down -v           # 볼륨까지 삭제
+#
+# 네트워크(emb-cdc-net)와 볼륨은 compose 가 만들고 지운다. 미리 만들 필요 없다.
+#
+# include 는 -f 여러 개(병합)와 다르다. 가져온 서비스를 이 파일에서 다시 선언해
+# 덮어쓰려 하면 병합되지 않고 "services.<이름> conflicts with imported resource" 로
+# 기동 자체가 막힌다. 그래서 cdc-service 의 depends_on 은 이 파일이 아니라
+# dev/docker-compose.app.yml 안에 둔다 — 다른 include 파일의 서비스를 depends_on
+# 으로 가리키는 것은 최종 모델에서 합쳐지므로 문제없다.
+#
+# include 안의 상대 경로(build context, 설정 파일 마운트)는 이 파일이 아니라
+# 그 compose 파일 자신의 위치를 기준으로 풀린다.
+# ─────────────────────────────────────────────────────────────────────────────
 name: embedded-cdc
 
 include:
-    - path: infra/db/docker-compose.source.yml
-    - path: infra/db/docker-compose.target.yml
-    - path: infra/monitoring/docker-compose.monitoring.yml
-    - path: dev/docker-compose.app.yml
-
-services:
-    cdc-service:
-      depends_on:
-        source-postgres:
-          condition: service_healthy
-        target-postgres:
-          condition: service_healthy
-
+  - path: infra/db/docker-compose.source.yml
+  - path: infra/db/docker-compose.target.yml
+  - path: infra/monitoring/docker-compose.monitoring.yml
+  - path: dev/docker-compose.app.yml

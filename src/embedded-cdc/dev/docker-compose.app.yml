@@ -6,14 +6,22 @@
 # offset(어디까지 읽었는지)은 named volume 의 파일에 저장되므로
 # 컨테이너를 재시작해도 멈춘 지점부터 이어서 읽는다.
 # ─────────────────────────────────────────────────────────────────────────────
-name: embedded-cdc-app
-
+# 루트 docker-compose.yml 의 include 로만 쓴다 — 단독으로 -f 지정해 올리면 프로젝트가
+# 따로 잡혀 같은 container_name/네트워크를 두고 충돌한다.
 networks:
   emb-cdc-net:
-    external: true
+    name: emb-cdc-net
 
 services:
   cdc-service:
+    # 두 DB 가 healthy 가 된 뒤에 올라온다. 원천이 아직 wal_level=logical 로 다시
+    # 뜨기 전에 붙으면 복제 슬롯 생성이 실패한 채로 재시도 루프에 빠진다.
+    # (루트 compose 는 include 한 서비스를 덮어쓸 수 없으므로 여기에 둔다)
+    depends_on:
+      source-postgres:
+        condition: service_healthy
+      target-postgres:
+        condition: service_healthy
     build:
       context: ./cdc-service
     image: embedded-cdc/cdc-service:local

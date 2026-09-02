@@ -1,21 +1,14 @@
-﻿# 전체 스택 기동: 네트워크 → source/target DB → 모니터링 → cdc-service
+﻿# 전체 스택 기동. 루트 docker-compose.yml 하나가 include 로 DB·모니터링·앱을 모두 끌어온다.
+# 네트워크와 볼륨은 compose 가 만든다 — 미리 만들 필요 없다.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
 # docker 가 없으면 podman 으로 (podman compose 는 docker-compose 를 위임 호출한다)
 $engine = if (Get-Command docker -ErrorAction SilentlyContinue) { "docker" } else { "podman" }
 
-# compose 파일들이 공유하는 외부 네트워크
-$networks = & $engine network ls --format "{{.Name}}"
-if ($networks -notcontains "emb-cdc-go-net") {
-    & $engine network create emb-cdc-go-net | Out-Null
-    Write-Host "network emb-cdc-go-net created"
-}
-
-& $engine compose -f "$root/infra/db/docker-compose.source.yml" up -d
-& $engine compose -f "$root/infra/db/docker-compose.target.yml" up -d
-& $engine compose -f "$root/infra/monitoring/docker-compose.monitoring.yml" up -d
-& $engine compose -f "$root/dev/docker-compose.app.yml" up -d --build
+# compose 파일을 하나씩 -f 로 올리지 않는다. 그렇게 하면 파일마다 프로젝트가 따로
+# 잡혀 같은 container_name 을 두고 충돌하고, 볼륨도 두 벌이 생긴다.
+& $engine compose -f "$root/docker-compose.yml" up -d --build
 
 Write-Host ""
 Write-Host "── 기동 완료 ─────────────────────────────────────"
