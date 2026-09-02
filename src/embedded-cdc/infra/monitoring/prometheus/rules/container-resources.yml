@@ -1,0 +1,28 @@
+# 컨테이너 리소스 지표 정규화
+#
+# 수집기가 엔진마다 다르다. rootless podman 에서는 cAdvisor 가 컨테이너를 이름으로
+# 잡지 못해(/var/lib/docker·docker.sock 이 없고 cgroup 이 user.slice 아래로 들어간다)
+# podman-exporter 를 쓰고, 도커 데몬이 있으면 cAdvisor 를 쓴다.
+#
+# 대시보드가 그 차이를 알 필요는 없다. 여기서 양쪽을 cdc:container_* 한 벌로 맞춰 둔다.
+# 지금 떠 있지 않은 수집기 쪽 규칙은 입력 시계열이 없으므로 아무 것도 만들지 않는다.
+# (둘을 동시에 띄우면 같은 name 에 대해 두 번 기록돼 중복 오류가 난다 — 하나만 띄울 것)
+groups:
+  - name: cdc-container-resources
+    rules:
+      # ── podman-exporter ────────────────────────────────────────────────
+      - record: cdc:container_cpu_cores
+        expr: sum by (name) (rate(podman_container_cpu_seconds_total[1m]))
+      - record: cdc:container_mem_bytes
+        expr: sum by (name) (podman_container_mem_usage_bytes)
+      - record: cdc:container_fs_writes_bytes
+        expr: sum by (name) (rate(podman_container_block_output_total[1m]))
+
+      # ── cAdvisor ───────────────────────────────────────────────────────
+      # name 이 빈 시계열은 컨테이너가 아닌 cgroup(=/, /system.slice ...)이라 버린다.
+      - record: cdc:container_cpu_cores
+        expr: sum by (name) (rate(container_cpu_usage_seconds_total{name!=""}[1m]))
+      - record: cdc:container_mem_bytes
+        expr: sum by (name) (container_memory_working_set_bytes{name!=""})
+      - record: cdc:container_fs_writes_bytes
+        expr: sum by (name) (rate(container_fs_writes_bytes_total{name!=""}[1m]))

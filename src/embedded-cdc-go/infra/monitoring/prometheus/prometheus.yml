@@ -2,6 +2,10 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
+# 수집기가 podman-exporter 든 cAdvisor 든 대시보드가 같은 이름을 읽도록 정규화한다.
+rule_files:
+  - /etc/prometheus/rules.yml
+
 scrape_configs:
   # cdc-service — 처리량, end-to-end 지연, 에러.
   # Java 판은 Actuator 의 /actuator/prometheus 였지만, 여기서는 go-pq-cdc 가 띄우는
@@ -21,13 +25,19 @@ scrape_configs:
   - job_name: target-db
     static_configs:
       - targets: ["target-exporter:9187"]
-      - targets: ["target-exporter:9187"]
 
-  # 컨테이너 리소스 — cAdvisor 는 도커 데몬 전체를 보므로 Java/Go 두 스택이 다 들어온다.
-  # 여기서 거르지 않고 대시보드 쿼리에서 이름으로 거른다(스택 비교 그래프를 그릴 수 있게).
-  - job_name: cadvisor
+  # 컨테이너 리소스 — rootless podman 에서는 cAdvisor 가 컨테이너를 이름으로 잡지
+  # 못하므로 podman 소켓을 직접 읽는 수집기를 쓴다.
+  # 대시보드는 rules.yml 이 만드는 cdc:container_* 만 읽는다.
+  - job_name: podman
     static_configs:
-      - targets: ["cadvisor:8080"]
+      - targets: ["podman-exporter:9882"]
+
+  # docker 데몬 환경이면 위 job 대신 아래를 살리고 --profile cadvisor 로 띄운다.
+  # (켜 둔 채로 두면 Targets 에 DOWN 이 하나 상주한다)
+  # - job_name: cadvisor
+  #   static_configs:
+  #     - targets: ["cadvisor:8080"]
 
   # 도커 VM 디스크·메모리 — WAL 고갈 감시
   - job_name: node
