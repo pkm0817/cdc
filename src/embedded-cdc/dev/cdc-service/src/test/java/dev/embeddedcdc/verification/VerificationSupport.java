@@ -1,15 +1,14 @@
 package dev.embeddedcdc.verification;
 
 import dev.embeddedcdc.domain.model.ChangeEvent;
-import dev.embeddedcdc.domain.model.RowData;
+import dev.embeddedcdc.domain.model.FieldDiff;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.TreeSet;
 
 /**
  * 검증 테스트 공통 준비물.
@@ -129,28 +128,91 @@ public abstract class VerificationSupport {
     /**
      * before 와 after 를 비교해 "실제로 바뀐 필드"만 뽑는다.
      * V1 의 필드 단위 변경 식별이 가능한지가 이 메서드가 값을 돌려주느냐로 판정된다.
+     *
+     * 판정식은 운영 코드의 FieldDiff 를 그대로 쓴다. 검증용 비교를 따로 두면
+     * 검증에서 통과한 것과 운영이 감사 로그에 남기는 것이 서로 다른 것이 된다.
      */
     protected static Set<String> changedFields(ChangeEvent event) {
-        RowData before = event.before();
-        RowData after = event.after();
-        if (before == null || after == null) {
-            return Set.of();
-        }
-        Set<String> changed = new TreeSet<>();
-        Set<String> columns = new LinkedHashSet<>(before.values().keySet());
-        columns.addAll(after.values().keySet());
-        for (String column : columns) {
-            Object b = before.values().get(column);
-            Object a = after.values().get(column);
-            if (b == null ? a != null : !b.equals(a)) {
-                changed.add(column);
-            }
-        }
-        return changed;
+        return FieldDiff.between(event.before(), event.after()).changed();
     }
 
     /** Debezium 이 값을 실을 수 없을 때 채워 넣는 자리표시자. V5 의 판정 기준이다. */
-    protected static final String TOAST_PLACEHOLDER = "__debezium_unavailable_value";
+    protected static final String TOAST_PLACEHOLDER = FieldDiff.UNAVAILABLE;
+
+    // ── 지연 측정과 시계 편차 ──────────────────────────────────────────────
+
+    /**
+     * 목표 지연. V1 통과 기준이며, 운영 경보 CdcLatencyBudgetExceeded 의 임계와 같은 값이다.
+     * 한쪽만 바꾸면 검증에서 통과한 것이 운영에서는 경보가 되거나 그 반대가 된다.
+     */
+    protected static final Duration LATENCY_BUDGET = Duration.ofSeconds(5);
+
+    /**
+     * 시계 편차 허용치 = 목표 지연의 10%.
+     *
+     * 커밋 기준 지연은 source 의 ts_ms(DB 시계)와 이 프로세스 시계의 차이다.
+     * 두 시계가 어긋나면 그 차이가 지연 수치에 통째로 섞인다 — 1차 실행에서
+     * 편차 3,561ms 에 지연 526ms 가 나와 재려던 값보다 오차가 7배 컸다.
+     * 오차가 재려는 값의 10% 를 넘으면 그 회차의 커밋 기준 지연은 판정에 쓰지 않는다.
+     */
+    protected static final Duration SKEW_TOLERANCE =
+            Duration.ofMillis(LATENCY_BUDGET.toMillis() / 10);
+
+    /**
+     * source DB 시계 - 이 프로세스 시계 (밀리초).
+     *
+     * 질의 직전·직후 로컬 시각의 중간값과 견준다. 보정하지 않으면 왕복 시간의 절반이
+     * 편차로 계상되어, 시계가 맞는 환경에서도 수 ms 가 계속 찍힌다.
+     * 운영의 SourceClockSkewProbe 와 같은 계산식이다.
+     */
+    protected static long clockSkewMs() {
+        long before = System.currentTimeMillis();
+        Long dbNowMs = Db.scalarOnSource(
+                "SELECT (extract(epoch from clock_timestamp()) * 1000)::bigint", Long.class);
+        long after = System.currentTimeMillis();
+        return dbNowMs == null ? 0 : dbNowMs - (before + after) / 2;
+    }
+
+    /**
+     * 한 회차의 지연 계측 결과.
+     *
+     * @param roundTripMs 변경을 넣은 시각부터 이벤트를 받은 시각까지. 로컬 시계 하나로만
+     *                    재므로 시계 편차와 무관하다 — 통과/실패 판정은 이 값으로 한다
+     * @param commitMs    source 커밋 시각(ts_ms) 기준 지연. 운영의
+     *                    cdc_end_to_end_lag_seconds 와 같은 계산식이라 편차가 섞인다
+     * @param skewMs      측정 시점의 시계 편차
+     * @param valid       편차가 허용치 안이라 commitMs 를 판정에 쓸 수 있는지
+     */
+    protected record LatencySample(long roundTripMs, long commitMs, long skewMs, boolean valid) {
+    }
+
+    /**
+     * 왕복 지연과 커밋 기준 지연을 함께 재서 기록한다.
+     *
+     * 두 수치를 나눠 남기는 이유: 운영 지표는 커밋 기준(ts_ms)이라 편차에 오염되는데,
+     * 검증에서 왕복 지연만 남기면 그 오염이 있었는지 없었는지를 보고서에서 알 수 없다.
+     */
+    protected static LatencySample recordLatency(String item, String name,
+                                                 long sentAtMs, ChangeEvent event) {
+        long receivedAt = System.currentTimeMillis();
+        long skew = clockSkewMs();
+        long roundTrip = receivedAt - sentAtMs;
+        long commit = receivedAt + skew - event.sourceTsMs();
+        boolean valid = Math.abs(skew) <= SKEW_TOLERANCE.toMillis();
+
+        VerificationReport.metric(item, name + " 왕복 지연", roundTrip + " ms");
+        VerificationReport.metric(item, name + " 커밋 기준 지연(편차 보정)",
+                commit + " ms" + (valid ? "" : "  ← 무효"));
+        VerificationReport.metric(item, name + " 시계 편차",
+                skew + " ms (허용 " + SKEW_TOLERANCE.toMillis() + " ms)");
+
+        if (!valid) {
+            VerificationReport.note(item, name + ": 시계 편차 " + skew + " ms 가 허용치 "
+                    + SKEW_TOLERANCE.toMillis() + " ms 를 넘었다 — 규칙에 따라 이 회차의 "
+                    + "커밋 기준 지연은 판정에 쓰지 않는다. 왕복 지연으로만 판정한다");
+        }
+        return new LatencySample(roundTrip, commit, skew, valid);
+    }
 
     protected static void sleep(long millis) {
         try {
