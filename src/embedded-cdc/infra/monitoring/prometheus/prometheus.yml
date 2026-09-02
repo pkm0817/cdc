@@ -2,6 +2,10 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
+# 경보 규칙. 임계값의 근거는 규칙 파일 상단 주석 참고 (검증 V1~V6 결과에서 온 값들이다).
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
 scrape_configs:
   # cdc-service (Spring Boot / Micrometer) — 처리량, end-to-end 지연, 에러
   - job_name: cdc-service

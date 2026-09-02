@@ -90,3 +90,170 @@ cdc_db:
     - connections:
         usage: "GAUGE"
         description: "current backend connections to this database"
+
+# ── WAL 생성량 카운터 (V2) ──────────────────────────────────────────────────
+# source 와 같은 축에 놓고 비교하기 위해 target 에서도 낸다. 대량 UPSERT 구간에는
+# 수신 측 WAL 이 오히려 더 크게 뛴다.
+cdc_wal_lsn:
+  query: |
+    SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0'::pg_lsn)::float AS bytes_total
+  metrics:
+    - bytes_total:
+        usage: "COUNTER"
+        description: "current WAL LSN as a byte offset — rate() 로 WAL 증가율(B/s)"
+
+# ── DB 시계 (V1) ────────────────────────────────────────────────────────────
+# source 시계와 짝을 이뤄 편차를 낸다. 근거는 queries-source.yaml 의 cdc_clock 주석 참고.
+cdc_clock:
+  query: |
+    SELECT extract(epoch from clock_timestamp())::float AS epoch_seconds
+  metrics:
+    - epoch_seconds:
+        usage: "GAUGE"
+        description: "DB wall clock at scrape time (unix epoch seconds)"
+
+# ── DLQ 총계 (V4 · V6) ──────────────────────────────────────────────────────
+# 격리된 이벤트는 유실이 아니라 "추적되는 미반영"이다. 대사 불일치가 났을 때
+# 진짜 유실인지 격리 때문인지 구분하려면 이 수치가 대시보드에 있어야 한다.
+# 대사 판정식:  |source − target| − DLQ(PENDING) = 0
+#
+# 집계 쿼리라서 표가 비어도 항상 0 이 나온다(테이블별 cdc_dlq 는 행이 없으면
+# 시계열 자체가 사라져 패널이 "No data" 가 된다 — 총계 쪽을 경보 기준으로 쓴다).
+cdc_dlq_total:
+  query: |
+    SELECT count(*) FILTER (WHERE status = 'PENDING')::float         AS pending,
+           count(*) FILTER (WHERE status = 'RETRY_REQUESTED')::float AS retry_requested,
+           count(*) FILTER (WHERE status = 'RESOLVED')::float        AS resolved,
+           count(*) FILTER (WHERE status = 'DISCARDED')::float       AS discarded,
+           count(*)::float                                           AS rows
+    FROM cdc_dead_letter
+  metrics:
+    - pending:
+        usage: "GAUGE"
+        description: "격리된 채 대기 중 — 대사 불일치의 정당한 사유이자 경보 대상"
+    - retry_requested:
+        usage: "GAUGE"
+        description: "재처리 대상으로 표시된 건. 재처리는 중복 유입 경로이기도 하다 (V4)"
+    - resolved:
+        usage: "GAUGE"
+        description: "재처리 성공"
+    - discarded:
+        usage: "GAUGE"
+        description: "버리기로 결정한 건"
+    - rows:
+        usage: "GAUGE"
+        description: "DLQ 전체 건수"
+
+# 테이블·상태별 DLQ 건수 — 어느 테이블이 막혔는지 본다.
+cdc_dlq:
+  query: |
+    SELECT source_table AS table_name,
+           status,
+           count(*)::float AS rows
+    FROM cdc_dead_letter
+    GROUP BY source_table, status
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "source table the event came from"
+    - status:
+        usage: "LABEL"
+        description: "PENDING / RETRY_REQUESTED / RESOLVED / DISCARDED"
+    - rows:
+        usage: "GAUGE"
+        description: "격리 건수"
+
+# ── 파이프라인 진행 지점 (V3) ───────────────────────────────────────────────
+# 이 값과 source 의 cdc_slot_restart_lsn_bytes 를 빼면 캡처 갭이 숫자로 나온다.
+#   cdc_checkpoint_lsn - cdc_slot_restart_lsn_bytes < 0  →  되받을 수 없는 구간 존재
+# SlotContinuityGuard 가 기동 시 하는 판정과 같은 식이다. 차이는 이쪽은 상시 관측이라는 것.
+#
+# stale_seconds 는 "마지막 반영 이후 흐른 시간"이다. 변경이 없으면 자연히 커지므로
+# 그 자체로는 이상이 아니고, 이벤트가 들어오는데도 커지면 정체다.
+cdc_checkpoint:
+  query: |
+    SELECT pipeline,
+           last_applied_lsn::float AS lsn,
+           extract(epoch from (now() - updated_at))::float AS stale_seconds
+    FROM cdc_checkpoint
+  metrics:
+    - pipeline:
+        usage: "LABEL"
+        description: "pipeline name"
+    - lsn:
+        usage: "GAUGE"
+        description: "마지막으로 반영한 source LSN (바이트 오프셋)"
+    - stale_seconds:
+        usage: "GAUGE"
+        description: "마지막 반영 이후 경과 시간"
+
+# ── 테이블별 방어 기제 (V4) ─────────────────────────────────────────────────
+# V4 를 테이블 하나로 통과시키면 안 되는 이유를 그대로 지표로 만든 것.
+#   lsn_guard=1  : upsert 에 source_lsn 비교가 붙어 중복도 순서 역전도 막힌다
+#   lsn_guard=0  : 단순 upsert — 중복은 값이 같아 무해하지만, 늦게 온 오래된
+#                  이벤트가 최신 값을 덮어쓸 수 있다
+# 컬럼 존재 여부로 판정하므로 테이블이 늘어도 손댈 것이 없다.
+cdc_guard:
+  query: |
+    SELECT t.tablename AS table_name,
+           max(CASE WHEN c.column_name = 'source_lsn' THEN 1 ELSE 0 END)::float AS lsn_guard,
+           max(CASE WHEN c.column_name = 'deleted'    THEN 1 ELSE 0 END)::float AS soft_delete
+    FROM pg_tables t
+    JOIN information_schema.columns c
+      ON c.table_schema = t.schemaname AND c.table_name = t.tablename
+    WHERE t.schemaname = 'public'
+      AND t.tablename NOT LIKE 'cdc\_%'
+      AND t.tablename NOT LIKE 'verify\_%'
+    GROUP BY t.tablename
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name"
+    - lsn_guard:
+        usage: "GAUGE"
+        description: "1 if the table carries source_lsn (순서 역전·중복 방어가 걸린 테이블)"
+    - soft_delete:
+        usage: "GAUGE"
+        description: "1 if the table uses soft delete (deleted 컬럼)"
+
+# ── 고아 참조 대사 (V6) ─────────────────────────────────────────────────────
+# 건수·체크섬 대사로는 안 잡히는 종류의 불일치다. 양쪽 테이블 건수가 각각 맞아도
+# 참조가 끊어질 수 있다. 수신 측에는 FK 를 걸지 않으므로 DB 가 막아주지 않는다.
+#
+# 관계를 목록으로 적지 않는다. `<부모>_id` 규칙으로 카탈로그에서 찾는다
+# (member.grade_id → grade). 규칙에 맞는 컬럼이 생기면 자동으로 대사 대상이 된다.
+#
+# 비용: 관계마다 LEFT JOIN 전체 스캔이다. cdc_target_rows 의 count(*) 와 같은 성격의
+# 비용이라 PoC 규모에서는 문제없지만, 대상 테이블이 커지면 이 쿼리부터 구간 한정으로 옮긴다.
+cdc_orphan:
+  query: |
+    SELECT c.table_name AS child_table,
+           p.table_name AS parent_table,
+           (xpath('/row/c/text()',
+                  query_to_xml(format(
+                    'SELECT count(*) AS c FROM %I.%I ch LEFT JOIN %I.%I pa ON pa.id = ch.%I WHERE ch.%I IS NOT NULL AND pa.id IS NULL',
+                    c.table_schema, c.table_name, p.table_schema, p.table_name, c.column_name, c.column_name),
+                  false, true, '')))[1]::text::float AS rows
+    FROM information_schema.columns c
+    JOIN information_schema.tables p
+      ON p.table_schema = c.table_schema
+     AND p.table_type = 'BASE TABLE'
+     AND p.table_name = left(c.column_name, length(c.column_name) - 3)
+    WHERE c.table_schema = 'public'
+      AND c.column_name LIKE '%\_id'
+      AND c.table_name NOT LIKE 'cdc\_%'
+      AND c.table_name NOT LIKE 'verify\_%'
+      AND EXISTS (SELECT 1 FROM information_schema.columns pc
+                  WHERE pc.table_schema = p.table_schema
+                    AND pc.table_name = p.table_name
+                    AND pc.column_name = 'id')
+  metrics:
+    - child_table:
+        usage: "LABEL"
+        description: "referencing table"
+    - parent_table:
+        usage: "LABEL"
+        description: "referenced table (컬럼 이름 규칙으로 추론)"
+    - rows:
+        usage: "GAUGE"
+        description: "부모가 사라진 자식 행 수. 0 이 아니면 참조 무결성이 깨진 것"
