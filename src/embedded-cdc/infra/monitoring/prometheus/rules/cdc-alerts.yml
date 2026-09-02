@@ -1,0 +1,181 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CDC 파이프라인 경보 규칙
+#
+# 임계값의 출처는 검증 결과다. 임의로 고른 숫자가 아니다.
+#   슬롯 lag 512MB/2GB : V2 의 165 bytes/변경 기준으로 약 320만 / 1300만 변경분
+#   지연 5초           : V1 의 LATENCY_BUDGET (코드에 박혀 있는 값)
+#   시계 편차 0.5초    : 목표 지연의 10%. 이보다 크면 그 회차 지연값을 못 쓴다
+#
+# 알림 전송 경로(Alertmanager)는 아직 붙이지 않았다. 지금은 Prometheus 의
+# Alerts 탭과 Grafana 에서 상태를 확인하는 용도다.
+# ─────────────────────────────────────────────────────────────────────────────
+groups:
+  - name: cdc-pipeline
+    interval: 15s
+    rules:
+
+      # ── V3 : 캡처 연결고리 ─────────────────────────────────────────────────
+      # 기동 거부(fail-on-capture-gap)도 여기에 걸린다. 프로세스가 안 뜨면
+      # /actuator/prometheus 스크랩이 실패해 up 이 0 이 되기 때문이다.
+      # 앱에 HALT/기동실패 카운터가 생기기 전까지는 이것이 유일한 신호다.
+      - alert: CdcServiceDown
+        expr: up{job="cdc-service"} == 0
+        for: 1m
+        labels: { severity: critical, verification: V3 }
+        annotations:
+          summary: "cdc-service 스크랩 실패 — 프로세스 중단 또는 기동 거부"
+          description: "SlotContinuityGuard 가 캡처 갭을 탐지해 기동을 거부한 경우도 여기에 잡힌다. 컨테이너 로그를 먼저 확인할 것."
+
+      # 재시작 루프. 기동 거부가 반복되면 up 이 0/1 을 오가서 위 규칙만으로는 놓친다.
+      - alert: CdcServiceRestartLoop
+        expr: changes(process_start_time_seconds{job="cdc-service"}[15m]) > 3
+        for: 1m
+        labels: { severity: critical, verification: V3 }
+        annotations:
+          summary: "cdc-service 15분 내 4회 이상 재기동"
+          description: "기동 직후 실패하는 상태다. 대시보드에서는 '이벤트가 안 오네' 정도로만 보이므로 이 경보가 필요하다."
+
+      # 저장된 오프셋이 슬롯이 보유한 가장 오래된 WAL 보다 앞서면 되받을 수 없는 구간이 있다.
+      # SlotContinuityGuard 가 기동 시 하는 판정과 같은 식을 상시로 돌리는 것.
+      - alert: CdcCaptureGap
+        expr: (max(cdc_checkpoint_lsn) - max(cdc_slot_restart_lsn_bytes)) < 0
+        for: 1m
+        labels: { severity: critical, verification: V3 }
+        annotations:
+          summary: "캡처 갭 — 체크포인트 LSN 이 슬롯 restart_lsn 보다 뒤"
+          description: "끊긴 구간은 다시 받을 수 없다. 재동기화 절차로 넘어갈 것(원본에서 사라진 행 처리 단계 포함)."
+
+      - alert: CdcSlotMissing
+        expr: absent(cdc_slot_active)
+        for: 1m
+        labels: { severity: critical, verification: V3 }
+        annotations:
+          summary: "복제 슬롯이 존재하지 않음"
+          description: "슬롯이 삭제됐다. PostgreSQL 16 은 페일오버 시 슬롯을 승계하지 않으므로 이중화 전환 후에도 이 상태가 된다."
+
+      - alert: CdcSlotInactive
+        expr: cdc_slot_active == 0
+        for: 2m
+        labels: { severity: warning, verification: V2 }
+        annotations:
+          summary: "슬롯 {{ $labels.slot_name }} 에 컨슈머가 붙어 있지 않음"
+          description: "이 상태가 지속되면 WAL 이 계속 쌓인다. 다운 허용시간 패널을 함께 볼 것."
+
+      # 슬롯이 살아 있으면서 쓸모없어지는 상태. 삭제보다 실무에서 잦다.
+      - alert: CdcSlotWalUnreserved
+        expr: cdc_slot_status_code >= 2
+        for: 1m
+        labels: { severity: warning, verification: V3 }
+        annotations:
+          summary: "슬롯 {{ $labels.slot_name }} wal_status = {{ $labels.wal_status }}"
+          description: "unreserved 는 필요한 WAL 이 곧 잘린다는 뜻이다. 이 단계에서 대응하면 재동기화를 피할 수 있다."
+
+      - alert: CdcSlotWalLost
+        expr: cdc_slot_status_code == 3
+        labels: { severity: critical, verification: V3 }
+        annotations:
+          summary: "슬롯 {{ $labels.slot_name }} wal_status = lost — 필요한 WAL 이 이미 잘림"
+          description: "V3 상황 확정. 재동기화 외에 복구 방법이 없다."
+
+      # ── V2 : Provider Down · WAL 압력 ─────────────────────────────────────
+      - alert: CdcSlotLagWarning
+        expr: cdc_slot_lag_bytes > 536870912
+        for: 5m
+        labels: { severity: warning, verification: V2 }
+        annotations:
+          summary: "슬롯 보유 WAL 512MB 초과 ({{ $value | humanize1024 }}B)"
+          description: "165 bytes/변경 기준 약 320만 건분. 컨슈머가 살아 있는지 먼저 확인할 것."
+
+      - alert: CdcSlotLagCritical
+        expr: cdc_slot_lag_bytes > 2147483648
+        for: 1m
+        labels: { severity: critical, verification: V2 }
+        annotations:
+          summary: "슬롯 보유 WAL 2GB 초과 ({{ $value | humanize1024 }}B)"
+          description: "max_slot_wal_keep_size 가 -1 이면 디스크가 찰 때까지 계속 자란다. source DB 가 먼저 죽는다."
+
+      # 다운 허용시간 = 디스크 여유 / WAL 증가율. V2 가 산출을 요구한 바로 그 값이다.
+      - alert: CdcWalDiskHeadroomLow
+        # 나눗셈 양쪽을 모두 집계해 라벨을 벗긴다. 한쪽에만 라벨이 남으면 매칭이 안 돼
+        # 결과가 통째로 비고, 경보는 조용히 영원히 안 뜬다.
+        # 마운트포인트를 명시하는 이유: fstype 만으로 거르면 같은 장치가 여러 마운트로
+        # 중복 노출되고 작은 장치까지 섞인다.
+        expr: >
+          (max(node_filesystem_avail_bytes{fstype=~"ext4|xfs", mountpoint="/var/lib"})
+           or max(node_filesystem_avail_bytes{fstype=~"ext4|xfs"}))
+          / clamp_min(max(rate(cdc_wal_lsn_bytes_total{job="source-db"}[10m])), 1) < 3600
+        for: 5m
+        labels: { severity: critical, verification: V2 }
+        annotations:
+          summary: "현재 WAL 증가율 기준 디스크 여유가 1시간 미만"
+          description: "허용시간이 이 밑으로 내려가면 컨슈머 복구보다 디스크 확보가 먼저다."
+
+      # ── V1 : 지연 · 처리량 ────────────────────────────────────────────────
+      - alert: CdcLatencyBudgetExceeded
+        expr: cdc_end_to_end_lag_seconds_max > 5
+        for: 2m
+        labels: { severity: warning, verification: V1 }
+        annotations:
+          summary: "End-to-End 지연이 5초 예산 초과 (table={{ $labels.table }})"
+          description: "먼저 시계 편차 패널을 확인할 것. 편차가 0.5초를 넘으면 이 수치 자체를 신뢰할 수 없다."
+
+      # 지연 수치의 신뢰성 자체를 감시한다. 1차 실행에서 3,561ms 편차가 났던 항목.
+      - alert: CdcClockSkew
+        # DB 시계 − 스크랩 시각만 잰다. 앱 wall clock 을 내는 기본 메트릭이 없어서다.
+        # process_start_time_seconds + process_uptime_seconds 로 대리 계산하면 틀린다 —
+        # JVM uptime 은 호스트 절전 구간을 안 세므로(컨테이너 9시간 가동에 uptime 4.96시간)
+        # 절전 시간이 그대로 가짜 편차로 잡힌다.
+        expr: >
+          abs(max(cdc_clock_epoch_seconds{job="source-db"}
+                  - timestamp(cdc_clock_epoch_seconds{job="source-db"}))) > 0.5
+        for: 5m
+        labels: { severity: warning, verification: V1 }
+        annotations:
+          summary: "source DB 시계와 수집기 시계의 편차가 0.5초 초과"
+          description: "목표 지연(5초)의 10% 를 넘었다. 이 구간에 측정한 지연값은 보고서에서 제외할 것."
+
+      # ── V4 · V6 : 정합성 ──────────────────────────────────────────────────
+      - alert: CdcDeadLetterPending
+        expr: cdc_dlq_total_pending > 0
+        for: 5m
+        labels: { severity: warning, verification: V6 }
+        annotations:
+          summary: "DLQ 에 미반영 건 {{ $value }}건"
+          description: "유실은 아니지만 추적되는 미반영이다. 대사 불일치의 정당한 사유이므로 판정식에서 빼고 본다."
+
+      # 판정식: |source − target| − DLQ(PENDING) = 0
+      # DLQ 로 설명되지 않는 차이만 남긴다. 반영 지연을 걸러내려 10분을 기다린다.
+      - alert: CdcReconcileMismatch
+        expr: >
+          abs(sum by (table_name) (cdc_source_rows) - sum by (table_name) (cdc_target_rows))
+          - (
+              sum by (table_name) (cdc_dlq_rows{status="PENDING"})
+              or sum by (table_name) (cdc_source_rows * 0)
+            ) != 0
+        for: 10m
+        labels: { severity: critical, verification: V6 }
+        annotations:
+          summary: "대사 불일치 — {{ $labels.table_name }} 차이 {{ $value }}건 (DLQ 로 설명 안 됨)"
+          description: "건수가 같아도 값이 다를 수 있으므로 체크섬 대사(verify 스크립트)를 함께 돌릴 것."
+
+      - alert: CdcOrphanRows
+        expr: cdc_orphan_rows > 0
+        for: 10m
+        labels: { severity: warning, verification: V6 }
+        annotations:
+          summary: "고아 참조 — {{ $labels.child_table }} → {{ $labels.parent_table }} {{ $value }}건"
+          description: "건수·체크섬 대사로는 안 잡히는 불일치다. 수신 측에 FK 가 없어 DB 가 막아주지 않는다."
+
+      # ── V6 : heartbeat ────────────────────────────────────────────────────
+      # 관심 테이블에 변경이 없으면 슬롯이 전혀 전진하지 않는다. heartbeat.interval.ms 만으로는
+      # 부족하고 heartbeat.action.query 가 publication 테이블에 쓰기를 만들어야 confirm 이 일어난다.
+      # 아직 둘 다 설정에 없으므로 이 경보는 현재 구성에서 뜨는 것이 정상이다.
+      - alert: CdcSlotNotAdvancing
+        expr: >
+          increase(cdc_slot_confirmed_lsn_bytes[30m]) == 0
+          and on() (sum(rate(cdc_events_total[30m])) < 0.01)
+        for: 30m
+        labels: { severity: warning, verification: V6 }
+        annotations:
+          summary: "유휴 구간에서 슬롯이 30분간 전진하지 않음"
+          description: "heartbeat 미설정 증상이다. interval + action.query 를 함께 걸어야 한다."

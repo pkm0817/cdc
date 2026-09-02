@@ -1,0 +1,2898 @@
+{
+  "uid": "embedded-cdc-verify",
+  "title": "CDC 검증 리포트 (V1–V6)",
+  "description": "PoC CDC 검증 항목 V1~V6 을 그대로 섹션으로 나눈 보고서용 대시보드. 계측 원본은 dev/cdc-service/build/verification/results.md",
+  "tags": [
+    "cdc",
+    "embedded",
+    "debezium",
+    "verification",
+    "report"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "이 대시보드 쓰는 법",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**V1~V6 검증 항목을 그대로 섹션으로 나눈 리포트용 대시보드다.** 각 섹션은 `통과 기준 → 현재 측정치 → 남은 결정` 순으로 배치했고, 섹션 끝의 메모 패널이 보고서에 그대로 옮길 문장이다.\n\n| 읽는 순서 | 이유 |\n|---|---|\n| ① 시계 편차부터 본다 | 편차가 0.5초(목표 지연의 10%)를 넘으면 그 구간의 **지연 수치를 못 쓴다**. 1차 실행에서 3,561ms 편차가 났고 재려던 지연은 526ms였다 |\n| ② 슬롯 상태 → 지연 → 정합성 | 슬롯이 끊긴 상태에서는 아래 수치가 전부 무의미하다 |\n| ③ 대사는 DLQ를 뺀 판정식으로 | `\\|source − target\\| − DLQ(PENDING) = 0`. 격리 건은 유실이 아니라 추적되는 미반영이다 |\n\n- 상시 계측으로 대체할 수 없는 항목(체크섬 대사, 필드 단위 변경 식별)은 패널 대신 메모로 두고 근거 SQL을 적어놨다. 없는 값을 있는 척하지 않기 위해서다.\n- 경보 임계값은 `prometheus/rules/cdc-alerts.yml` 에 있고, 상태는 Prometheus **Alerts** 탭에서 본다.\n- 계측 원본은 `dev/cdc-service/build/verification/results.md` (V1~V6 13건 통과), JUnit 리포트는 `build/reports/tests/test/index.html`."
+      }
+    },
+    {
+      "id": 2,
+      "type": "row",
+      "title": "V1 — 기본 캡처 기능 · 통과 기준: 지연 5초 이내 + 필드 단위 변경 식별",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "panels": []
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "End-to-End 지연 (최대)",
+      "description": "source 커밋 → target 반영. LATENCY_BUDGET 5초가 통과선이다. 측정치: INSERT 531ms / UPDATE 507ms / DELETE 502ms",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_end_to_end_lag_seconds_max)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "End-to-End 지연 (평균)",
+      "description": "Timer 의 sum/count 비율. 최대값이 튀는지 평균이 밀리는지 구분한다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(cdc_end_to_end_lag_seconds_sum[1m])) / clamp_min(sum(rate(cdc_end_to_end_lag_seconds_count[1m])), 0.001)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "시계 편차 |source DB − 스크랩|",
+      "description": "DB 시계가 수집기 시계와 얼마나 어긋나 있는지. 0.5초(목표 지연의 10%)를 넘으면 그 구간 지연 수치를 보고서에서 제외한다. time() 대신 timestamp() 를 써서 스크랩 간격(5s)이 편차로 잡히지 않게 했다. 앱 wall clock 은 노출되는 기본 메트릭이 없어 DB 쪽만 잰다 — 아래 메모 참고.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "abs(max(cdc_clock_epoch_seconds{job=\"source-db\"} - timestamp(cdc_clock_epoch_seconds{job=\"source-db\"})))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "운영 처리량 (events/s)",
+      "description": "target 적재까지 포함한 실제 처리량. V1 의 7,621 events/s 는 캡처만의 수치라 이 값과 다르다 — 보고서에는 둘 다 기록한다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(cdc_events_total[1m]))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "지연 vs 5초 예산",
+      "description": "빨간 선이 LATENCY_BUDGET. 예산을 넘은 구간은 시계 편차 패널과 대조해 실제 지연인지 편차인지 가른다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_end_to_end_lag_seconds_max)",
+          "legendFormat": "지연 최대"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(cdc_end_to_end_lag_seconds_sum[1m])) / clamp_min(sum(rate(cdc_end_to_end_lag_seconds_count[1m])), 0.001)",
+          "legendFormat": "지연 평균"
+        },
+        {
+          "refId": "C",
+          "expr": "vector(5)",
+          "legendFormat": "LATENCY_BUDGET (5s)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "연산별 처리량 (events/s)",
+      "description": "op 레이블로 r(snapshot) / c / u / d 가 구분된다. 대량 배치 구간에서 특정 연산만 밀리는지 본다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (op) (rate(cdc_events_total[1m]))",
+          "legendFormat": "{{op}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "시계 편차 추이 (부호 포함)",
+      "description": "양수면 DB 시계가 수집기보다 앞선 것. 세 번째 선(source − target)이 0 에서 벌어지면 컨테이너 간 시계가 실제로 갈라진 것이라 지연 측정 자체를 다시 해야 한다.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_clock_epoch_seconds{job=\"source-db\"} - timestamp(cdc_clock_epoch_seconds{job=\"source-db\"}))",
+          "legendFormat": "source DB − 스크랩"
+        },
+        {
+          "refId": "B",
+          "expr": "max(cdc_clock_epoch_seconds{job=\"target-db\"} - timestamp(cdc_clock_epoch_seconds{job=\"target-db\"}))",
+          "legendFormat": "target DB − 스크랩"
+        },
+        {
+          "refId": "C",
+          "expr": "max(cdc_clock_epoch_seconds{job=\"source-db\"} - timestamp(cdc_clock_epoch_seconds{job=\"source-db\"})) - max(cdc_clock_epoch_seconds{job=\"target-db\"} - timestamp(cdc_clock_epoch_seconds{job=\"target-db\"}))",
+          "legendFormat": "source DB − target DB"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "s",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "text",
+      "title": "V1 메모 — 보고서에 쓸 문장",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**통과 기준 확정** — `N초`로 비워둔 목표 지연은 코드의 `LATENCY_BUDGET = 5초`로 확정한다.\n\n**측정치**\n- INSERT 531ms · UPDATE 507ms · DELETE 502ms — 모두 예산 내\n- 변경 필드 식별: UPDATE 이벤트에서 `[amount, status]` 두 개만 나옴. 안 건드린 필드는 변경으로 안 잡힘\n- 캡처 처리량 7,621 events/s (10,000/10,000 수신, LSN 단조 증가)\n\n**주의해서 적을 것**\n- 7,621 events/s 는 **캡처만의 수치다.** 테스트 하네스가 이벤트를 큐에 담기만 하고 target 적재(JDBC upsert)가 빠져 있다. 운영 처리량은 왼쪽 stat(`rate(cdc_events_total[1m])`)로 따로 재고 **두 수치를 같이 기록**한다.\n- 1차 실행 시계 편차 3,561ms > 재려던 지연 526ms(7배). 2차는 -14ms로 정상. **편차가 목표 지연의 10%를 넘으면 그 회차 지연값은 버린다**를 규칙으로 못박는다.\n\n**시계 편차 패널이 재는 것 / 못 재는 것**\n`cdc_end_to_end_lag_seconds` 는 source `ts_ms`(DB 시계)와 target 적재 시각(**앱 시계**)의 차다. 그런데 **앱의 wall clock 을 내주는 기본 메트릭이 없다.** `process_start_time_seconds + process_uptime_seconds` 로 대리 계산을 시도했으나 틀렸다 — JVM uptime 은 **호스트 절전 구간을 세지 않아서** 컨테이너가 9시간 떠 있는데 uptime 은 4.96시간이었고 편차가 -16,480초로 나왔다. 그래서 이 패널은 **DB 시계 − 수집기 시계**만 재는 가드레일이고, source↔앱 편차의 정확한 값은 **검증 스크립트가 실측한 3,561ms / -14ms** 가 원자료다. 상시 관측으로 옮기려면 앱에 wall clock gauge 를 하나 노출해야 한다.\n\n**필드 단위 변경 식별을 메트릭으로 만들지 않는 이유**\n운영 코드에는 일부러 없다. `changedFields()` 는 검증 전용이고 핸들러는 `after` 를 통째로 upsert 한다(멱등성 때문에 그쪽이 단순함). 변경 필드명을 Prometheus 레이블로 쓰면 카디널리티가 터진다. 필요하면 **감사 로그 테이블**로 간다. 전제는 `REPLICA IDENTITY FULL` — DEFAULT면 before에 PK만 와서 비교 자체가 안 된다(V5와 엮임)."
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "V2 — Provider Down · 통과 기준: 유실 0건 + 다운 허용시간 산출",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "슬롯 보유 WAL",
+      "description": "컨슈머가 아직 confirm 하지 않아 붙잡혀 있는 WAL. 경보 임계 warn 512MB / crit 2GB (165 bytes/변경 기준 약 320만 / 1300만 건분)",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_slot_lag_bytes)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 536870912
+              },
+              {
+                "color": "red",
+                "value": 2147483648
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "WAL 증가율",
+      "description": "pg_current_wal_lsn() 을 카운터로 노출해 rate() 로 뽑는다. 다운 허용시간 산출의 분모.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(cdc_wal_lsn_bytes_total{job=\"source-db\"}[5m])"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "unit": "Bps",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "변경 1건당 WAL",
+      "description": "REPLICA IDENTITY FULL 기준 측정치는 165 bytes/변경. DEFAULT 로 바꿔 같은 부하를 걸면 이 값이 V5 비용을 숫자로 보여준다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(rate(cdc_wal_lsn_bytes_total{job=\"source-db\"}[5m])) / clamp_min(sum(rate(cdc_events_total[5m])), 0.001)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "unit": "bytes",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "다운 허용시간 (추정)",
+      "description": "디스크 여유 ÷ 현재 WAL 증가율. V2 가 산출을 요구한 값이며, max_slot_wal_keep_size 가 -1 인 지금은 이것이 사실상의 상한이다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max(node_filesystem_avail_bytes{fstype=~\"ext4|xfs\", mountpoint=\"/var/lib\"}) or max(node_filesystem_avail_bytes{fstype=~\"ext4|xfs\"})) / clamp_min(max(rate(cdc_wal_lsn_bytes_total{job=\"source-db\"}[5m])), 1)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3600
+              },
+              {
+                "color": "green",
+                "value": 86400
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "슬롯 보유 WAL · 무효화까지 남은 여유",
+      "description": "safe_wal_size 가 -1 이면 max_slot_wal_keep_size 가 -1(상한 없음)이라 산출이 불가능하다는 뜻이다. 상한을 걸면 이 선이 실제 값으로 바뀐다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_slot_lag_bytes",
+          "legendFormat": "보유 WAL — {{slot_name}}"
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_slot_safe_wal_size_bytes",
+          "legendFormat": "safe_wal_size — {{slot_name}}"
+        },
+        {
+          "refId": "C",
+          "expr": "cdc_slot_active",
+          "legendFormat": "슬롯 active(1/0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "WAL 증가율 vs 디스크 여유",
+      "description": "두 선의 비가 곧 다운 허용시간이다. 다운 시간을 2초 / 1분 / 10분으로 늘려가며 증가가 선형인지 확인하면 외삽 근거가 된다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(cdc_wal_lsn_bytes_total{job=\"source-db\"}[5m])",
+          "legendFormat": "source WAL 증가율 (B/s)"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(cdc_wal_lsn_bytes_total{job=\"target-db\"}[5m])",
+          "legendFormat": "target WAL 증가율 (B/s)"
+        },
+        {
+          "refId": "C",
+          "expr": "(max(node_filesystem_avail_bytes{fstype=~\"ext4|xfs\", mountpoint=\"/var/lib\"}) or max(node_filesystem_avail_bytes{fstype=~\"ext4|xfs\"}))",
+          "legendFormat": "디스크 여유 (bytes)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "디스크 여유 (bytes)"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "현재 운영 파라미터 (권고값 대비)",
+      "description": "max_slot_wal_keep_size 가 -1 이면 다운 허용시간이 '디스크 찰 때까지'다. 이 표가 보고서의 '운영 전환시 권고 설정값' 항목의 현재값 열이 된다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_guc_value{job=\"source-db\"}",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "server": true
+            },
+            "renameByName": {
+              "Value": "현재값",
+              "name": "파라미터",
+              "unit": "단위"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "text",
+      "title": "V2 메모 — 보고서에 쓸 문장",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**측정치** — 다운 중 1000건 → 재기동 후 1000/1000, **유실 0**. 슬롯이 붙잡은 WAL 161.9 KiB, **165 bytes/변경**.\n\n**V2 의 실질 결론은 `max_slot_wal_keep_size` 를 어떻게 할지다.**\n\n| 선택 | 결과 |\n|---|---|\n| `-1` 유지 (현재) | 허용시간 = \"디스크 찰 때까지\". source DB 가 먼저 죽는다 |\n| 상한을 건다 | 허용시간이 숫자로 나오는 대신, 초과하는 순간 슬롯이 무효화 → **V3 상황으로 넘어간다** |\n\n**디스크 고갈이냐 재동기화냐 중 무엇을 택할지 정하고 문서에 남기는 것이 이 항목의 산출물이다.** 권고는 디스크 여유의 20~30%.\n\n**165 bytes/변경은 REPLICA IDENTITY FULL 기준이다.** V5 요구 때문에 전 테이블 FULL 로 걸어놨고, FULL 은 update/delete 마다 변경 전 행 전체를 WAL에 쓴다. **V5 요구가 V2 디스크 압력을 키우고 있는 구조**이므로, 같은 부하로 DEFAULT vs FULL WAL 증가율을 비교 측정해 숫자를 남긴다(위 '변경 1건당 WAL' 패널이 그 측정용이다).\n\n**재기동 시나리오** — 다운 시간을 2초 / 1분 / 10분으로 늘려가며 WAL 증가가 선형인지 확인한다. 허용시간 외삽의 근거가 된다."
+      }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "V3 — 캡처 연결고리 끊김 · 통과 기준: 유실 자동 탐지 + 재동기화 절차 문서화",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "panels": []
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "슬롯 wal_status",
+      "description": "슬롯이 삭제되는 것보다 '살아있으면서 쓸모없어지는' 상태가 실무에선 더 잦다. unreserved 단계에서 대응하면 재동기화를 피할 수 있다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_slot_status_code)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value",
+        "colorMode": "thresholds",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "reserved 정상",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "extended 보관중",
+                  "color": "yellow",
+                  "index": 1
+                },
+                "2": {
+                  "text": "unreserved 경고",
+                  "color": "orange",
+                  "index": 2
+                },
+                "3": {
+                  "text": "lost 유실확정",
+                  "color": "red",
+                  "index": 3
+                },
+                "-1": {
+                  "text": "unknown",
+                  "color": "text",
+                  "index": 4
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "슬롯 존재 여부",
+      "description": "0 이면 슬롯이 삭제된 것 — V3 재현 상황과 동일하다. PostgreSQL 16 은 페일오버 시 논리 슬롯을 승계하지 않으므로 이중화 전환 후에도 0 이 된다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(cdc_slot_active)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "cdc-service 가동",
+      "description": "SlotContinuityGuard 가 캡처 갭을 탐지해 기동을 거부하면 스크랩이 실패해 0 이 된다. 앱에 HALT/기동실패 카운터가 생기기 전까지는 이것이 유일한 신호다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"cdc-service\"}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value",
+        "colorMode": "thresholds",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "중단/기동거부",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "가동중",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "프로세스 가동시간",
+      "description": "재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "process_uptime_seconds{job=\"cdc-service\"}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "캡처 갭 판정 — 체크포인트 LSN − 슬롯 restart_lsn",
+      "description": "음수면 저장된 오프셋이 슬롯이 보유한 가장 오래된 WAL 보다 앞서 있다는 뜻이고, 그 구간은 되받을 수 없다. SlotContinuityGuard 가 기동 시 하는 판정을 상시로 돌리는 것.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 55
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_checkpoint_lsn) - max(cdc_slot_restart_lsn_bytes)",
+          "legendFormat": "여유 (bytes) — 음수면 갭"
+        },
+        {
+          "refId": "B",
+          "expr": "vector(0)",
+          "legendFormat": "갭 경계"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "슬롯 상태 코드 · 재기동 추이",
+      "description": "상태 코드가 2 이상으로 올라가거나 가동시간이 반복해 0 으로 떨어지는지 본다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 55
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_slot_status_code",
+          "legendFormat": "wal_status 코드 — {{wal_status}}"
+        },
+        {
+          "refId": "B",
+          "expr": "up{job=\"cdc-service\"}",
+          "legendFormat": "cdc-service up"
+        },
+        {
+          "refId": "C",
+          "expr": "changes(process_start_time_seconds{job=\"cdc-service\"}[15m])",
+          "legendFormat": "15분 내 재기동 횟수"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "table",
+      "title": "슬롯 상세",
+      "description": "lag / safe_wal_size / 상태 / active 를 한 줄로. safe_wal_size = -1 은 max_slot_wal_keep_size 가 -1 이라 산출 불가라는 뜻이다.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 63
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_slot_lag_bytes",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_slot_safe_wal_size_bytes",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "cdc_slot_status_code",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "expr": "cdc_slot_active",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "server": true
+            },
+            "renameByName": {
+              "Value #A": "보유 WAL(B)",
+              "Value #B": "safe_wal_size(B)",
+              "Value #C": "상태코드",
+              "Value #D": "active",
+              "slot_name": "슬롯",
+              "wal_status": "wal_status"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "text",
+      "title": "V3 메모 — 보고서에 쓸 문장",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 63
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**측정치** — 슬롯 강제 삭제 후 끊긴 구간 100건 중 **0건 수신**. 엔진이 예외를 내고 종료했고 `SlotContinuityGuard` 도 탐지함. 재동기화 후 **101/101 복원**.\n\n**탐지는 되지만 관측에는 안 올라온다.** 가드가 저장 오프셋 LSN과 슬롯 `restart_lsn` 을 대조하고 `fail-on-capture-gap: true` 로 기동을 거부하는데, **결과가 로그와 예외뿐이라 Prometheus 로 안 나간다.** 재시작 루프에 들어가면 대시보드에서는 \"이벤트가 안 오네\" 정도로만 보인다. → **HALT / 기동실패 카운터를 `PipelineMetrics` 에 추가하고 경보에 연결할 것.** (그 전까지는 왼쪽 `up` / 재기동 횟수 / 캡처 갭 패널이 대체 신호다.)\n\n**슬롯 무효화가 삭제보다 잦은데 안 보고 있었다.** `wal_status` 로 확인된다 — reserved 정상 / extended 보관중 / **unreserved 경고** / **lost 유실확정**. exporter 쿼리에 `wal_status`, `safe_wal_size` 를 추가했고 경보도 걸었다.\n\n**\"이중화 전환 시 동일 상황이 생기는지 확인\"은 확인 항목이 아니라 이미 정해진 결과다.** PostgreSQL 16은 논리 복제 슬롯을 standby로 동기화하지 않는다 → **페일오버하면 슬롯은 무조건 사라진다.** 슬롯을 승계하는 `sync_replication_slots` 는 **PostgreSQL 17부터**다. 지금 이미지가 16이므로 **버전 선택이 곧 대응책**이다. 확인 항목을 **\"페일오버 후 재동기화에 걸리는 시간과 데이터량 측정\"** 으로 바꾼다.\n\n**재적재만으로는 정합이 안 맞는다.** 재동기화는 멱등 upsert라 중복 적재는 안전하지만, **원본에서 사라진 행은 재적재로 안 지워진다.** 절차에 \"target 에만 남은 행 찾아 처리\" 단계를 넣는다. 소프트 삭제 테이블은 `deleted` 플래그로 되지만 **하드 삭제 테이블(car)은 별도 대사가 필요하다.**"
+      }
+    },
+    {
+      "id": 29,
+      "type": "row",
+      "title": "V4 — 중복 유입 · 통과 기준: 중복 유입 시에도 최종 데이터 정합 유지",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 72
+      },
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "LSN 가드 적용 테이블",
+      "description": "source_lsn 비교가 붙은 테이블 수 / 전체. 가드가 없으면 중복은 무해하지만 늦게 온 오래된 이벤트가 최신 값을 덮어쓸 수 있다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 73
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(cdc_guard_lsn_guard)",
+          "legendFormat": "가드 있음"
+        },
+        {
+          "refId": "B",
+          "expr": "count(cdc_guard_lsn_guard)",
+          "legendFormat": "전체 테이블"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "DLQ PENDING",
+      "description": "격리된 채 대기 중. 유실이 아니라 추적되는 미반영이며 대사 판정식에서 빼고 본다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 73
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_dlq_total_pending"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "DLQ RETRY_REQUESTED",
+      "description": "재처리 대상으로 표시된 건. 재처리는 V4 가 아직 안 보고 있는 중복 유입 경로다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 73
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_dlq_total_retry_requested"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "체크포인트 정체",
+      "description": "마지막 반영 이후 경과 시간. 변경이 없으면 자연히 커지므로 그 자체로는 이상이 아니고, 이벤트가 들어오는데도 커지면 정체다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 73
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_checkpoint_stale_seconds)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 600
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "이벤트 유입 vs 행 증가 — 중복 흡수 확인",
+      "description": "재기동 직후에는 마지막 처리분 이후 이벤트가 중복으로 다시 온다(정상 동작). 이벤트는 늘지만 행 수가 안 늘면 중복이 제대로 흡수된 것이다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 78
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(cdc_events_total[1m]))",
+          "legendFormat": "유입 이벤트 (1m)"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(delta(cdc_target_rows[1m]))",
+          "legendFormat": "target 행 증가 (1m)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "DLQ 상태별 건수",
+      "description": "PENDING 은 자동으로 집지 않는다. 원인을 고친 뒤 RETRY_REQUESTED 로 표시한 건만 재처리된다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 78
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_dlq_total_pending",
+          "legendFormat": "PENDING"
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_dlq_total_retry_requested",
+          "legendFormat": "RETRY_REQUESTED"
+        },
+        {
+          "refId": "C",
+          "expr": "cdc_dlq_total_resolved",
+          "legendFormat": "RESOLVED"
+        },
+        {
+          "refId": "D",
+          "expr": "cdc_dlq_total_discarded",
+          "legendFormat": "DISCARDED"
+        },
+        {
+          "refId": "E",
+          "expr": "sum(cdc_dead_letters_total) or vector(0)",
+          "legendFormat": "누적 격리(앱 카운터)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 36,
+      "type": "table",
+      "title": "테이블별 방어 기제",
+      "description": "V4 를 테이블 하나로 통과시키면 안 되는 이유를 그대로 표로 만든 것. lsn_guard=0 인 테이블은 순서 역전에 노출돼 있다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 86
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_guard_lsn_guard",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_guard_soft_delete",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "server": true
+            },
+            "renameByName": {
+              "Value #A": "source_lsn 가드",
+              "Value #B": "소프트 삭제",
+              "table_name": "테이블"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 37,
+      "type": "text",
+      "title": "V4 메모 — 보고서에 쓸 문장",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 86
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**측정치** — 중복 200건 유입, 1차 반영 200 / 2차 반영 0, **두 번 반영된 행 0**. 재현은 오프셋을 체크포인트로 되돌려 flush 전에 죽은 상황을 만들었다.\n\n**테이블마다 방어 기제가 달라서 하나만 보고 통과시키면 안 된다.**\n\n| 구분 | 동작 |\n|---|---|\n| `source_lsn` 가드 있음 (computer, grade, member) | upsert에 LSN 비교가 붙어 **중복도 순서 역전도** 막힌다 |\n| 가드 없음 (car) | 단순 upsert — 중복은 값이 같아 무해하지만, **늦게 온 오래된 이벤트가 최신 값을 덮어쓸 수 있다** |\n\n→ 실제 대상 테이블에 가드를 걸지 말지 정하고, **V4 를 테이블별로 돌린다.**\n\n**DLQ 재처리도 중복 유입 경로인데 지금 V4 가 안 보고 있다.** `cdc_dead_letter` 건을 `RETRY_REQUESTED` 로 표시하면 재처리기가 다시 적용하는데, 이때 이미 반영된 건이 다시 들어올 수 있다. **격리 → 원인 수정 → 재처리 사이에 정상 경로로 같은 행이 갱신된 시나리오**를 넣고 가드가 막는지 확인할 것.\n\n**권고** — `offset.flush.interval.ms: 10000` 유지. 줄이면 중복은 줄지만 I/O가 늘어난다."
+      }
+    },
+    {
+      "id": 38,
+      "type": "row",
+      "title": "V5 — 이벤트가 비어서 오는 경우 · 통과 기준: 관심 필드가 항상 판독 가능",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 94
+      },
+      "panels": []
+    },
+    {
+      "id": 39,
+      "type": "stat",
+      "title": "REPLICA IDENTITY FULL",
+      "description": "FULL 인 테이블 수 / 전체. FULL 이어야 TOAST 미변경 컬럼의 before/after 가 온전히 온다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 95
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(cdc_replica_identity_full_image)",
+          "legendFormat": "FULL"
+        },
+        {
+          "refId": "B",
+          "expr": "count(cdc_replica_identity_full_image)",
+          "legendFormat": "전체"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40,
+      "type": "stat",
+      "title": "TOAST 저장소 총 크기",
+      "description": "TOAST 릴레이션은 varlena 컬럼만 있으면 미리 만들어지므로 존재 여부는 판별에 못 쓴다. 실제 신호는 크기다 — 테이블당 8KB 안팎이면 외부 저장이 일어나지 않은 것.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 95
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(cdc_toast_bytes{job=\"source-db\"})"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 41,
+      "type": "stat",
+      "title": "최대 평균 컬럼 폭",
+      "description": "ANALYZE 통계 기준. TOAST 임계는 약 2KB(블록의 1/4)이므로 이 값이 2KB 근처면 해당 컬럼이 후보다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 95
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_column_avg_width_bytes{job=\"source-db\"})"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "bytes",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2048
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "변경 1건당 WAL (FULL 비용)",
+      "description": "V5 요구(FULL)가 V2 디스크 압력으로 얼마나 돌아오는지. DEFAULT 로 바꿔 같은 부하를 걸면 차이가 이 값으로 나온다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 95
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(rate(cdc_wal_lsn_bytes_total{job=\"source-db\"}[5m])) / clamp_min(sum(rate(cdc_events_total[5m])), 0.001)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "unit": "bytes",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 43,
+      "type": "table",
+      "title": "테이블별 REPLICA IDENTITY",
+      "description": "V5 는 FULL 을 요구하고 V2 는 FULL 때문에 WAL 이 커진다. 두 요구가 충돌하므로 테이블별로 다시 판단할 근거로 쓴다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 100
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_replica_identity_full_image{job=\"source-db\"}",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_toast_bytes{job=\"source-db\"}",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "server": true
+            },
+            "renameByName": {
+              "Value #A": "FULL(1/0)",
+              "Value #B": "TOAST 크기(B)",
+              "table_name": "테이블",
+              "identity": "identity"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "컬럼별 평균 저장 폭",
+      "description": "pg_stats.avg_width — ANALYZE 가 남긴 통계라 비용이 0 이다. 후보를 좁히는 용도이고, 확정은 SELECT max(pg_column_size(컬럼)) FROM 테이블 을 한 번 돌려서 한다. ANALYZE 를 한 번도 안 돈 테이블은 여기 안 나온다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 100
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_column_avg_width_bytes{job=\"source-db\"}",
+          "legendFormat": "{{table_name}}.{{column_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "bytes",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 2048
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 45,
+      "type": "text",
+      "title": "V5 메모 — 보고서에 쓸 문장",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 108
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**측정치** — `REPLICA IDENTITY DEFAULT` 일 때 `after` 에 **`__debezium_unavailable_value`** 자리표시자가 와서 현재 값 판독 불가. **FULL 로 바꾼 뒤 before / after 양쪽 200,000 bytes 온전히 실려 복원 가능.** 판정 기준은 이 자리표시자의 등장 여부다.\n\n**\"관심 필드가 걸리는지\" 판별 방법을 정해둬야 실행이 된다.** TOAST 임계는 대략 **2KB(블록의 1/4)** 이고, 이보다 큰 값이 들어가는 컬럼이 후보다.\n\n1. **후보 좁히기(무료)** — 위 `컬럼별 평균 저장 폭` 패널(`pg_stats.avg_width`). ANALYZE 통계라 스캔 비용이 없다.\n2. **확정(스캔 1회)** — `SELECT max(pg_column_size(<컬럼>)) FROM <테이블>;`\n3. **참고** — `pg_class.reltoastrelid <> 0` 은 varlena 컬럼만 있으면 참이라 판별에 못 쓴다. **TOAST 저장소 크기**가 8KB를 크게 넘는지를 본다.\n\n*이 스크랩마다 `max(pg_column_size(...))` 를 돌리지 않는 이유: 컬럼마다 전체 스캔이 필요하다. 무료 지표로 후보를 좁히고 확정만 수동으로 한다.*\n\n**FULL 로 바꿨을 때의 대가는 아직 안 재봤다.** 지금 전략은 \"해소되는지\"만 묻고 **비용은 묻지 않고 있다.** FULL 은 update/delete 마다 변경 전 행 전체를 WAL에 쓴다. 검증 환경이 전 테이블 FULL 이므로 **V2 의 165 bytes/변경에 이미 그 비용이 들어가 있다.** → **DEFAULT 대비 WAL 증가율을 비교하고, 대용량 필드가 없는 테이블까지 FULL 로 둘지 테이블별로 판단한다.** (현재 시드 데이터에는 TOAST 대상 값이 없어 TOAST 크기가 전부 8KB로 비어 있다 — 비용 비교는 대용량 값을 넣고 재야 한다.)"
+      }
+    },
+    {
+      "id": 46,
+      "type": "row",
+      "title": "V6 — 최종 안전성 · 통과 기준: 인위적 유실 주입 시 대사에서 검출",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 115
+      },
+      "panels": []
+    },
+    {
+      "id": 47,
+      "type": "stat",
+      "title": "최대 행 차이 |source − target|",
+      "description": "0 이 아니면 아직 반영 중이거나 유실된 것이다. DLQ 보정 전 원시 차이.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 116
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(abs(sum by (table_name) (cdc_source_rows) - sum by (table_name) (cdc_target_rows)))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 48,
+      "type": "stat",
+      "title": "대사 판정 (DLQ 보정 후)",
+      "description": "판정식: |source − target| − DLQ(PENDING). 0 이 아닌 차이만 남긴다 — 격리 건은 유실이 아니라 추적되는 미반영이므로 뺀다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 116
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(abs(sum by (table_name) (cdc_source_rows) - sum by (table_name) (cdc_target_rows)) - (sum by (table_name) (cdc_dlq_rows{status=\"PENDING\"}) or sum by (table_name) (cdc_source_rows * 0)))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 49,
+      "type": "stat",
+      "title": "고아 참조",
+      "description": "건수·체크섬 대사로는 안 잡히는 불일치. 양쪽 건수가 각각 맞아도 참조가 끊어질 수 있다. 수신 측에 FK 를 안 걸어서 DB 가 막아주지 않는다.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 116
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(cdc_orphan_rows)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50,
+      "type": "stat",
+      "title": "슬롯 전진 (heartbeat)",
+      "description": "관심 테이블에 변경이 없을 때도 슬롯이 전진해야 한다. 유휴인데 0 이면 heartbeat 미동작. V6 결과: interval 만 켜면 0 bytes, action.query 를 같이 걸면 33,440 bytes 전진.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 116
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(cdc_slot_confirmed_lsn_bytes[10m])"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "unit": "bytes",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 51,
+      "type": "timeseries",
+      "title": "테이블별 행 차이",
+      "description": "exporter 쿼리를 카탈로그 기반으로 짜놔서 publication 에 테이블을 추가하면 다음 스크랩부터 자동으로 대사 대상이 된다. 소프트 삭제도 자동 인식한다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 121
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "abs(sum by (table_name) (cdc_source_rows) - sum by (table_name) (cdc_target_rows))",
+          "legendFormat": "{{table_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 52,
+      "type": "timeseries",
+      "title": "대사 판정식 — |source − target| − DLQ(PENDING)",
+      "description": "이 값이 0 이 아닌 테이블만 진짜 조사 대상이다. DLQ 로 설명되는 차이는 여기서 이미 빠져 있다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 121
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "abs(sum by (table_name) (cdc_source_rows) - sum by (table_name) (cdc_target_rows)) - (sum by (table_name) (cdc_dlq_rows{status=\"PENDING\"}) or sum by (table_name) (cdc_source_rows * 0))",
+          "legendFormat": "{{table_name}}"
+        },
+        {
+          "refId": "B",
+          "expr": "vector(0)",
+          "legendFormat": "판정 경계"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 53,
+      "type": "table",
+      "title": "대사 요약",
+      "description": "source / target(활성) / 소프트삭제 / DLQ 를 한 표로. 보고서 표로 그대로 옮긴다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 129
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (table_name) (cdc_source_rows)",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (table_name) (cdc_target_rows)",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (table_name) (cdc_target_deleted_rows)",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "expr": "abs(sum by (table_name) (cdc_source_rows) - sum by (table_name) (cdc_target_rows))",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "expr": "sum by (table_name) (cdc_dlq_rows{status=\"PENDING\"}) or sum by (table_name) (cdc_source_rows * 0)",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "server": true
+            },
+            "renameByName": {
+              "Value #A": "source",
+              "Value #B": "target(활성)",
+              "Value #C": "소프트삭제",
+              "Value #D": "차이",
+              "Value #E": "DLQ PENDING",
+              "table_name": "테이블"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 54,
+      "type": "timeseries",
+      "title": "슬롯 confirmed_flush 전진 · 고아 참조",
+      "description": "유휴 구간에서 confirmed_flush 가 멈춰 있으면 heartbeat 설정이 빠진 것이다. heartbeat 쿼리가 publication 에 든 테이블에 쓰기를 만들어줘야 confirm 이 일어난다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 129
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "emb-cdc-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(cdc_slot_confirmed_lsn_bytes[10m])",
+          "legendFormat": "10분간 슬롯 전진 (bytes)"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(cdc_events_total[10m]))",
+          "legendFormat": "이벤트 유입 (events/s)"
+        },
+        {
+          "refId": "C",
+          "expr": "cdc_orphan_rows",
+          "legendFormat": "고아 참조 {{child_table}}→{{parent_table}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 55,
+      "type": "text",
+      "title": "V6 메모 — 보고서에 쓸 문장",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 137
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**측정치** — 정상 상태 300/300 체크섬 일치. **3건 삭제 시 불일치 검출.** 행을 지우지 않고 금액만 1 올렸을 때도 검출(건수는 같은데 체크섬이 다름). heartbeat: `interval.ms` 만 켰을 때 슬롯 전진 **0 bytes**, `action.query` 를 같이 걸었을 때 **33,440 bytes** 전진.\n\n**① 건수 대사는 자동화돼 있다.** `abs(cdc_source_rows − cdc_target_rows)` 패널이 이미 있고, exporter 쿼리가 카탈로그 기반이라 **publication 에 테이블을 추가하면 다음 스크랩부터 자동으로 대사 대상**이 된다(source 는 `pg_publication_tables`, target 은 카탈로그에서 찾고, `deleted` 컬럼이 있으면 `WHERE deleted = false` 로 센다).\n\n**② 건수가 같아도 값이 다를 수 있다** — V6 2단계가 정확히 그걸 실험으로 보여줬다. 다만 **체크섬 대사는 상시 계측으로 못 올린다.** `md5(string_agg(...))` 는 전체 스캔이라 5초 스크랩마다 돌릴 수 없고, target 스키마가 변환돼 있어(computer) 양쪽 체크섬을 직접 비교할 수 있는 테이블은 1:1인 것뿐이다. → **야간 배치 또는 최근 N시간 구간 한정**으로 verify 스크립트에서 돌리고, 그 결과를 보고서에 별도 기록한다.\n\n**③ DLQ 를 대사에 넣었다.** 격리된 이벤트는 유실이 아니라 추적되는 미반영이라 **대사 불일치의 정당한 사유**다. 판정식을 **`|source − target| − DLQ(PENDING) = 0`** 으로 바꾸고 패널·경보를 추가했다. 이전에는 불일치가 났을 때 진짜 유실인지 격리 때문인지 구분이 안 됐다.\n\n**④ 고아 참조 대사를 추가했다.** 수신 측에 FK 를 걸지 않으므로 DB 가 막아주지 않는다. 관계를 목록으로 적지 않고 `<부모>_id` 컬럼 규칙으로 카탈로그에서 찾는다(member.grade_id → grade).\n\n**⑤ heartbeat 은 결론이 났는데 코드에 안 들어가 있다.** `DebeziumEngineManager` 에 heartbeat 설정이 하나도 없다. `heartbeat.interval.ms: 10000` 과 `heartbeat.action.query` 를 **함께** 넣어야 한다 — heartbeat 쿼리가 publication 에 든 테이블에 쓰기를 만들어줘야 confirm 이 일어나기 때문이다. 위 '슬롯 전진' 패널이 이 설정의 검증 수단이다."
+      }
+    },
+    {
+      "id": 56,
+      "type": "row",
+      "title": "완료 조건 — 권고 설정값 · 남은 작업",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 146
+      },
+      "panels": []
+    },
+    {
+      "id": 57,
+      "type": "text",
+      "title": "운영 전환시 권고 설정값",
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 147
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "| 항목 | 현재 | 권고 | 근거 |\n|---|---|---|---|\n| `max_slot_wal_keep_size` | **-1** | 디스크 여유의 20~30% | V2. 초과 시 슬롯 무효화지만 디스크 고갈보단 낫다 |\n| `heartbeat.interval.ms` | **미설정** | `10000` | V6 |\n| `heartbeat.action.query` | **미설정** | publication 테이블에 쓰기를 넣는 쿼리 | V6. 이게 있어야 슬롯이 전진한다 |\n| `REPLICA IDENTITY` | 전 테이블 FULL | 유지하되 **테이블별 재검토** | V5가 요구, V2 WAL을 키움 |\n| 오프셋 저장 | FileOffsetBackingStore + 볼륨 | 유지 + 수신측 체크포인트 병행 | V3. 볼륨 유실 시 \"처음부터\"인지 \"건너뜀\"인지 구분됨 |\n| `offset.flush.interval.ms` | `10000` | 유지 | V4. 줄이면 중복↓ I/O↑ |\n| 슬롯 lag 경보 | ~~없음~~ → **추가함** | warn 512MB / crit 2GB | V2. 165 bytes/변경 기준 환산 |\n| `wal_status` 감시 | ~~미감시~~ → **추가함** | unreserved 경고 / lost 즉시 | V3 |\n| `fail-on-capture-gap` | `true` | 유지 + **메트릭 노출 필요** | V3. 탐지해도 경보로 안 올라감 |\n\n**Debezium 자체 결함 시 전환 판단 기준** (지금은 \"재현 시 판단\"이라고만 돼 있어 장애 한 번에 전환 논의가 된다)\n- **재현 요건**: 같은 시나리오 3회 이상 + 최신 패치 버전에서도 재현 + 업스트림 이슈 확인\n- **행업**: 엔진 스레드는 살아있는데 이벤트 0건이고 슬롯이 10분 이상 안 움직임\n- **오프셋 오염**: 재기동 시 저장 LSN이 슬롯 `restart_lsn` 보다 뒤 → `SlotContinuityGuard` 로그가 근거\n- **메모리 누수**: 24시간 부하에서 GC 이후에도 heap 단조 증가\n\n**대안 두 개는 등가가 아니다.** 버전 컬럼 폴링은 **DELETE 를 못 잡는다**(지워진 행은 조회에 안 나온다) → 원본이 소프트 삭제를 쓴다는 전제가 필요. 논리 복제 직접 소비(pgjdbc replication API)는 슬롯·오프셋·스키마 변경 처리를 직접 만들어야 해서 V2~V4에서 검증한 걸 다시 만드는 셈. → **전환 판단의 첫 질문은 \"Debezium 이 불안정한가\"가 아니라 \"원본 테이블에 소프트 삭제를 강제할 수 있는가\"다.** 안 되면 선택지가 사실상 하나다."
+      }
+    },
+    {
+      "id": 58,
+      "type": "text",
+      "title": "이 대시보드로 채운 것 / 아직 남은 것",
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 147
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### 이번에 계측으로 들어간 것\n\n| 항목 | 어떻게 |\n|---|---|\n| `wal_status` / `safe_wal_size` (V3) | `cdc_slot_status_code`, `cdc_slot_safe_wal_size_bytes` + 경보 |\n| DLQ 패널 (V6) | `cdc_dlq_total_*`, `cdc_dlq_rows{status}` + 판정식 반영 |\n| WAL 증가율 · **다운 허용시간** (V2) | `cdc_wal_lsn_bytes_total` (COUNTER) ÷ `node_filesystem_avail_bytes` |\n| 캡처 갭 상시 판정 (V3) | `cdc_checkpoint_lsn − cdc_slot_restart_lsn_bytes` |\n| 시계 편차 (V1) | `cdc_clock_epoch_seconds` vs `process_uptime_seconds`, `timestamp()` 기준 |\n| 테이블별 방어 기제 (V4) | `cdc_guard_lsn_guard`, `cdc_guard_soft_delete` |\n| REPLICA IDENTITY · TOAST (V5) | `cdc_replica_identity_full_image`, `cdc_toast_bytes`, `cdc_column_avg_width_bytes` |\n| 고아 참조 대사 (V6) | `cdc_orphan_rows` — `<부모>_id` 규칙으로 자동 발견 |\n| 운영 파라미터 현재값 | `cdc_guc_value` |\n| 경보 16종 | `prometheus/rules/cdc-alerts.yml` |\n\n*`node_exporter` 는 이미 스택에 있었다 — V2 의 \"도입 필요\" 항목은 이미 해소된 상태였고, 이번에 WAL 증가율과 묶어 허용시간 산출로 연결했다.*\n\n### 코드 수정이 필요해 아직 남은 것\n\n1. **`heartbeat.interval.ms` + `heartbeat.action.query`** → `DebeziumEngineManager` (V6). 결론은 났는데 설정에 없다.\n2. **capture-gap / HALT 카운터** → `PipelineMetrics` (V3). 지금은 `up == 0` 과 재기동 횟수로 **간접 탐지**만 된다. 직접 신호가 아니다.\n3. **체크섬 대사의 주기 실행** (V6). 전체 스캔이라 스크랩에 못 올린다 — 야간 배치 또는 구간 한정으로.\n4. **DEFAULT vs FULL WAL 비용 실측** (V5→V2). 측정 수단('변경 1건당 WAL' 패널)은 준비됐고 실행이 남았다.\n5. **테이블별 V4 재실행** — `car` 는 LSN 가드가 없어 순서 역전에 노출돼 있다."
+      }
+    }
+  ]
+}
