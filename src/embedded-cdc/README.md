@@ -10,7 +10,7 @@ Source PostgreSQL ──logical replication(pgoutput)──▶ cdc-service ─�
 
 - **car** : source ↔ target 스키마 동일 → 1:1 복제
 - **computer** : 스키마 다름 → 매핑(full_name/spec/price_krw) + 소프트 삭제 + LSN 순서 가드
-- **모니터링** : Grafana(+Prometheus, postgres_exporter×2) — 정합성·처리량·지연·slot lag
+- **모니터링** : Grafana(+Prometheus, postgres_exporter×2, podman-exporter) — 정합성·처리량·지연·slot lag·컨테이너 리소스
 
 전체 설명은 **[docs/architecture.html](docs/architecture.html)** 참고 (브라우저로 열면 된다).
 
@@ -19,7 +19,7 @@ Source PostgreSQL ──logical replication(pgoutput)──▶ cdc-service ─�
 docker 또는 podman 이 있으면 된다 (스크립트가 자동 감지).
 
 ```powershell
-./scripts/up.ps1     # 전체 기동: 네트워크 → DB 2개 → 모니터링 → 앱 빌드+기동
+./scripts/up.ps1     # 전체 기동 (루트 docker-compose.yml 하나로 DB 2개 + 모니터링 + 앱)
 ./scripts/demo.ps1   # INSERT/UPDATE/DELETE 를 흘리고 source/target 비교
 ./scripts/load.ps1   # 5분마다 테이블당 INSERT 1000 / UPDATE 500 / DELETE 100 (지속 부하)
 ./scripts/verify.ps1 # 캡처 신뢰성 검증 테스트 V1~V6 (스택 기동 상태에서)
@@ -27,6 +27,28 @@ docker 또는 podman 이 있으면 된다 (스크립트가 자동 감지).
 ```
 
 macOS/Linux 는 `scripts/*.sh` 사용.
+
+스크립트는 루트 `docker-compose.yml` 을 부를 뿐이라 아래와 같아도 된다.
+네트워크·볼륨은 compose 가 만들고 지운다 — 미리 만들 필요 없다.
+
+```bash
+docker compose up -d --build   # 스택 루트에서
+docker compose down -v
+```
+
+하위 compose 파일(`infra/db/*`, `infra/monitoring/*`, `dev/*`)은 루트가 `include` 로
+끌어오는 조각이다. `-f` 로 하나씩 따로 올리면 파일마다 프로젝트가 갈려 같은
+`container_name` 을 두고 충돌한다.
+
+> **컨테이너 리소스 수집기는 엔진을 탄다.** 기본은 podman 소켓을 읽는
+> `podman-exporter` 다. rootless podman 에는 `/var/lib/docker` 도 `docker.sock` 도 없고
+> 컨테이너 cgroup 이 `user.slice` 아래로 들어가 cAdvisor 가 이름을 붙이지 못한다.
+> docker 데몬 환경이면 `--profile cadvisor` 로 cAdvisor 를 대신 띄우고
+> `infra/monitoring/prometheus/prometheus.yml` 의 cadvisor job 주석을 푼다.
+> 대시보드는 `rules/container-resources.yml` 이 만드는 `cdc:container_*` 만 읽으므로
+> 어느 쪽이든 같다.
+>
+> 소켓 uid 가 1000 이 아니면 `PODMAN_SOCK=/run/user/<uid>/podman/podman.sock` 로 덮어쓴다.
 
 | 접속 | 주소 |
 |---|---|
