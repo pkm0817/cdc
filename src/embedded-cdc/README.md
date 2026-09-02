@@ -85,6 +85,39 @@ docker compose down -v
 
 `JAVA_HOME` 이 없으면 스크립트가 `~/.jdks` 에서 JDK 21 을 찾아 쓴다.
 
+## 대시보드 변경 추적
+
+Grafana 대시보드는 JSON 파일이 원본이고, provisioning 이 10초마다 다시 읽는다.
+문제는 이 JSON 이 3,000줄이 넘어 **패널에 쿼리 한 줄을 더해도 `git diff` 에서 묻힌다**는 것이다.
+좌표·색·폰트가 값보다 자리를 많이 차지하기 때문이다.
+
+그래서 "무엇을 그리는가"만 뽑은 개요 파일(`*.outline.txt`)을 JSON 옆에 같이 둔다.
+리뷰는 이 파일의 diff 로 한다.
+
+```bash
+# JSON 을 고친 뒤 개요를 다시 만든다 (커밋 전 필수)
+node scripts/dashboard-outline.js --write infra/monitoring/grafana/dashboards/*.json
+
+# 개요가 JSON 보다 뒤처지지 않았는지 확인 (뒤처지면 exit 1)
+node scripts/dashboard-outline.js --check infra/monitoring/grafana/dashboards/*.json
+
+# 두 판을 직접 견주기 — 화면(라이브)과 파일이 갈라졌는지 볼 때도 쓴다
+node scripts/dashboard-outline.js --diff 이전.json 이후.json
+```
+
+개요에는 패널 제목·타입·위치, 쿼리(refId·expr·legend), 단위·소수점, 임계값, 설명만 담는다.
+즉 **바뀌면 화면이 달라지는 것**만 남기고 나머지는 버린다.
+
+> `provider.yml` 이 `allowUiUpdates: true` 라 Grafana 화면에서도 편집·저장이 된다.
+> 그렇게 저장한 내용은 Grafana DB 에만 남고 파일에는 반영되지 않으며, 파일이 다시 바뀌면 덮어써진다.
+> **화면에서 고쳤으면 JSON 으로 내보내 파일에 반영할 것.** 갈라졌는지는 이렇게 확인한다.
+>
+> ```bash
+> curl -s -u admin:admin http://localhost:56300/api/dashboards/uid/cdc-poc \
+>   | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.stringify(JSON.parse(s).dashboard)))" > live.json
+> node scripts/dashboard-outline.js --diff live.json infra/monitoring/grafana/dashboards/embedded-cdc-poc.json
+> ```
+
 ## 폴더 구조
 
 ```
