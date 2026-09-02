@@ -129,19 +129,49 @@ services:
     image: grafana/grafana:11.2.0
     container_name: emb-cdc-grafana
     networks: [emb-cdc-net]
-    depends_on: [prometheus]
+    depends_on: [prometheus, renderer]
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_DEFAULT_THEME: light
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # 패널을 PNG 로 굽는 별도 컨테이너. 이게 없으면 /render 가 "No image renderer
+      # available" 그림만 돌려주고, 경보 스크린샷과 PDF 내보내기도 동작하지 않는다.
+      GF_RENDERING_SERVER_URL: http://renderer:8081/render
+      # 렌더러가 그림을 뜨려고 Grafana 를 다시 부를 때 쓰는 주소다.
+      # localhost 로 두면 렌더러 컨테이너 자신을 가리켜 빈 화면이 나온다 —
+      # 반드시 compose 네트워크에서 통하는 서비스명이어야 한다.
+      GF_RENDERING_CALLBACK_URL: http://grafana:3000/
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - emb-grafana-data:/var/lib/grafana
     ports:
       - "56300:3000"
+
+  # ── 이미지 렌더러 ───────────────────────────────────────────────────────────
+  # Grafana 본체에는 렌더링 기능이 없다. 이 컨테이너가 헤드리스 Chromium 을 들고
+  # 패널을 그려 PNG 로 돌려준다. 쓰는 곳은 셋이다.
+  #   - 대시보드/패널 PNG 내보내기 (공유·보고서 첨부용)
+  #   - PDF 내보내기
+  #   - 경보 알림에 붙는 스크린샷
+  #
+  # 포트를 밖으로 열지 않는다. Grafana 만 부르면 되고, 열어두면 임의의 URL 을
+  # 렌더링해 달라고 시킬 수 있는 창구가 된다.
+  renderer:
+    image: grafana/grafana-image-renderer:3.11.6
+    container_name: emb-cdc-renderer
+    networks: [emb-cdc-net]
+    environment:
+      # 렌더러 자신의 로그 수준. 그림이 비어 나올 때 원인은 대개 콜백 주소다.
+      RENDERING_VERBOSE_LOGGING: "false"
+      # 동시 렌더링 수. 기본 5 인데 PoC 스택은 한 사람이 쓰므로 낮춰 메모리를 아낀다.
+      RENDERING_CLUSTERING_MAX_CONCURRENCY: "2"
+      # 그림에 찍히는 시각의 기준. 안 맞추면 PNG 의 x축만 UTC 로 나와
+      # 화면에서 본 것과 다른 구간처럼 읽힌다.
+      RENDERING_TIMEZONE: "Asia/Seoul"
+    restart: unless-stopped
 
 volumes:
   emb-prometheus-data:
