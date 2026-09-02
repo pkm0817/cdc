@@ -5,6 +5,7 @@
 #   wal_level=logical          : WAL 에 논리 디코딩용 정보를 기록 (기본 replica 로는 불가)
 #   max_wal_senders            : WAL 스트림 전송 프로세스 수
 #   max_replication_slots      : replication slot 수 (Debezium 이 slot 하나를 점유)
+#   wal_sender_timeout         : 컨슈머 무응답 허용 시간. 기본 1min 은 대량 적재에서 짧다
 #
 # ⚠️ replication slot 은 만료되지 않는다. 컨슈머(cdc-service)가 오래 죽어 있으면
 #    slot 이 붙잡은 WAL 이 무한정 쌓여 원천 DB 디스크가 고갈된다.
@@ -33,6 +34,14 @@ services:
       - max_wal_senders=10
       - -c
       - max_replication_slots=10
+      # 대량 적재 중 컨슈머가 60초(PG 기본값) 안에 standby status update 를 못 보내면
+      # PG 가 walsender 를 끊는다("terminating walsender process due to replication timeout").
+      # go-pq-cdc 는 그 응답을 이벤트 전달과 같은 고루틴에서 보내므로, 적재가 밀리면
+      # 응답도 같이 멎어 연결이 잘리고 프로세스가 panic 으로 죽는다(실측 9회).
+      # Debezium 은 별도 스레드라 같은 부하에서 안 걸렸다 — 라이브러리 구조 차이다.
+      # 값을 올려 두 스택에 같은 여유를 준다. 비교 조건이 같아야 결과를 믿을 수 있다.
+      - -c
+      - wal_sender_timeout=5min
     ports:
       - "56432:5432"
     volumes:
