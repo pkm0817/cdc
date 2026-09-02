@@ -24,6 +24,16 @@ public record CdcSourceProperties(
         String snapshotMode,
         String offsetFile,
         /**
+         * heartbeat 주기(ms). 0 이면 끈다.
+         * 관심 테이블에 변경이 없어도 슬롯을 전진시키기 위한 것이다.
+         */
+        int heartbeatIntervalMs,
+        /**
+         * heartbeat 시각에 실행할 쿼리. publication 에 든 테이블에 쓰기를 만들어야
+         * confirmed_flush_lsn 이 전진한다 — interval 만으로는 0 bytes 였다 (V6).
+         */
+        String heartbeatActionQuery,
+        /**
          * 캡처 연결고리가 끊긴 것을 발견했을 때 기동을 거부할지.
          * false 로 두면 로그만 남기고 계속 돈다 — 어긋난 채로 도는 것을 감수하겠다는 뜻이다.
          */

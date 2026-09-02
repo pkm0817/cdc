@@ -108,3 +108,36 @@ FROM (VALUES
     ('jung@example.com', '정다은', 'VIP',    130000)
 ) AS v(email, name, grade_code, point)
 JOIN grade g ON g.code = v.grade_code;
+
+-- ============================================================================
+-- heartbeat 전용 테이블
+--
+-- 관심 테이블에 변경이 없으면 슬롯이 전혀 전진하지 않아 WAL 이 계속 쌓인다.
+-- Debezium 의 heartbeat.action.query 가 여기에 쓰기를 만들고, 그 변경이
+-- publication 을 타고 나가면서 confirmed_flush_lsn 이 전진한다.
+--
+-- V6 측정: heartbeat.interval.ms 만 켜면 전진 0 bytes, action.query 를 함께
+-- 걸면 33,440 bytes. 즉 "주기"가 아니라 "publication 에 든 테이블에 실제 쓰기"가
+-- 슬롯을 미는 것이다. 그래서 설정 2줄이 아니라 전용 테이블이 딸려온다.
+--
+-- publication 과 table.include.list 에 둘 다 넣는다.
+-- publication 에만 넣으면 heartbeat 쓰기가 슬롯만 밀고 파이프라인의 진행 지점
+-- (cdc_checkpoint)은 멈춰 있게 되어, 다음 기동에서 SlotContinuityGuard 가 그 간격을
+-- 캡처 갭으로 읽고 기동을 거부한다 (유휴 36분에 1.1MB 어긋나 실제로 발생했다).
+-- include.list 에 넣으면 이벤트가 파이프라인까지 오는데, 매핑된 핸들러가 없어
+-- 적용은 건너뛰고 배치의 최대 LSN 만 체크포인트로 남는다 —
+-- 그래서 수신 측에 이 테이블을 만들 필요는 여전히 없다.
+--
+-- UPSERT 로 한 행만 유지한다. append 로 두면 heartbeat 자체가 테이블을 키운다.
+-- ============================================================================
+CREATE TABLE cdc_heartbeat (
+    pipeline TEXT        PRIMARY KEY,
+    beat_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER PUBLICATION embedded_cdc_pub ADD TABLE cdc_heartbeat;
+
+-- heartbeat 쿼리는 커넥터 자신의 커넥션(cdc_user)으로 실행된다.
+-- 이 권한이 없으면 쿼리가 조용히 실패하고 슬롯은 여전히 안 움직인다 —
+-- 설정을 켠 뒤에도 증상이 그대로라 원인을 엉뚱한 데서 찾게 된다.
+GRANT SELECT, INSERT, UPDATE ON cdc_heartbeat TO cdc_user;
