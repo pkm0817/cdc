@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 랜덤 대량 시드 — CDC 부하/정합성 확인용
 --
---   podman exec -i emb-cdc-source-pg psql -U postgres -d sourcedb \
+--   podman exec -i emb-cdc-go-source-pg psql -U postgres -d sourcedb \
 --       -v ON_ERROR_STOP=1 -v cnt=100000 -f - < scripts/seed-bulk.sql
 --
 -- 여러 번 실행하면 그때마다 테이블당 cnt 건씩 누적된다.
