@@ -1,9 +1,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# 모니터링 스택 — Prometheus + Grafana + postgres_exporter × 2 + cAdvisor + node-exporter
+# 모니터링 스택 — Prometheus + Grafana + postgres_exporter × 2 + 컨테이너 수집기 + node-exporter
 #
 #   source-exporter : source DB 의 테이블별 행 수 + slot 지연 + WAL 용량 + DB 크기
 #   target-exporter : target DB 의 테이블별 행 수 + 소프트 삭제 행 수 + WAL 용량 + DB 크기
-#   cadvisor        : 컨테이너별 CPU·메모리·파일시스템 사용량 (앱 + source/target DB)
+#   podman-exporter : 컨테이너별 CPU·메모리·블록 IO (앱 + source/target DB)
+#                     — docker 데몬 환경에서는 --profile cadvisor 로 cAdvisor 를 대신 쓴다
 #   node-exporter   : 도커 VM 의 디스크 여유 — WAL 이 슬롯에 붙잡혀 쌓일 때 고갈 경보용
 #   prometheus      : 위 수집기들 + cdc-service(/metrics) 수집
 #   grafana         : 정합성·처리량·지연 + 연산별(INSERT·UPDATE·DELETE) + 리소스 대시보드
@@ -48,10 +49,37 @@ services:
       - "57188:9187"
 
   # ── 리소스 계측 ────────────────────────────────────────────────────────────
-  # cAdvisor 는 도커 데몬 전체를 보므로 두 스택(Java/Go)의 컨테이너가 모두 잡힌다.
-  # 대시보드 쿼리에서 name=~"emb-cdc-go-(service|source-pg|target-pg)" 로 걸러 쓴다.
-  # (PromQL 의 =~ 는 완전 일치라 emb-cdc-go-* 는 여기에 걸리지 않는다)
+  # 컨테이너별 CPU·메모리·블록 IO. 엔진에 따라 수집기가 다르다.
+  #
+  # podman(기본) : podman 소켓을 그대로 읽는다. rootless podman 에서는 cAdvisor 를
+  #                쓸 수 없다 — /var/lib/docker 도 docker.sock 도 없고, cgroup 이
+  #                user.slice 아래로 들어가 컨테이너 이름표가 붙지 않는다.
+  # docker       : --profile cadvisor 로 아래 cadvisor 를 대신 띄운다.
+  #
+  # 대시보드는 두 수집기 중 무엇이 떠 있든 같은 이름으로 읽는다.
+  # prometheus/rules.yml 이 양쪽을 cdc:container_* 로 정규화한다.
+  podman-exporter:
+    image: quay.io/navidys/prometheus-podman-exporter:v1.21.2
+    container_name: emb-cdc-go-podman-exporter
+    networks: [emb-cdc-go-net]
+    # 소켓을 읽으려면 컨테이너 안에서 root 여야 한다(rootless 라도 VM 안 uid 0).
+    user: root
+    security_opt: ["label=disable"]
+    environment:
+      CONTAINER_HOST: unix:///run/podman/podman.sock
+    command:
+      # info 계열 라벨(name/image/pod)을 모든 지표에 붙여 준다 — name 으로 걸러야 하므로 필수.
+      - --collector.enhance-metrics
+    volumes:
+      # rootless podman 의 소켓 위치. uid 가 1000 이 아니면 PODMAN_SOCK 로 덮어쓴다.
+      - ${PODMAN_SOCK:-/run/user/1000/podman/podman.sock}:/run/podman/podman.sock:ro
+    ports:
+      - "57193:9882"
+
+  # 도커 데몬이 있을 때만. 기본으로는 뜨지 않는다 (--profile cadvisor).
+  # cAdvisor 는 데몬 전체를 보므로 두 스택(Java/Go)의 컨테이너가 모두 잡힌다.
   cadvisor:
+    profiles: [cadvisor]
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: emb-cdc-go-cadvisor
     networks: [emb-cdc-go-net]

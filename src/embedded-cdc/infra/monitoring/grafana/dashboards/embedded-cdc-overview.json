@@ -1126,7 +1126,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "container_memory_working_set_bytes{name=~\"emb-cdc-(service|source-pg|target-pg)\"}",
+          "expr": "cdc:container_mem_bytes{name=~\"emb-cdc-(service|source-pg|target-pg)\"}",
           "legendFormat": "{{name}}"
         }
       ],
@@ -1178,7 +1178,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(container_cpu_usage_seconds_total{name=~\"emb-cdc-(service|source-pg|target-pg)\"}[1m])",
+          "expr": "cdc:container_cpu_cores{name=~\"emb-cdc-(service|source-pg|target-pg)\"}",
           "legendFormat": "{{name}}"
         }
       ],
@@ -1235,7 +1235,7 @@
         },
         {
           "refId": "B",
-          "expr": "container_memory_working_set_bytes{name=\"emb-cdc-service\"}",
+          "expr": "cdc:container_mem_bytes{name=\"emb-cdc-service\"}",
           "legendFormat": "컨테이너 working set"
         }
       ],
@@ -1292,7 +1292,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum(rate(container_fs_writes_bytes_total{name=~\"emb-cdc-(service|source-pg|target-pg)\"}[1m]))",
+          "expr": "sum(cdc:container_fs_writes_bytes{name=~\"emb-cdc-(service|source-pg|target-pg)\"})",
           "legendFormat": "디스크 쓰기 B/s"
         }
       ],
