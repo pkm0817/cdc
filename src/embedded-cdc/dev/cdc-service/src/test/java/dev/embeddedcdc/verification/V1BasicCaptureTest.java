@@ -1,6 +1,7 @@
 package dev.embeddedcdc.verification;
 
 import dev.embeddedcdc.domain.model.ChangeEvent;
+import dev.embeddedcdc.domain.model.FieldDiff;
 import dev.embeddedcdc.domain.model.Operation;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -25,17 +26,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  * V1. 기본 캡처
  *
  * 통과 기준
- *   - INSERT/UPDATE/DELETE 가 목표 지연 안에 도착한다 (기본 5초)
+ *   - INSERT/UPDATE/DELETE 가 목표 지연 안에 도착한다 (5초, LATENCY_BUDGET)
  *   - UPDATE 에서 어떤 필드가 무엇에서 무엇으로 바뀌었는지 식별된다
  *   - 1만 건 배치에서도 밀리지 않는다 (처리량 측정)
+ *
+ * 지연은 두 가지로 잰다.
+ *   왕복 지연      변경을 넣은 시각 → 이벤트를 받은 시각. 로컬 시계 하나만 쓰므로 편차와 무관하다.
+ *                  통과/실패 판정은 이 값으로 한다.
+ *   커밋 기준 지연  source 의 ts_ms 기준. 운영 지표(cdc_end_to_end_lag_seconds)와 같은 계산식이라
+ *                  DB 시계와 앱 시계의 편차가 그대로 섞인다. 편차가 목표 지연의 10% 를 넘으면
+ *                  그 회차 값은 버린다 — 재려던 값보다 오차가 큰 수치는 지연이 아니라 잡음이다.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("V1. 기본 캡처")
 class V1BasicCaptureTest extends VerificationSupport {
 
     private static final String SLOT = "verify_v1_slot";
-    /** 목표 지연. 이 값을 넘으면 실패로 본다. */
-    private static final Duration LATENCY_BUDGET = Duration.ofSeconds(5);
 
     private static Path offsetFile;
     private static CaptureHarness harness;
@@ -43,6 +49,10 @@ class V1BasicCaptureTest extends VerificationSupport {
     @BeforeAll
     static void startCapture() throws IOException {
         VerificationReport.section("V1. 기본 캡처");
+        VerificationReport.metric("V1", "목표 지연(통과 기준)", LATENCY_BUDGET.toSeconds() + " s");
+        VerificationReport.metric("V1", "시계 편차 허용치(목표 지연의 10%)",
+                SKEW_TOLERANCE.toMillis() + " ms");
+
         createRecordFixture();
         truncateRecords();
         dropSlotQuietly(SLOT);
@@ -83,24 +93,10 @@ class V1BasicCaptureTest extends VerificationSupport {
         assertThat(event.after().text("biz_key")).isEqualTo("V1-INS-1");
         assertThat(event.after().decimal("amount")).isEqualByComparingTo("15000.00");
 
-        long e2e = System.currentTimeMillis() - sentAt;
-        VerificationReport.metric("V1", "INSERT 왕복 지연(측정 기준)", e2e + " ms");
-
-        // source.ts_ms 는 DB 서버 시계, System.currentTimeMillis() 는 이 프로세스의 시계다.
-        // 둘이 어긋나 있으면 "커밋 기준 지연"이 음수로도 나온다 — 지연이 아니라 시계 편차다.
-        // 운영의 cdc_end_to_end_lag_seconds 가 같은 방식으로 계산되므로 편차를 반드시 남긴다.
-        Long dbNowMs = Db.scalarOnSource(
-                "SELECT (extract(epoch from clock_timestamp()) * 1000)::bigint", Long.class);
-        long skew = dbNowMs == null ? 0 : dbNowMs - System.currentTimeMillis();
-        VerificationReport.metric("V1", "DB 서버와 측정 프로세스의 시계 편차", skew + " ms");
-        VerificationReport.metric("V1", "INSERT 커밋 기준 지연(편차 보정)",
-                (System.currentTimeMillis() + skew - event.sourceTsMs()) + " ms");
-
-        if (Math.abs(skew) > 1000) {
-            VerificationReport.note("V1",
-                    "주의: 시계 편차가 " + skew + " ms 다. ts_ms 기반 지연 지표는 "
-                            + "DB 와 Provider 의 시계가 동기화된 환경에서만 신뢰할 수 있다");
-        }
+        LatencySample sample = recordLatency("V1", "INSERT", sentAt, event);
+        assertThat(sample.roundTripMs())
+                .as("왕복 지연이 목표 지연 안이어야 한다")
+                .isLessThanOrEqualTo(LATENCY_BUDGET.toMillis());
     }
 
     @Test
@@ -127,13 +123,22 @@ class V1BasicCaptureTest extends VerificationSupport {
         assertThat(event.before().decimal("amount")).isEqualByComparingTo("20000.00");
         assertThat(event.after().decimal("amount")).isEqualByComparingTo("22000.00");
 
-        Set<String> changed = changedFields(event);
+        // 운영이 감사 로그에 남기는 판정식 그대로다. 검증만 통과하는 별도 비교가 아니다.
+        FieldDiff diff = FieldDiff.between(event.before(), event.after());
+        assertThat(diff.identifiable()).as("before/after 가 다 있어야 판정이 성립한다").isTrue();
+
+        Set<String> changed = diff.changed();
         assertThat(changed).as("바뀐 필드만 정확히 뽑힌다").contains("status", "amount");
         assertThat(changed).as("건드리지 않은 필드는 변경으로 잡히지 않는다").doesNotContain("biz_key", "id");
+        assertThat(diff.unreadable()).as("작은 컬럼뿐이라 판독 불가 필드가 없다").isEmpty();
 
-        VerificationReport.metric("V1", "UPDATE 지연", (System.currentTimeMillis() - sentAt) + " ms");
+        LatencySample sample = recordLatency("V1", "UPDATE", sentAt, event);
+        assertThat(sample.roundTripMs()).isLessThanOrEqualTo(LATENCY_BUDGET.toMillis());
+
         VerificationReport.metric("V1", "식별된 변경 필드", changed.toString());
         VerificationReport.note("V1", "status: NEW -> CONFIRMED, amount: 20000.00 -> 22000.00 판독 성공");
+        VerificationReport.note("V1", "같은 판정식(FieldDiff)을 운영의 cdc_change_audit 기록이 그대로 쓴다 "
+                + "— 변경 필드명은 표에만 남기고 지표 레이블로는 쓰지 않는다(카디널리티)");
     }
 
     @Test
@@ -155,7 +160,8 @@ class V1BasicCaptureTest extends VerificationSupport {
         assertThat(event.before().text("biz_key")).isEqualTo("V1-DEL-1");
         assertThat(event.before().decimal("amount")).isEqualByComparingTo("30000.00");
 
-        VerificationReport.metric("V1", "DELETE 지연", (System.currentTimeMillis() - sentAt) + " ms");
+        LatencySample sample = recordLatency("V1", "DELETE", sentAt, event);
+        assertThat(sample.roundTripMs()).isLessThanOrEqualTo(LATENCY_BUDGET.toMillis());
     }
 
     @Test
@@ -178,8 +184,14 @@ class V1BasicCaptureTest extends VerificationSupport {
         VerificationReport.metric("V1", "배치 건수", String.valueOf(batchSize));
         VerificationReport.metric("V1", "source 커밋 소요", (committedAt - start) + " ms");
         VerificationReport.metric("V1", "캡처 완료까지", drainMs + " ms");
-        VerificationReport.metric("V1", "캡처 처리량", throughput + " events/s");
+        VerificationReport.metric("V1", "캡처 처리량(적재 제외)", throughput + " events/s");
         VerificationReport.metric("V1", "수신 건수", events.size() + " / " + batchSize);
+
+        // 이 수치를 운영 처리량으로 읽으면 안 된다. 하니스는 이벤트를 큐에 담기만 하고
+        // target 적재(JDBC upsert)가 빠져 있다 — 파이프라인의 앞쪽 절반만 잰 값이다.
+        // 운영 처리량은 기동 중인 서비스에서 rate(cdc_events_total[1m]) 로 따로 잰다.
+        VerificationReport.note("V1", "위 처리량은 캡처 구간만의 수치다 (target 적재 제외). "
+                + "운영 처리량은 rate(cdc_events_total[1m]) 로 따로 재고 두 값을 같이 읽어야 한다");
 
         assertThat(events).as("1만 건이 하나도 빠지지 않고 도착해야 한다").hasSize(batchSize);
         assertThat(events).allSatisfy(e ->
