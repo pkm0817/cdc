@@ -1,0 +1,1513 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>INSERT · DELETE 배치별 CDC 반영 시간</title>
+<style>
+/* ============================================================
+   HW Doc Kit - design tokens & base primitives
+   금지: 이모지, 보라/바이올렛/인디고 계열, 무지개 그라데이션
+   기준색: 한화 오렌지 계열
+   ============================================================ */
+:root{
+  /* brand */
+  --hw:#F37321;          /* 기본 오렌지 */
+  --hw-dk:#D2590F;       /* 진한 오렌지 (호버/강조선) */
+  --hw-dp:#A8420A;       /* 가장 진한 오렌지 (제목 강조) */
+  --hw-lt:#FFB27A;       /* 밝은 오렌지 (보조 채움) */
+  --hw-pale:#FFF1E7;     /* 아주 옅은 오렌지 (배경 톤) */
+  --hw-tint:#FDE3D1;     /* 옅은 오렌지 (테두리/칩) */
+
+  /* ink & surface */
+  --ink:#141414; --ink2:#3F3F3F; --ink3:#6E6E6E; --ink4:#9A9A9A;
+  --bg:#FFFFFF; --bg2:#FAF8F6; --bg3:#F2EEEA;
+  --line:#E4E1DE; --line2:#CFCAC5;
+
+  /* semantic (보라 금지 - 보색은 청록/황토/벽돌색으로) */
+  --ok:#2E7D5B; --ok-bg:#E8F3EE;
+  --warn:#B8791A; --warn-bg:#FBF1DF;
+  --risk:#C0392B; --risk-bg:#FBEAE7;
+  --info:#2A6F97; --info-bg:#E7F0F6;
+
+  --radius:10px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(20,20,20,.06), 0 8px 24px rgba(20,20,20,.06);
+  --font:"Pretendard","Malgun Gothic","Apple SD Gothic Neo","Segoe UI",system-ui,sans-serif;
+  --mono:"D2Coding","Cascadia Mono","Consolas","JetBrains Mono",ui-monospace,monospace;
+}
+:root[data-theme="dark"]{
+  --hw:#FF8A3D; --hw-dk:#F37321; --hw-dp:#FFB27A; --hw-lt:#7A3E14; --hw-pale:#241812; --hw-tint:#4A2A15;
+  --ink:#F2EFEC; --ink2:#CFC9C3; --ink3:#9E9691; --ink4:#77706B;
+  --bg:#141312; --bg2:#1C1A18; --bg3:#252220;
+  --line:#332F2C; --line2:#464038;
+  --ok:#5CB58C; --ok-bg:#17251F; --warn:#D9A445; --warn-bg:#2A2317;
+  --risk:#E2705F; --risk-bg:#2A1917; --info:#6BA6CC; --info-bg:#161F26;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.35);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font); color:var(--ink); background:var(--bg2);
+  -webkit-font-smoothing:antialiased; line-height:1.55;
+  font-variant-numeric:tabular-nums;
+}
+h1,h2,h3,h4{margin:0; line-height:1.25; font-weight:700; letter-spacing:-.01em}
+p{margin:0 0 .6em}
+a{color:var(--hw-dk); text-underline-offset:2px}
+:root[data-theme="dark"] a{color:var(--hw)}
+code,kbd,pre,samp{font-family:var(--mono)}
+hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+
+/* ---------- 공통 프리미티브 ---------- */
+.kicker{
+  font-size:13px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--hw-dk);
+}
+.rule{height:3px;background:var(--hw);border-radius:2px;width:56px}
+.muted{color:var(--ink3)}
+.small{font-size:13px}
+.mono{font-family:var(--mono);font-size:.92em}
+
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;
+  background:var(--hw-pale);color:var(--hw-dp);border:1px solid var(--hw-tint);
+}
+.chip--ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
+.chip--warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn)}
+.chip--risk{background:var(--risk-bg);color:var(--risk);border-color:var(--risk)}
+.chip--info{background:var(--info-bg);color:var(--info);border-color:var(--info)}
+.chip--neutral{background:var(--bg3);color:var(--ink2);border-color:var(--line2)}
+
+.card{
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;
+}
+.card--accent{border-left:4px solid var(--hw)}
+.card__t{font-size:16px;font-weight:700;margin:0 0 6px}
+.card__d{font-size:14px;color:var(--ink2);margin:0}
+
+.kpi{display:flex;gap:14px;flex-wrap:wrap}
+.kpi__item{
+  flex:1 1 0;min-width:140px;background:var(--bg);border:1px solid var(--line);
+  border-top:3px solid var(--hw);border-radius:var(--radius);padding:14px 16px;
+}
+.kpi__v{font-size:30px;font-weight:800;letter-spacing:-.02em;color:var(--hw-dp)}
+:root[data-theme="dark"] .kpi__v{color:var(--hw)}
+.kpi__l{font-size:12px;color:var(--ink3);font-weight:600}
+
+.tbl{width:100%;border-collapse:collapse;font-size:14px;background:var(--bg)}
+.tbl th,.tbl td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+.tbl thead th{background:var(--hw-pale);color:var(--hw-dp);font-size:12.5px;
+  letter-spacing:.03em;text-transform:uppercase;border-color:var(--hw-tint)}
+.tbl tbody tr:nth-child(even){background:var(--bg2)}
+.tbl td.num{text-align:right;font-family:var(--mono)}
+.tbl-wrap{overflow-x:auto;border-radius:var(--radius-sm)}
+
+.note{
+  border:1px solid var(--line);border-left:4px solid var(--ink3);
+  background:var(--bg);border-radius:var(--radius-sm);padding:12px 16px;font-size:14px;
+}
+.note__t{font-weight:700;font-size:13px;margin:0 0 4px;letter-spacing:.02em}
+.note--info{border-left-color:var(--info);background:var(--info-bg)}
+.note--info .note__t{color:var(--info)}
+.note--ok{border-left-color:var(--ok);background:var(--ok-bg)}
+.note--ok .note__t{color:var(--ok)}
+.note--warn{border-left-color:var(--warn);background:var(--warn-bg)}
+.note--warn .note__t{color:var(--warn)}
+.note--risk{border-left-color:var(--risk);background:var(--risk-bg)}
+.note--risk .note__t{color:var(--risk)}
+
+/* 코드 블록 */
+.code{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--bg)}
+.code__bar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:6px 12px;background:var(--bg3);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:12px;color:var(--ink3)
+}
+.code__copy{
+  border:1px solid var(--line2);background:var(--bg);color:var(--ink2);
+  border-radius:5px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer
+}
+.code__copy:hover{border-color:var(--hw);color:var(--hw-dk)}
+.code pre{margin:0;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.6}
+.code .cm{color:var(--ink4)}
+.code .hl{color:var(--hw-dk);font-weight:700}
+
+/* 단계 흐름 */
+.steps{display:flex;gap:8px;flex-wrap:wrap}
+.step{
+  flex:1 1 0;min-width:150px;position:relative;background:var(--bg);
+  border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px
+}
+.step__n{
+  display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--hw);color:#fff;font-size:12px;font-weight:800;margin-bottom:6px
+}
+.step__t{font-weight:700;font-size:14px}
+.step__d{font-size:12.5px;color:var(--ink3)}
+
+/* UI 목업 프레임 */
+.ui{border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--bg);box-shadow:var(--shadow)}
+.ui__bar{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-bottom:1px solid var(--line)}
+.ui__dot{width:9px;height:9px;border-radius:50%;background:var(--line2)}
+.ui__addr{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;
+  padding:2px 8px;font-family:var(--mono);font-size:11.5px;color:var(--ink3)}
+.ui__body{padding:14px}
+.ui-row{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.ui-row:last-child{border-bottom:0}
+.ui-btn{background:var(--hw);color:#fff;border:0;border-radius:5px;padding:6px 14px;font-size:12.5px;font-weight:700}
+.ui-btn--ghost{background:transparent;color:var(--hw-dk);border:1px solid var(--hw)}
+.ui-field{flex:1;border:1px solid var(--line2);border-radius:5px;padding:6px 9px;font-size:12.5px;color:var(--ink3);background:var(--bg2)}
+
+/* 출처 표기 */
+.ref{
+  font-size:.62em;font-weight:800;vertical-align:super;color:var(--hw-dk);
+  background:var(--hw-pale);border:1px solid var(--hw-tint);border-radius:4px;
+  padding:0 4px;margin-left:2px;cursor:pointer;text-decoration:none
+}
+.refs{list-style:none;padding:0;margin:0;font-size:13px}
+.refs li{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.refs li:last-child{border-bottom:0}
+.refs .refs__n{color:var(--hw-dk);font-weight:800;font-family:var(--mono)}
+.refs .refs__src{color:var(--ink);font-weight:600}
+.refs .refs__meta{color:var(--ink3);font-size:12px;font-family:var(--mono);word-break:break-all}
+
+/* 그리드 */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.g-2-1{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* ---------- 다이어그램 캔버스 ---------- */
+.dgm{
+  position:relative;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--bg);overflow:hidden;display:flex;flex-direction:column
+}
+.dgm__bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:6px 8px;border-bottom:1px solid var(--line);background:var(--bg3);flex:0 0 auto
+}
+.dgm__bar .sp{flex:1}
+.dgm__btn{
+  border:1px solid var(--line2);background:var(--bg);color:var(--ink2);
+  border-radius:5px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer;
+  font-family:var(--font)
+}
+.dgm__btn:hover{border-color:var(--hw);color:var(--hw-dk)}
+.dgm__btn.is-on{background:var(--hw);border-color:var(--hw);color:#fff}
+.dgm__hint{font-size:11.5px;color:var(--ink4)}
+.dgm__svg{display:block;width:100%;flex:1 1 auto;min-height:0;touch-action:none;cursor:grab;
+  background:radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0/20px 20px}
+.dgm__svg.is-panning{cursor:grabbing}
+.dgm[data-edit="off"] .dgm__bar{display:none}
+
+/* 화면 가득 펼치기 — 툴바의 "넓게" 버튼 / Esc 로 닫는다 */
+.dgm.is-max{
+  position:fixed;inset:14px;z-index:80;
+  width:auto !important;max-width:none !important;height:auto !important;
+  box-shadow:0 12px 48px rgba(20,20,20,.28);border-color:var(--line2)
+}
+html.dgm-locked,html.dgm-locked body{overflow:hidden}
+
+.dgm-node{cursor:move}
+.dgm-node .box{fill:var(--bg);stroke:var(--line2);stroke-width:1.5}
+.dgm-node .lbl{
+  font-family:var(--font);font-size:13.5px;font-weight:700;color:var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;text-align:center;padding:4px 8px;line-height:1.3;overflow:hidden
+}
+.dgm-node .lbl .sub{font-size:11px;font-weight:500;color:var(--ink3);margin-top:2px}
+.dgm-node .lbl[contenteditable="true"]{outline:2px solid var(--hw);background:var(--bg);border-radius:4px}
+.dgm-node.is-sel .box{stroke:var(--hw);stroke-width:2.5}
+.dgm-node[data-tone="primary"] .box{fill:var(--hw);stroke:var(--hw-dk)}
+.dgm-node[data-tone="primary"] .lbl{color:#fff}
+.dgm-node[data-tone="primary"] .lbl .sub{color:rgba(255,255,255,.85)}
+.dgm-node[data-tone="accent"] .box{fill:var(--hw-pale);stroke:var(--hw)}
+.dgm-node[data-tone="accent"] .lbl{color:var(--hw-dp)}
+.dgm-node[data-tone="muted"] .box{fill:var(--bg3);stroke:var(--line2)}
+.dgm-node[data-tone="muted"] .lbl{color:var(--ink3)}
+.dgm-node[data-tone="ok"] .box{fill:var(--ok-bg);stroke:var(--ok)}
+.dgm-node[data-tone="ok"] .lbl{color:var(--ok)}
+.dgm-node[data-tone="warn"] .box{fill:var(--warn-bg);stroke:var(--warn)}
+.dgm-node[data-tone="warn"] .lbl{color:var(--warn)}
+.dgm-node[data-tone="risk"] .box{fill:var(--risk-bg);stroke:var(--risk)}
+.dgm-node[data-tone="risk"] .lbl{color:var(--risk)}
+.dgm-node[data-tone="info"] .box{fill:var(--info-bg);stroke:var(--info)}
+.dgm-node[data-tone="info"] .lbl{color:var(--info)}
+
+.dgm-grp .box{fill:var(--bg2);stroke:var(--line2);stroke-dasharray:6 4;stroke-width:1.5}
+.dgm-grp .gl{font-family:var(--font);font-size:11.5px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;fill:var(--ink4)}
+.dgm-grp{cursor:move}
+
+.dgm-edge .wire{fill:none;stroke:var(--ink3);stroke-width:1.8}
+.dgm-edge .hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
+.dgm-edge.is-sel .wire{stroke:var(--hw);stroke-width:2.6}
+.dgm-edge[data-style="dash"] .wire{stroke-dasharray:6 4}
+.dgm-edge[data-tone="primary"] .wire{stroke:var(--hw)}
+.dgm-edge[data-tone="risk"] .wire{stroke:var(--risk)}
+.dgm-edge[data-tone="ok"] .wire{stroke:var(--ok)}
+.dgm-edge .elbl{
+  font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--ink2);
+  display:flex;align-items:center;justify-content:center;height:100%;text-align:center;
+}
+.dgm-edge .elbl span{background:var(--bg);padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+
+.dgm__modal{
+  position:absolute;inset:0;background:rgba(0,0,0,.45);display:none;
+  align-items:center;justify-content:center;padding:24px;z-index:9
+}
+.dgm__modal.is-open{display:flex}
+.dgm__modal .pane{background:var(--bg);border-radius:var(--radius);width:min(680px,100%);
+  max-height:100%;display:flex;flex-direction:column;border:1px solid var(--line2)}
+.dgm__modal textarea{
+  flex:1;min-height:240px;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  padding:12px;font-family:var(--mono);font-size:12px;resize:vertical;background:var(--bg2);color:var(--ink)
+}
+.dgm__modal .head,.dgm__modal .foot{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.dgm__modal .head b{font-size:14px}
+.dgm__modal .sp{flex:1}
+
+/* ── 차트 (scripts/make-chart.sh 산출물) ─────────────────────────────────── */
+.cht{ margin:16px 0 18px; padding:14px 14px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg2) }
+.cht__t{ margin:0 0 8px; font-size:13.5px; font-weight:700; color:var(--ink); letter-spacing:-.01em }
+.cht svg{ display:block; width:100%; height:auto; font-family:inherit }
+.cht rect, .cht circle{ cursor:default }
+.cht rect:hover, .cht circle:hover{ opacity:.75 }
+.cht__c{ margin:8px 0 0; font-size:12px; line-height:1.65; color:var(--ink3) }
+
+/* 인쇄 */
+@media print{
+  .cht{ page-break-inside:avoid; background:transparent }
+  body{background:#fff}
+  .no-print{display:none !important}
+  .dgm__bar{display:none !important}
+  .dgm__svg{background:none}
+  .dgm.is-max{position:static;inset:auto;box-shadow:none}
+}
+
+/* ============================================================
+   HW Doc Kit - 개발용 문서 레이아웃 (사이드 TOC + 본문 단일 컬럼)
+   ============================================================ */
+body{ background:var(--bg2) }
+
+.doc{ display:grid; grid-template-columns:270px minmax(0,1fr); align-items:start; }
+
+/* 사이드바 */
+.side{
+  position:sticky; top:0; height:100vh; overflow:auto;
+  background:var(--bg); border-right:1px solid var(--line); padding:20px 16px 40px;
+}
+.side__brand{ display:flex; align-items:center; gap:9px; margin-bottom:6px }
+.side__brand .bar{ width:5px; height:26px; background:var(--hw); border-radius:2px }
+.side__brand b{ font-size:14.5px; letter-spacing:-.01em }
+.side__meta{ font-size:11.5px; color:var(--ink4); margin:0 0 16px; font-family:var(--mono) }
+.toc{ list-style:none; margin:0; padding:0; font-size:13.5px }
+.toc li{ margin:1px 0 }
+.toc a{
+  display:block; padding:5px 10px; border-radius:6px; color:var(--ink2);
+  text-decoration:none; border-left:2px solid transparent;
+}
+.toc a:hover{ background:var(--bg3); color:var(--ink) }
+.toc a.is-cur{ background:var(--hw-pale); color:var(--hw-dp); font-weight:700; border-left-color:var(--hw) }
+.toc .sub a{ padding-left:22px; font-size:12.5px; color:var(--ink3) }
+.side__foot{ margin-top:18px; padding-top:14px; border-top:1px solid var(--line); display:flex; gap:6px; flex-wrap:wrap }
+.side__foot button{
+  border:1px solid var(--line2); background:var(--bg); color:var(--ink2); border-radius:5px;
+  padding:3px 9px; font-size:11.5px; font-weight:600; cursor:pointer; font-family:var(--font);
+}
+.side__foot button:hover{ border-color:var(--hw); color:var(--hw-dk) }
+
+/* 본문 */
+.main{ padding:34px 44px 100px; max-width:1040px; }
+.doc-head{ border-bottom:2px solid var(--hw); padding-bottom:18px; margin-bottom:26px }
+.doc-head h1{ font-size:32px; letter-spacing:-.025em; margin:6px 0 8px }
+.doc-head .sub{ font-size:15px; color:var(--ink2); max-width:80ch }
+.doc-head .meta{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px }
+
+.sec{ margin:0 0 44px; scroll-margin-top:18px }
+.sec > h2{
+  font-size:21px; margin:0 0 4px; display:flex; align-items:baseline; gap:10px;
+}
+.sec > h2 .n{ font-family:var(--mono); font-size:14px; font-weight:800; color:var(--hw) }
+.sec > .why{ font-size:13.5px; color:var(--ink3); margin:0 0 16px; padding-left:2px }
+.sec h3{ font-size:16px; margin:24px 0 10px; padding-left:10px; border-left:3px solid var(--hw-tint) }
+.sec h4{ font-size:14px; margin:16px 0 6px; color:var(--ink2) }
+.sec p, .sec li{ font-size:14.5px }
+.sec ul, .sec ol{ margin:0 0 12px; padding-left:20px }
+.sec li{ margin:3px 0 }
+
+/* 체크리스트 */
+.chk{ list-style:none; padding:0; margin:0 }
+.chk li{
+  display:flex; gap:10px; align-items:flex-start; padding:9px 12px;
+  border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--bg); margin-bottom:6px;
+}
+.chk input{ margin-top:3px; width:15px; height:15px; accent-color:var(--hw); flex:0 0 auto }
+.chk li.is-done{ background:var(--bg2); border-color:var(--line) }
+.chk li.is-done .t{ text-decoration:line-through; color:var(--ink4) }
+.chk .t{ font-weight:600; font-size:14px }
+.chk .d{ font-size:12.5px; color:var(--ink3); display:block; margin-top:2px }
+
+/* 시나리오 (Given/When/Then) */
+.gwt{ border:1px solid var(--line); border-left:4px solid var(--hw); border-radius:var(--radius-sm);
+  background:var(--bg); padding:14px 16px; margin:0 0 12px }
+.gwt__t{ font-weight:700; font-size:14.5px; margin:0 0 8px }
+.gwt dl{ margin:0; display:grid; grid-template-columns:64px 1fr; gap:4px 10px; font-size:13.5px }
+.gwt dt{ font-weight:800; font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--hw-dk); padding-top:2px }
+.gwt dd{ margin:0; color:var(--ink2) }
+
+/* 작업 단위 카드 */
+.slice{ border:1px solid var(--line); border-radius:var(--radius); background:var(--bg); overflow:hidden; margin-bottom:12px }
+.slice__h{ display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--bg3); border-bottom:1px solid var(--line) }
+.slice__h .no{ font-family:var(--mono); font-weight:800; color:#fff; background:var(--hw);
+  border-radius:5px; padding:1px 8px; font-size:12px }
+.slice__h b{ font-size:14.5px }
+.slice__h .sp{ flex:1 }
+.slice__b{ padding:12px 14px; font-size:13.5px }
+.slice__b dl{ margin:0; display:grid; grid-template-columns:110px 1fr; gap:6px 12px }
+.slice__b dt{ color:var(--ink3); font-size:12.5px; font-weight:700 }
+.slice__b dd{ margin:0; color:var(--ink2) }
+
+/* 의사결정 기록 */
+.adr{ border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; background:var(--bg); margin-bottom:12px }
+.adr__t{ font-size:15px; font-weight:700; margin:0 0 8px }
+.adr dl{ margin:0; display:grid; grid-template-columns:96px 1fr; gap:5px 12px; font-size:13.5px }
+.adr dt{ color:var(--hw-dk); font-weight:700; font-size:12.5px }
+.adr dd{ margin:0; color:var(--ink2) }
+
+.dgm{ margin:0 0 14px; height:520px }
+/* 다이어그램은 본문 글줄 폭에 갇히지 않고 사이드바 오른쪽을 전부 쓴다.
+   270px 사이드바 + 본문 좌우 패딩 88px + 스크롤바 여유 18px 를 뺀 값. */
+@media (min-width:1001px){
+  .dgm{ width:min(calc(100vw - 376px), 1700px); max-width:none }
+}
+.tbl-wrap{ margin-bottom:14px }
+.note{ margin-bottom:12px }
+.code{ margin-bottom:14px }
+
+@media (max-width:1000px){
+  .doc{ grid-template-columns:1fr }
+  .side{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line) }
+  .main{ padding:24px 20px 60px }
+}
+@media print{
+  @page{ size:A4; margin:14mm }
+  .side{ display:none }
+  .doc{ display:block }
+  .main{ max-width:none; padding:0 }
+  .sec{ page-break-inside:avoid }
+  .dgm{ height:320px; width:auto }
+}
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <aside class="side no-print">
+    <div class="side__brand"><span class="bar"></span><b>INSERT · DELETE 반영 시간 측정</b></div>
+    <p class="side__meta">2026-09-02 17:02~17:18 KST · feature/go-cdc</p>
+    <ul class="toc"></ul>
+    <div class="side__foot">
+      <button id="bTheme" type="button">테마</button>
+      <button id="bPrint" type="button">인쇄</button>
+      <button id="bReset" type="button">체크 초기화</button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <header class="doc-head">
+      <span class="kicker">Measurement Report</span>
+      <h1>INSERT · DELETE 배치별 CDC 반영 시간</h1>
+      <p class="sub">테이블당 100행부터 300,000행까지 여섯 단계를 순차로 넣고 지우며,
+        Debezium Embedded(Java)와 go-pq-cdc(Go) 두 스택이 target DB에 반영을 끝내기까지 걸린 시간을 쟀습니다.
+        앞 배치가 완전히 반영된 뒤에만 다음 배치를 넣었습니다.</p>
+      <div class="meta">
+        <span class="chip">측정 2026-09-02 17:02~17:18</span>
+        <span class="chip chip--neutral">배치 6종 × 2연산 × 스택 2종</span>
+        <span class="chip chip--info">완료 판정은 target DB 직접 폴링</span>
+        <span class="chip chip--ok">전 구간 정합성 일치</span>
+      </div>
+    </header>
+
+    <!-- ---------- 0 ---------- -->
+    <section class="sec" id="s0">
+      <h2><span class="n">00</span>측정 범위와 전제</h2>
+      <p class="why">두 스택을 완전히 새로 올린 상태에서 시작했습니다. 앞선 측정의 잔여 데이터는 남아 있지 않습니다.</p>
+      <div class="g2">
+        <div class="card card--accent">
+          <p class="card__t">측정한 것</p>
+          <ul style="margin:6px 0 0">
+            <li>source에서 INSERT · DELETE를 실행한 시간</li>
+            <li>커밋 완료부터 target 3개 테이블 반영 완료까지의 시간</li>
+            <li>구간 평균 처리량 (행/초)</li>
+            <li>cdc-service 컨테이너의 CPU · 메모리 최대치</li>
+          </ul>
+        </div>
+        <div class="card">
+          <p class="card__t">측정하지 않은 것</p>
+          <ul style="margin:6px 0 0">
+            <li>UPDATE — 별도 측정이 필요합니다 (07절 참고)</li>
+            <li>두 스택 동시 부하의 상호 간섭 (source DB가 서로 분리되어 있음)</li>
+            <li>재기동·장애 상황에서의 복구 시간</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note note--warn">
+        <p class="note__t">전제</p>
+        두 스택은 컨테이너 · 포트 · 네트워크 · 복제 슬롯이 모두 분리되어 있고 source DB도 각각 따로 띄웁니다.
+        같은 SQL을 두 source DB에 각각 실행했으므로 <span class="mono">source 실행</span> 시간은 스택별로 다른 값입니다.
+        측정은 초기 시드(car 3 / computer 3 / member 5)만 있는 상태에서 시작해, INSERT 사다리로 611,100행을 쌓고
+        DELETE 사다리로 같은 양을 되돌렸습니다.<sup class="ref" data-ref="3">3</sup>
+      </div>
+    </section>
+
+    <!-- ---------- 1 ---------- -->
+    <section class="sec" id="s1">
+      <h2><span class="n">01</span>측정 방법</h2>
+      <p class="why">앞선 측정에서 배치가 겹쳐 값이 섞인 적이 있어, 이번에는 완료 확인을 스크립트가 강제합니다.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:18%">구간</th><th style="width:34%">판정 기준</th><th>이유</th></tr></thead>
+          <tbody>
+            <tr><td>source 실행</td><td>psql <span class="mono">\timing</span> 합계 (3개 문장)</td>
+              <td>DB가 쓰기를 끝내고 커밋할 때까지. CDC와 무관한 순수 원천 비용입니다.</td></tr>
+            <tr><td>반영 완료</td><td>target의 살아있는 행 수 = source 행 수</td>
+              <td>car는 물리 삭제라 전체를, computer·member는 소프트 삭제라 <span class="mono">deleted = false</span>만 셉니다.</td></tr>
+            <tr><td>폴링 간격</td><td>0.3초</td>
+              <td>Prometheus는 5초 간격이라 100건 배치가 해상도 아래로 묻힙니다. target DB를 직접 봅니다.</td></tr>
+            <tr><td>배치 순서</td><td>앞 배치 반영 완료 후 다음 배치</td>
+              <td>CDC 스트림은 하나라 겹치면 뒤 배치가 앞 배치 뒤에 줄을 섭니다. 그러면 "이 배치의 시간"이 아니게 됩니다.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code">
+        <div class="code__bar"><span>측정 대상 SQL — 세 스택 공통</span><button class="code__copy" type="button">복사</button></div>
+<pre><span class="cm"># INSERT — 테이블당 cnt 행 (member / car / computer)</span>
+psql -v ON_ERROR_STOP=1 <span class="hl">-v cnt=300000</span> -f - &lt; scripts/seed-bulk.sql
+
+<span class="cm"># DELETE — id 가 가장 작은 행부터 cnt 개씩</span>
+psql -v ON_ERROR_STOP=1 <span class="hl">-v cnt=300000</span> -f - &lt; scripts/delete-bulk.sql</pre>
+      </div>
+      <p style="margin:8px 0 0">DELETE 대상 선정에 <span class="mono">ORDER BY random()</span>을 쓰지 않습니다. 수백만 행에서 매번
+        풀스캔과 정렬이 되어, 재려는 CDC가 아니라 부하 생성 쪽에서 시간을 먹기 때문입니다. PK 인덱스를 따라
+        앞에서부터 cnt개만 훑습니다.<sup class="ref" data-ref="4">4</sup></p>
+    </section>
+
+    <!-- ---------- 2 ---------- -->
+    <section class="sec" id="s2">
+      <h2><span class="n">02</span>INSERT 결과</h2>
+      <p class="why">질문에 대한 답입니다. 반영 시간은 커밋 완료 시점부터 잰 값입니다.</p>
+
+      <div class="kpi">
+        <div class="kpi__item"><div class="kpi__v">213.5초</div><div class="kpi__l">Java · 30만행 배치</div></div>
+        <div class="kpi__item"><div class="kpi__v">203.5초</div><div class="kpi__l">Go · 30만행 배치</div></div>
+        <div class="kpi__item"><div class="kpi__v">4.2~5.3천</div><div class="kpi__l">행/초 (10만행 이상 구간)</div></div>
+        <div class="kpi__item"><div class="kpi__v">2.2초</div><div class="kpi__l">100행 배치의 고정 지연</div></div>
+      </div>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:12%">배치 (테이블당)</th><th style="width:11%">총 이벤트</th>
+              <th style="width:14%">Java · source 실행</th><th style="width:13%">Java · 반영</th><th style="width:12%">Java · 행/초</th>
+              <th style="width:14%">Go · source 실행</th><th style="width:13%">Go · 반영</th><th>Go · 행/초</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="num">100</td><td class="num">300</td>
+              <td class="num">12 ms</td><td class="num">2.3초</td><td class="num">130</td>
+              <td class="num">14 ms</td><td class="num">2.2초</td><td class="num">136</td></tr>
+            <tr><td class="num">1,000</td><td class="num">3,000</td>
+              <td class="num">23 ms</td><td class="num">2.6초</td><td class="num">1,154</td>
+              <td class="num">29 ms</td><td class="num">2.4초</td><td class="num">1,250</td></tr>
+            <tr><td class="num">10,000</td><td class="num">30,000</td>
+              <td class="num">271 ms</td><td class="num">10.9초</td><td class="num">2,752</td>
+              <td class="num">349 ms</td><td class="num">7.0초</td><td class="num">4,286</td></tr>
+            <tr><td class="num">100,000</td><td class="num">300,000</td>
+              <td class="num">1,985 ms</td><td class="num">76.6초</td><td class="num">3,916</td>
+              <td class="num">2,471 ms</td><td class="num">56.2초</td><td class="num">5,338</td></tr>
+            <tr><td class="num">200,000</td><td class="num">600,000</td>
+              <td class="num">3,883 ms</td><td class="num">129.8초</td><td class="num">4,622</td>
+              <td class="num">4,964 ms</td><td class="num">123.2초</td><td class="num">4,870</td></tr>
+            <tr><td class="num">300,000</td><td class="num">900,000</td>
+              <td class="num">6,565 ms</td><td class="num"><b>213.5초</b></td><td class="num">4,215</td>
+              <td class="num">8,058 ms</td><td class="num"><b>203.5초</b></td><td class="num">4,423</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure class="cht">
+        <figcaption class="cht__t">배치 크기별 반영 시간 — INSERT</figcaption>
+        <svg viewBox="0 0 880 316" role="img" aria-label="배치 크기별 반영 시간 — INSERT">
+          <line x1="76" y1="246.0" x2="856" y2="246.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="250.0" text-anchor="end" font-size="11" fill="var(--ink4)">0</text>
+          <line x1="76" y1="191.5" x2="856" y2="191.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="195.5" text-anchor="end" font-size="11" fill="var(--ink4)">60</text>
+          <line x1="76" y1="137.0" x2="856" y2="137.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="141.0" text-anchor="end" font-size="11" fill="var(--ink4)">120</text>
+          <line x1="76" y1="82.5" x2="856" y2="82.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="86.5" text-anchor="end" font-size="11" fill="var(--ink4)">180</text>
+          <line x1="76" y1="28.0" x2="856" y2="28.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="32.0" text-anchor="end" font-size="11" fill="var(--ink4)">240</text>
+          <text x="14" y="18" font-size="11" fill="var(--ink3)">초</text>
+          <text x="141.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">100</text>
+          <text x="271.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">1천</text>
+          <text x="401.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">1만</text>
+          <text x="531.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">10만</text>
+          <text x="661.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">20만</text>
+          <text x="791.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">30만</text>
+          <rect x="102.0" y="243.9" width="36.0" height="2.1" fill="var(--hw)" rx="1.5"><title>100 · Java (Debezium) 2.3초</title></rect>
+          <text x="120.0" y="239.9" text-anchor="middle" font-size="9.5" fill="var(--ink2)">2.3</text>
+          <rect x="232.0" y="243.6" width="36.0" height="2.4" fill="var(--hw)" rx="1.5"><title>1천 · Java (Debezium) 2.6초</title></rect>
+          <text x="250.0" y="239.6" text-anchor="middle" font-size="9.5" fill="var(--ink2)">2.6</text>
+          <rect x="362.0" y="236.1" width="36.0" height="9.9" fill="var(--hw)" rx="1.5"><title>1만 · Java (Debezium) 10.9초</title></rect>
+          <text x="380.0" y="232.1" text-anchor="middle" font-size="9.5" fill="var(--ink2)">10.9</text>
+          <rect x="492.0" y="176.4" width="36.0" height="69.6" fill="var(--hw)" rx="1.5"><title>10만 · Java (Debezium) 76.6초</title></rect>
+          <text x="510.0" y="172.4" text-anchor="middle" font-size="9.5" fill="var(--ink2)">76.6</text>
+          <rect x="622.0" y="128.1" width="36.0" height="117.9" fill="var(--hw)" rx="1.5"><title>20만 · Java (Debezium) 129초</title></rect>
+          <text x="640.0" y="124.1" text-anchor="middle" font-size="9.5" fill="var(--ink2)">129</text>
+          <rect x="752.0" y="52.1" width="36.0" height="193.9" fill="var(--hw)" rx="1.5"><title>30만 · Java (Debezium) 213초</title></rect>
+          <text x="770.0" y="48.1" text-anchor="middle" font-size="9.5" fill="var(--ink2)">213</text>
+          <rect x="141.0" y="244.0" width="36.0" height="2.0" fill="var(--info)" rx="1.5"><title>100 · Go (go-pq-cdc) 2.2초</title></rect>
+          <text x="159.0" y="240.0" text-anchor="middle" font-size="9.5" fill="var(--ink2)">2.2</text>
+          <rect x="271.0" y="243.8" width="36.0" height="2.2" fill="var(--info)" rx="1.5"><title>1천 · Go (go-pq-cdc) 2.4초</title></rect>
+          <text x="289.0" y="239.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">2.4</text>
+          <rect x="401.0" y="239.6" width="36.0" height="6.4" fill="var(--info)" rx="1.5"><title>1만 · Go (go-pq-cdc) 7초</title></rect>
+          <text x="419.0" y="235.6" text-anchor="middle" font-size="9.5" fill="var(--ink2)">7</text>
+          <rect x="531.0" y="195.0" width="36.0" height="51.0" fill="var(--info)" rx="1.5"><title>10만 · Go (go-pq-cdc) 56.2초</title></rect>
+          <text x="549.0" y="191.0" text-anchor="middle" font-size="9.5" fill="var(--ink2)">56.2</text>
+          <rect x="661.0" y="134.1" width="36.0" height="111.9" fill="var(--info)" rx="1.5"><title>20만 · Go (go-pq-cdc) 123초</title></rect>
+          <text x="679.0" y="130.1" text-anchor="middle" font-size="9.5" fill="var(--ink2)">123</text>
+          <rect x="791.0" y="61.2" width="36.0" height="184.8" fill="var(--info)" rx="1.5"><title>30만 · Go (go-pq-cdc) 203초</title></rect>
+          <text x="809.0" y="57.2" text-anchor="middle" font-size="9.5" fill="var(--ink2)">203</text>
+          <line x1="76" y1="246" x2="856" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <line x1="76" y1="28" x2="76" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <rect x="709.6" y="6" width="22" height="4" rx="2" fill="var(--info)"/>
+          <text x="737.6" y="11" font-size="11.5" fill="var(--ink2)">Go (go-pq-cdc)</text>
+          <rect x="555.6" y="6" width="22" height="4" rx="2" fill="var(--hw)"/>
+          <text x="583.6" y="11" font-size="11.5" fill="var(--ink2)">Java (Debezium)</text>
+        </svg>
+        <p class="cht__c">막대 하나가 그 배치를 타깃에 다 반영하기까지 걸린 시간입니다. 1만행까지는 Go 가 눈에 띄게 앞서지만, 20만행부터는 두 스택이 거의 붙습니다.</p>
+      </figure>
+
+      <div class="note note--info">
+        <p class="note__t">작은 배치의 숫자는 처리 능력이 아닙니다</p>
+        100행 배치가 2.3초, 1,000행 배치가 2.6초로 거의 같습니다. 이 구간을 지배하는 것은 처리량이 아니라
+        <b>고정 지연</b>입니다 — 커밋이 WAL에 반영되고, 디코딩이 깨어나고, 배치가 flush되기까지의 시간이
+        약 2.2~2.6초로 일정하게 붙습니다. 처리량 비교는 10,000행부터가 의미가 있습니다.
+        같은 구간을 대시보드에서도 확인할 수 있습니다<sup class="ref" data-ref="1">1</sup><sup class="ref" data-ref="2">2</sup>.
+      </div>
+    </section>
+
+    <!-- ---------- 3 ---------- -->
+    <section class="sec" id="s3">
+      <h2><span class="n">03</span>DELETE 결과 — 반영 시간은 INSERT와 거의 같습니다</h2>
+      <p class="why">같은 사다리를 삭제로 돌렸습니다. INSERT로 쌓은 611,100행을 같은 순서로 되돌립니다.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:12%">배치 (테이블당)</th><th style="width:11%">총 이벤트</th>
+              <th style="width:14%">Java · source 실행</th><th style="width:13%">Java · 반영</th><th style="width:12%">Java · 행/초</th>
+              <th style="width:14%">Go · source 실행</th><th style="width:13%">Go · 반영</th><th>Go · 행/초</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="num">100</td><td class="num">300</td>
+              <td class="num">9 ms</td><td class="num">2.5초</td><td class="num">120</td>
+              <td class="num">21 ms</td><td class="num">2.5초</td><td class="num">120</td></tr>
+            <tr><td class="num">1,000</td><td class="num">3,000</td>
+              <td class="num">33 ms</td><td class="num">2.5초</td><td class="num">1,200</td>
+              <td class="num">14 ms</td><td class="num">2.4초</td><td class="num">1,250</td></tr>
+            <tr><td class="num">10,000</td><td class="num">30,000</td>
+              <td class="num">259 ms</td><td class="num">8.9초</td><td class="num">3,371</td>
+              <td class="num">258 ms</td><td class="num">5.9초</td><td class="num">5,085</td></tr>
+            <tr><td class="num">100,000</td><td class="num">300,000</td>
+              <td class="num">884 ms</td><td class="num">68.6초</td><td class="num">4,373</td>
+              <td class="num">790 ms</td><td class="num">59.0초</td><td class="num">5,085</td></tr>
+            <tr><td class="num">200,000</td><td class="num">600,000</td>
+              <td class="num">808 ms</td><td class="num">148.8초</td><td class="num">4,032</td>
+              <td class="num">882 ms</td><td class="num">133.3초</td><td class="num">4,501</td></tr>
+            <tr><td class="num">300,000</td><td class="num">900,000</td>
+              <td class="num">1,107 ms</td><td class="num"><b>212.1초</b></td><td class="num">4,243</td>
+              <td class="num">1,339 ms</td><td class="num"><b>185.5초</b></td><td class="num">4,852</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure class="cht">
+        <figcaption class="cht__t">배치 크기별 반영 시간 — DELETE</figcaption>
+        <svg viewBox="0 0 880 316" role="img" aria-label="배치 크기별 반영 시간 — DELETE">
+          <line x1="76" y1="246.0" x2="856" y2="246.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="250.0" text-anchor="end" font-size="11" fill="var(--ink4)">0</text>
+          <line x1="76" y1="191.5" x2="856" y2="191.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="195.5" text-anchor="end" font-size="11" fill="var(--ink4)">60</text>
+          <line x1="76" y1="137.0" x2="856" y2="137.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="141.0" text-anchor="end" font-size="11" fill="var(--ink4)">120</text>
+          <line x1="76" y1="82.5" x2="856" y2="82.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="86.5" text-anchor="end" font-size="11" fill="var(--ink4)">180</text>
+          <line x1="76" y1="28.0" x2="856" y2="28.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="32.0" text-anchor="end" font-size="11" fill="var(--ink4)">240</text>
+          <text x="14" y="18" font-size="11" fill="var(--ink3)">초</text>
+          <text x="141.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">100</text>
+          <text x="271.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">1천</text>
+          <text x="401.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">1만</text>
+          <text x="531.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">10만</text>
+          <text x="661.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">20만</text>
+          <text x="791.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">30만</text>
+          <rect x="102.0" y="243.7" width="36.0" height="2.3" fill="var(--hw)" rx="1.5"><title>100 · Java (Debezium) 2.5초</title></rect>
+          <text x="120.0" y="239.7" text-anchor="middle" font-size="9.5" fill="var(--ink2)">2.5</text>
+          <rect x="232.0" y="243.7" width="36.0" height="2.3" fill="var(--hw)" rx="1.5"><title>1천 · Java (Debezium) 2.5초</title></rect>
+          <text x="250.0" y="239.7" text-anchor="middle" font-size="9.5" fill="var(--ink2)">2.5</text>
+          <rect x="362.0" y="237.9" width="36.0" height="8.1" fill="var(--hw)" rx="1.5"><title>1만 · Java (Debezium) 8.9초</title></rect>
+          <text x="380.0" y="233.9" text-anchor="middle" font-size="9.5" fill="var(--ink2)">8.9</text>
+          <rect x="492.0" y="183.7" width="36.0" height="62.3" fill="var(--hw)" rx="1.5"><title>10만 · Java (Debezium) 68.6초</title></rect>
+          <text x="510.0" y="179.7" text-anchor="middle" font-size="9.5" fill="var(--ink2)">68.6</text>
+          <rect x="622.0" y="110.8" width="36.0" height="135.2" fill="var(--hw)" rx="1.5"><title>20만 · Java (Debezium) 148초</title></rect>
+          <text x="640.0" y="106.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">148</text>
+          <rect x="752.0" y="53.3" width="36.0" height="192.7" fill="var(--hw)" rx="1.5"><title>30만 · Java (Debezium) 212초</title></rect>
+          <text x="770.0" y="49.3" text-anchor="middle" font-size="9.5" fill="var(--ink2)">212</text>
+          <rect x="141.0" y="243.7" width="36.0" height="2.3" fill="var(--info)" rx="1.5"><title>100 · Go (go-pq-cdc) 2.5초</title></rect>
+          <text x="159.0" y="239.7" text-anchor="middle" font-size="9.5" fill="var(--ink2)">2.5</text>
+          <rect x="271.0" y="243.8" width="36.0" height="2.2" fill="var(--info)" rx="1.5"><title>1천 · Go (go-pq-cdc) 2.4초</title></rect>
+          <text x="289.0" y="239.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">2.4</text>
+          <rect x="401.0" y="240.6" width="36.0" height="5.4" fill="var(--info)" rx="1.5"><title>1만 · Go (go-pq-cdc) 5.9초</title></rect>
+          <text x="419.0" y="236.6" text-anchor="middle" font-size="9.5" fill="var(--ink2)">5.9</text>
+          <rect x="531.0" y="192.4" width="36.0" height="53.6" fill="var(--info)" rx="1.5"><title>10만 · Go (go-pq-cdc) 59초</title></rect>
+          <text x="549.0" y="188.4" text-anchor="middle" font-size="9.5" fill="var(--ink2)">59</text>
+          <rect x="661.0" y="124.9" width="36.0" height="121.1" fill="var(--info)" rx="1.5"><title>20만 · Go (go-pq-cdc) 133초</title></rect>
+          <text x="679.0" y="120.9" text-anchor="middle" font-size="9.5" fill="var(--ink2)">133</text>
+          <rect x="791.0" y="77.5" width="36.0" height="168.5" fill="var(--info)" rx="1.5"><title>30만 · Go (go-pq-cdc) 185초</title></rect>
+          <text x="809.0" y="73.5" text-anchor="middle" font-size="9.5" fill="var(--ink2)">185</text>
+          <line x1="76" y1="246" x2="856" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <line x1="76" y1="28" x2="76" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <rect x="709.6" y="6" width="22" height="4" rx="2" fill="var(--info)"/>
+          <text x="737.6" y="11" font-size="11.5" fill="var(--ink2)">Go (go-pq-cdc)</text>
+          <rect x="555.6" y="6" width="22" height="4" rx="2" fill="var(--hw)"/>
+          <text x="583.6" y="11" font-size="11.5" fill="var(--ink2)">Java (Debezium)</text>
+        </svg>
+        <p class="cht__c">같은 사다리를 삭제로 돌린 결과입니다. 30만행에서 Java 212초 · Go 186초로, INSERT 와 거의 같은 시간이 걸립니다.</p>
+      </figure>
+
+      <div class="note note--ok">
+        <p class="note__t">source는 6배 싸지만 CDC는 그대로입니다</p>
+        30만행 기준 source 실행이 INSERT 6,565ms → DELETE 1,107ms로 <b>6분의 1</b>입니다. 값을 만들어 넣는 것보다
+        PK로 지우는 것이 훨씬 싸기 때문입니다. 그런데 CDC 반영은 213.5초 → 212.1초로 <b>거의 차이가 없습니다.</b>
+        파이프라인 비용은 연산 종류가 아니라 <b>이벤트 개수</b>가 정한다는 뜻입니다.
+      </div>
+    </section>
+
+    <!-- ---------- 4 ---------- -->
+    <section class="sec" id="s4">
+      <h2><span class="n">04</span>처리량 — 배치가 커질수록 두 스택이 붙습니다</h2>
+      <p class="why">"Go가 더 빠르다"가 어디까지 맞는 말인지 봅니다.</p>
+
+      <figure class="cht">
+        <figcaption class="cht__t">구간 평균 처리량 — 배치가 커질수록 한계에 수렴한다</figcaption>
+        <svg viewBox="0 0 880 316" role="img" aria-label="구간 평균 처리량 — 배치가 커질수록 한계에 수렴한다">
+          <rect x="76" y="98.8" width="780.0" height="38.2" fill="var(--hw-pale)" stroke="var(--hw-tint)" stroke-dasharray="4 3"/>
+          <text x="850" y="93.8" text-anchor="end" font-size="11" fill="var(--hw-dk)">두 스택이 수렴하는 구간</text>
+          <line x1="76" y1="246.0" x2="856" y2="246.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="250.0" text-anchor="end" font-size="11" fill="var(--ink4)">0</text>
+          <line x1="76" y1="191.5" x2="856" y2="191.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="195.5" text-anchor="end" font-size="11" fill="var(--ink4)">2,000</text>
+          <line x1="76" y1="137.0" x2="856" y2="137.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="141.0" text-anchor="end" font-size="11" fill="var(--ink4)">4,000</text>
+          <line x1="76" y1="82.5" x2="856" y2="82.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="86.5" text-anchor="end" font-size="11" fill="var(--ink4)">6,000</text>
+          <line x1="76" y1="28.0" x2="856" y2="28.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="32.0" text-anchor="end" font-size="11" fill="var(--ink4)">8,000</text>
+          <text x="14" y="18" font-size="11" fill="var(--ink3)">건/초</text>
+          <text x="76.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">100</text>
+          <text x="232.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">1천</text>
+          <text x="388.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">1만</text>
+          <text x="544.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">10만</text>
+          <text x="700.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">20만</text>
+          <text x="856.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">30만</text>
+          <polyline points="76.0,242.5 232.0,214.6 388.0,171.0 544.0,139.3 700.0,120.1 856.0,131.1 " fill="none" stroke="var(--hw)" stroke-width="2.4"/>
+          <circle cx="76.0" cy="242.5" r="3.4" fill="var(--hw)"><title>100 · Java · INSERT 130건/초</title></circle>
+          <circle cx="232.0" cy="214.6" r="3.4" fill="var(--hw)"><title>1천 · Java · INSERT 1,154건/초</title></circle>
+          <circle cx="388.0" cy="171.0" r="3.4" fill="var(--hw)"><title>1만 · Java · INSERT 2,752건/초</title></circle>
+          <circle cx="544.0" cy="139.3" r="3.4" fill="var(--hw)"><title>10만 · Java · INSERT 3,916건/초</title></circle>
+          <circle cx="700.0" cy="120.1" r="3.4" fill="var(--hw)"><title>20만 · Java · INSERT 4,622건/초</title></circle>
+          <circle cx="856.0" cy="131.1" r="3.4" fill="var(--hw)"><title>30만 · Java · INSERT 4,215건/초</title></circle>
+          <text x="856.0" y="122.1" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--hw)">4,215</text>
+          <polyline points="76.0,242.3 232.0,211.9 388.0,129.2 544.0,100.5 700.0,113.3 856.0,125.5 " fill="none" stroke="var(--info)" stroke-width="2.4"/>
+          <circle cx="76.0" cy="242.3" r="3.4" fill="var(--info)"><title>100 · Go · INSERT 136건/초</title></circle>
+          <circle cx="232.0" cy="211.9" r="3.4" fill="var(--info)"><title>1천 · Go · INSERT 1,250건/초</title></circle>
+          <circle cx="388.0" cy="129.2" r="3.4" fill="var(--info)"><title>1만 · Go · INSERT 4,286건/초</title></circle>
+          <circle cx="544.0" cy="100.5" r="3.4" fill="var(--info)"><title>10만 · Go · INSERT 5,338건/초</title></circle>
+          <circle cx="700.0" cy="113.3" r="3.4" fill="var(--info)"><title>20만 · Go · INSERT 4,870건/초</title></circle>
+          <circle cx="856.0" cy="125.5" r="3.4" fill="var(--info)"><title>30만 · Go · INSERT 4,423건/초</title></circle>
+          <text x="856.0" y="116.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--info)">4,423</text>
+          <line x1="76" y1="246" x2="856" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <line x1="76" y1="28" x2="76" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <rect x="732.4" y="6" width="22" height="4" rx="2" fill="var(--info)"/>
+          <text x="760.4" y="11" font-size="11.5" fill="var(--ink2)">Go · INSERT</text>
+          <rect x="593.6" y="6" width="22" height="4" rx="2" fill="var(--hw)"/>
+          <text x="621.6" y="11" font-size="11.5" fill="var(--ink2)">Java · INSERT</text>
+        </svg>
+        <p class="cht__c">100건·1천건 구간의 낮은 값은 처리 능력이 아니라 고정 지연(약 2.2~2.6초) 때문입니다. 1만건을 넘어서면서 4,000~5,400건/초 띠로 수렴합니다.</p>
+      </figure>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:16%">배치</th><th style="width:21%">INSERT 배수 (Java÷Go)</th><th style="width:21%">DELETE 배수</th><th>해석</th></tr></thead>
+          <tbody>
+            <tr><td class="num">1만</td><td class="num">1.56배</td><td class="num">1.51배</td><td>Go가 뚜렷하게 빠릅니다</td></tr>
+            <tr><td class="num">10만</td><td class="num">1.36배</td><td class="num">1.16배</td><td>격차가 좁혀집니다</td></tr>
+            <tr><td class="num">20만</td><td class="num">1.05배</td><td class="num">1.12배</td><td>사실상 동률</td></tr>
+            <tr><td class="num">30만</td><td class="num">1.05배</td><td class="num">1.14배</td><td>사실상 동률</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin:10px 0 0">작은 배치에서는 스택 구현의 차이(디코딩·배치 구성)가 그대로 드러나지만,
+        배치가 커지면 두 스택 모두 <b>target DB의 쓰기 속도</b>라는 같은 벽에 부딪힙니다.
+        30만행 구간에서 4,200~4,900건/초로 수렴하는 것이 그 벽의 높이입니다. <span class="chip chip--warn">추정</span></p>
+    </section>
+
+    <!-- ---------- 5 ---------- -->
+    <section class="sec" id="s5">
+      <h2><span class="n">05</span>자원 사용</h2>
+      <p class="why">배치 구간별 cdc-service 컨테이너의 최댓값입니다.<sup class="ref" data-ref="5">5</sup></p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th style="width:12%">연산</th><th style="width:14%">배치</th>
+            <th style="width:19%">Java 메모리</th><th style="width:17%">Java CPU</th>
+            <th style="width:19%">Go 메모리</th><th>Go CPU</th>
+          </tr></thead>
+          <tbody>
+            <tr><td>INSERT</td><td class="num">10,000</td><td class="num">718 MB</td><td class="num">0.51 core</td><td class="num">40 MB</td><td class="num">0.07 core</td></tr>
+            <tr><td>INSERT</td><td class="num">100,000</td><td class="num">811 MB</td><td class="num">1.17 core</td><td class="num">44 MB</td><td class="num">0.70 core</td></tr>
+            <tr><td>INSERT</td><td class="num">200,000</td><td class="num">857 MB</td><td class="num">0.95 core</td><td class="num">45 MB</td><td class="num">0.76 core</td></tr>
+            <tr><td>INSERT</td><td class="num">300,000</td><td class="num">854 MB</td><td class="num">0.95 core</td><td class="num">648 MB</td><td class="num">0.77 core</td></tr>
+            <tr><td>DELETE</td><td class="num">100,000</td><td class="num">885 MB</td><td class="num">0.94 core</td><td class="num">68 MB</td><td class="num">0.75 core</td></tr>
+            <tr><td>DELETE</td><td class="num">200,000</td><td class="num">886 MB</td><td class="num">0.93 core</td><td class="num">72 MB</td><td class="num">0.75 core</td></tr>
+            <tr><td>DELETE</td><td class="num">300,000</td><td class="num">897 MB</td><td class="num">0.96 core</td><td class="num">72 MB</td><td class="num">0.78 core</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--risk">
+        <p class="note__t">메모리 차이가 20배입니다</p>
+        Java는 전 구간 700~900MB로 평평합니다(JVM 힙 상한에 눌린 모습). Go는 대부분 40~72MB로,
+        <b>같은 일을 20분의 1 메모리로</b> 합니다. 다만 INSERT 30만행 구간에서 Go가 648MB까지 한 번 치솟습니다 —
+        밀린 이벤트를 안에 들고 있을 때 나타나는 특성으로, 배치가 더 커지면 계속 오릅니다.
+        컨테이너에 메모리 상한을 걸지 않은 상태이므로 대량 적재 전에는 상한을 정해야 합니다.
+      </div>
+    </section>
+
+    <!-- ---------- 6 ---------- -->
+    <section class="sec" id="s6">
+      <h2><span class="n">06</span>정합성</h2>
+      <p class="why">시간보다 먼저 확인해야 하는 값입니다. 틀린 결과를 빨리 만드는 것은 의미가 없습니다.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:16%">스택</th><th style="width:26%">source (car/computer/member)</th><th style="width:26%">target 살아있는 행</th><th>target 소프트 삭제</th></tr></thead>
+          <tbody>
+            <tr><td>Java</td><td class="num">3 / 3 / 5</td><td class="num">3 / 3 / 5</td><td class="num">611,100 / 611,100</td></tr>
+            <tr><td>Go</td><td class="num">3 / 3 / 5</td><td class="num">3 / 3 / 5</td><td class="num">611,100 / 611,100</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin:10px 0 0">사다리를 다 돌고 나면 초기 시드만 남아야 합니다. 두 스택 모두 그렇게 끝났습니다.
+        computer·member는 소프트 삭제라 지운 611,100행이 <span class="mono">deleted = true</span>로 남아 있고,
+        car는 물리 삭제라 사라졌습니다. 12개 배치 전부에서 배치 직후 source와 target이 일치했습니다.</p>
+
+      <div class="note note--info">
+        <p class="note__t">소프트 삭제의 대가</p>
+        타깃 DB 크기가 Java 321MB · Go 319MB인데 소스는 264MB입니다. 지운 행을 계속 들고 있기 때문입니다.
+        늦게 도착한 갱신이 지워진 행을 되살리는 것을 막으려는 설계인데, 그 대가가 이 차이입니다.
+      </div>
+    </section>
+
+    <!-- ---------- 7 ---------- -->
+    <section class="sec" id="s7">
+      <h2><span class="n">07</span>이 측정의 한계</h2>
+      <p class="why">숫자를 인용하기 전에 읽어야 하는 부분입니다.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:26%">한계</th><th style="width:36%">영향</th><th>대응</th></tr></thead>
+          <tbody>
+            <tr><td>1회 측정</td><td>같은 배치를 반복하지 않아 편차를 알 수 없음</td><td>결론을 낼 배치는 3회 반복 후 중앙값 사용</td></tr>
+            <tr><td>작은 배치는 고정 지연이 지배</td><td>100·1,000행 값(약 2.2~2.6초)은 처리 능력이 아님</td><td>처리량 비교는 10,000행 이상만 인용</td></tr>
+            <tr><td>UPDATE는 빠져 있음</td><td>UPDATE는 <span class="mono">REPLICA IDENTITY FULL</span> 때문에 변경 전 이미지까지 실려 성격이 다름</td><td>별도 사다리로 측정 필요</td></tr>
+            <tr><td>Java 스택의 감사 기록이 켜져 있음</td><td><span class="mono">CDC_AUDIT_CHANGED_FIELDS=car</span>. 다만 UPDATE에만 걸리므로 이번 결과에는 영향 없음<sup class="ref" data-ref="6">6</sup></td><td>UPDATE 측정 시에는 반드시 끄고 조건을 맞출 것</td></tr>
+            <tr><td>단일 호스트 · 컨테이너 환경</td><td>두 스택과 DB 4개가 CPU · 디스크를 공유</td><td>절대 성능치가 아니라 상대 비교용으로만 사용</td></tr>
+            <tr><td>Go 메모리 상한 미설정</td><td>30만행에서 648MB까지 오른 뒤 어디까지 오르는지 미확인</td><td>다음 측정은 <span class="mono">mem_limit</span>을 걸고 수행</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- 8 ---------- -->
+    <section class="sec" id="s8">
+      <h2><span class="n">08</span>재현 절차</h2>
+      <p class="why">같은 숫자를 다시 뽑는 순서입니다.</p>
+
+      <div class="code">
+        <div class="code__bar"><span>1. 두 스택 기동 (각 스택 루트에서)</span><button class="code__copy" type="button">복사</button></div>
+<pre>cd src/embedded-cdc     &amp;&amp; docker compose up -d --build
+cd src/embedded-cdc-go  &amp;&amp; docker compose up -d --build</pre>
+      </div>
+
+      <div class="code">
+        <div class="code__bar"><span>2. 사다리 실행 — 앞 배치 완료 후 다음 배치</span><button class="code__copy" type="button">복사</button></div>
+<pre><span class="cm"># 배치마다 두 소스에 같은 cnt 로 넣고, 두 타깃이 모두 따라잡을 때까지 기다린다</span>
+for CNT in 100 1000 10000 100000 200000 300000; do
+  podman exec -i emb-cdc-source-pg    psql -U postgres -d sourcedb \
+      -v ON_ERROR_STOP=1 -v cnt=$CNT -f - &lt; src/embedded-cdc/scripts/seed-bulk.sql
+  podman exec -i emb-cdc-go-source-pg psql -U postgres -d sourcedb \
+      -v ON_ERROR_STOP=1 -v cnt=$CNT -f - &lt; src/embedded-cdc-go/scripts/seed-bulk.sql
+  <span class="cm"># target 의 살아있는 행 수가 source 와 같아질 때까지 0.3초 간격 폴링</span>
+done</pre>
+      </div>
+
+      <div class="code">
+        <div class="code__bar"><span>3. 정합성 확인 — 세 스택 공통</span><button class="code__copy" type="button">복사</button></div>
+<pre><span class="cm"># source</span>
+SELECT (SELECT count(*) FROM car), (SELECT count(*) FROM computer), (SELECT count(*) FROM member);
+<span class="cm"># target — computer/member 는 소프트 삭제라 살아있는 행만 센다</span>
+SELECT (SELECT count(*) FROM car),
+       (SELECT count(*) FROM computer WHERE NOT deleted),
+       (SELECT count(*) FROM member   WHERE NOT deleted);</pre>
+      </div>
+
+      <h3>재측정 시 확인할 것 <span class="chip chk-count">0 / 0</span></h3>
+      <ul class="chk">
+        <li><input type="checkbox" id="c1"><span><span class="t">직전 배치의 반영이 완전히 끝난 뒤 다음 배치를 넣는다</span><span class="d">겹치면 뒤 배치가 앞 배치 뒤에 줄을 서 "이 배치의 시간"이 아니게 된다</span></span></li>
+        <li><input type="checkbox" id="c2"><span><span class="t">두 source DB에 같은 cnt 값을 넣는다</span><span class="d">한쪽만 크면 비교가 성립하지 않는다</span></span></li>
+        <li><input type="checkbox" id="c3"><span><span class="t">Java 감사 설정을 확인한다</span><span class="d">UPDATE 측정이라면 CDC_AUDIT_CHANGED_FIELDS 를 비워 조건을 맞춘다</span></span></li>
+        <li><input type="checkbox" id="c4"><span><span class="t">호스트에서 다른 무거운 작업을 돌리지 않는다</span><span class="d">두 스택이 같은 CPU · 디스크를 공유한다</span></span></li>
+        <li><input type="checkbox" id="c5"><span><span class="t">Go 컨테이너 메모리 상한을 정한다</span><span class="d">30만행에서 648MB까지 올랐다. 더 큰 배치는 상한 없이 돌리지 않는다</span></span></li>
+        <li><input type="checkbox" id="c6"><span><span class="t">시드 데이터에 실제 개인정보를 넣지 않는다</span><span class="d">seed-bulk.sql 은 난수 조합 문자열만 생성한다</span></span></li>
+      </ul>
+    </section>
+
+    <!-- ---------- 9 ---------- -->
+    <section class="sec" id="s9">
+      <h2><span class="n">09</span>참고 자료</h2>
+      <ol class="refs">
+        <li id="ref-1"><span class="refs__n">1</span><span><span class="refs__src">Java 판 대시보드</span>
+          <span class="refs__meta">data · http://localhost:56300/d/embedded-cdc/embedded-cdc-overview, 2026-09-02 17:02~17:18</span></span></li>
+        <li id="ref-2"><span class="refs__n">2</span><span><span class="refs__src">Go 판 대시보드</span>
+          <span class="refs__meta">data · http://localhost:57300/d/embedded-cdc-go/embedded-cdc-go-overview, 2026-09-02 17:02~17:18</span></span></li>
+        <li id="ref-3"><span class="refs__n">3</span><span><span class="refs__src">측정 원본 기록 (배치별 실행·반영 시간)</span>
+          <span class="refs__meta">data · /tmp/ladder-results.txt, 2026-09-02 17:02:41~17:17:57 · target DB 0.3초 간격 폴링</span></span></li>
+        <li id="ref-4"><span class="refs__n">4</span><span><span class="refs__src">부하 SQL</span>
+          <span class="refs__meta">code · src/embedded-cdc/scripts/seed-bulk.sql · src/embedded-cdc/scripts/delete-bulk.sql</span></span></li>
+        <li id="ref-5"><span class="refs__n">5</span><span><span class="refs__src">컨테이너 자원 사용량</span>
+          <span class="refs__meta">data · Prometheus max_over_time(cdc:container_mem_bytes / cdc:container_cpu_cores), name=emb-cdc-service · emb-cdc-go-service</span></span></li>
+        <li id="ref-6"><span class="refs__n">6</span><span><span class="refs__src">감사 기록은 UPDATE 에만 걸린다</span>
+          <span class="refs__meta">code · src/embedded-cdc/dev/cdc-service/src/main/java/dev/embeddedcdc/application/BatchApplier.java:102 (auditIfUpdate)</span></span></li>
+      </ol>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   HW Doc Kit - diagram engine (의존성 없음, 단일 파일 내장용)
+   drawio 느낌의 조작: 드래그 이동 / 연결 / 라벨 인라인 편집 /
+   팬·줌 / 톤 변경 / 삭제 / Ctrl+Z / JSON 내보내기(붙여넣기로 영구 반영)
+
+   마크업 (자세한 내용은 references/diagram.md):
+     div.dgm[data-edit=on] 안에
+     script[type=application/json][class=dgm-data] 로 노드·엣지 JSON 을 넣습니다.
+   ============================================================ */
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var GRID = 10;
+  var TONES = ['neutral', 'primary', 'accent', 'muted', 'ok', 'warn', 'risk', 'info'];
+
+  function s(n, a) {
+    var e = document.createElementNS(NS, n);
+    for (var k in (a || {})) e.setAttribute(k, a[k]);
+    return e;
+  }
+  function h(t, c, txt) {
+    var e = document.createElement(t);
+    if (c) e.className = c;
+    if (txt != null) e.textContent = txt;
+    return e;
+  }
+  function btn(label, title) {
+    var b = h('button', 'dgm__btn', label);
+    b.type = 'button';
+    if (title) b.title = title;
+    return b;
+  }
+  function snap(v) { return Math.round(v / GRID) * GRID; }
+
+  function boxShape(n) {
+    var sh = n.shape || 'rect', w = n.w, ht = n.h;
+    if (sh === 'diamond')
+      return s('path', { 'class': 'box', d: 'M' + w / 2 + ',0 L' + w + ',' + ht / 2 + ' L' + w / 2 + ',' + ht + ' L0,' + ht / 2 + ' Z' });
+    if (sh === 'store') {
+      var r = Math.min(14, ht / 4);
+      var d = 'M0,' + r +
+        ' C0,' + (r * .45) + ' ' + (w * .22) + ',0 ' + (w / 2) + ',0' +
+        ' C' + (w * .78) + ',0 ' + w + ',' + (r * .45) + ' ' + w + ',' + r +
+        ' L' + w + ',' + (ht - r) +
+        ' C' + w + ',' + (ht - r * .45) + ' ' + (w * .78) + ',' + ht + ' ' + (w / 2) + ',' + ht +
+        ' C' + (w * .22) + ',' + ht + ' 0,' + (ht - r * .45) + ' 0,' + (ht - r) + ' Z';
+      return s('path', { 'class': 'box', d: d });
+    }
+    if (sh === 'note') {
+      var f = 14;
+      return s('path', { 'class': 'box', d: 'M0,0 L' + (w - f) + ',0 L' + w + ',' + f + ' L' + w + ',' + ht + ' L0,' + ht + ' Z' });
+    }
+    var rx = sh === 'pill' ? ht / 2 : (sh === 'round' ? 12 : 4);
+    return s('rect', { 'class': 'box', x: 0, y: 0, width: w, height: ht, rx: rx });
+  }
+
+  /* 노드 두 개 사이의 직교(엘보) 경로 */
+  function route(a, b) {
+    var ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    var dx = bc.x - ac.x, dy = bc.y - ac.y, p1, p2, dir;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      dir = 'h';
+      p1 = { x: dx > 0 ? a.x + a.w : a.x, y: ac.y };
+      p2 = { x: dx > 0 ? b.x : b.x + b.w, y: bc.y };
+    } else {
+      dir = 'v';
+      p1 = { x: ac.x, y: dy > 0 ? a.y + a.h : a.y };
+      p2 = { x: bc.x, y: dy > 0 ? b.y : b.y + b.h };
+    }
+    var d, mid;
+    if (dir === 'h') {
+      var mx = (p1.x + p2.x) / 2;
+      d = 'M' + p1.x + ',' + p1.y + ' L' + mx + ',' + p1.y + ' L' + mx + ',' + p2.y + ' L' + p2.x + ',' + p2.y;
+      mid = { x: mx, y: (p1.y + p2.y) / 2 };
+    } else {
+      var my = (p1.y + p2.y) / 2;
+      d = 'M' + p1.x + ',' + p1.y + ' L' + p1.x + ',' + my + ' L' + p2.x + ',' + my + ' L' + p2.x + ',' + p2.y;
+      mid = { x: (p1.x + p2.x) / 2, y: my };
+    }
+    return { d: d, mid: mid };
+  }
+
+  function Diagram(root) {
+    this.root = root;
+    this.editable = root.getAttribute('data-edit') !== 'off';
+    this.data = this.read();
+    this.view = { tx: 0, ty: 0, k: 1 };
+    this.sel = null;          /* {type:'node'|'edge'|'group', id} */
+    this.linkMode = false;
+    this.linkFrom = null;
+    this.undo = [];
+    this.build();
+    this.render();
+    this.fit();
+  }
+
+  Diagram.prototype.read = function () {
+    var tag = this.root.querySelector('script.dgm-data');
+    var d = { nodes: [], edges: [], groups: [] };
+    if (tag) { try { d = JSON.parse(tag.textContent); } catch (e) { console.warn('[dgm] JSON 파싱 실패', e); } }
+    d.nodes = d.nodes || []; d.edges = d.edges || []; d.groups = d.groups || [];
+    d.nodes.forEach(function (n) {
+      n.w = n.w || 170; n.h = n.h || 62;
+      n.shape = n.shape || 'rect'; n.tone = n.tone || 'neutral';
+      n.x = n.x || 0; n.y = n.y || 0;
+    });
+    return d;
+  };
+
+  Diagram.prototype.build = function () {
+    var self = this;
+    var bar = h('div', 'dgm__bar no-print');
+    var mk = function (label, title, fn) { var b = btn(label, title); b.addEventListener('click', fn); bar.appendChild(b); return b; };
+
+    mk('박스', '새 박스 추가', function () { self.addNode(); });
+    this.bLink = mk('연결', '두 박스를 차례로 클릭해 화살표 연결', function () { self.toggleLink(); });
+    mk('색', '선택 항목의 톤 변경', function () { self.cycleTone(); });
+    mk('모양', '선택 박스의 모양 변경', function () { self.cycleShape(); });
+    mk('삭제', '선택 항목 삭제 (Delete)', function () { self.remove(); });
+    bar.appendChild(h('span', 'sp'));
+    mk('−', '축소', function () { self.zoom(1 / 1.2); });
+    mk('+', '확대', function () { self.zoom(1.2); });
+    mk('맞춤', '화면에 맞추기', function () { self.fit(); });
+    this.bMax = mk('넓게', '화면 가득 펼치기 (Esc 로 닫기)', function () { self.toggleMax(); });
+    mk('JSON', '수정 결과를 JSON으로 복사해 원본 파일에 붙여넣기', function () { self.openJson(); });
+    bar.appendChild(h('span', 'dgm__hint', '드래그 이동 · 더블클릭 라벨수정 · 휠 줌 · 빈 곳 드래그 팬'));
+
+    var svg = s('svg', { 'class': 'dgm__svg' });
+    var defs = s('defs');
+    [['ar-default', 'var(--ink3)'], ['ar-primary', 'var(--hw)'], ['ar-risk', 'var(--risk)'], ['ar-ok', 'var(--ok)']]
+      .forEach(function (m) {
+        var mk2 = s('marker', {
+          id: m[0] + '-' + Math.random().toString(36).slice(2, 7),
+          viewBox: '0 0 10 10', refX: 9, refY: 5,
+          markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse'
+        });
+        var p = s('path', { d: 'M0,1 L10,5 L0,9 z' });
+        p.setAttribute('style', 'fill:' + m[1]);
+        mk2.appendChild(p); defs.appendChild(mk2);
+        self['mk_' + m[0].slice(3)] = mk2.getAttribute('id');
+      });
+    svg.appendChild(defs);
+
+    this.gRoot = s('g');
+    this.gGroups = s('g'); this.gEdges = s('g'); this.gNodes = s('g');
+    this.gRoot.appendChild(this.gGroups);
+    this.gRoot.appendChild(this.gEdges);
+    this.gRoot.appendChild(this.gNodes);
+    svg.appendChild(this.gRoot);
+
+    this.svg = svg;
+    this.root.insertBefore(svg, this.root.firstChild);
+    if (this.editable) this.root.insertBefore(bar, svg);
+
+    /* JSON 모달 */
+    var modal = h('div', 'dgm__modal no-print');
+    var pane = h('div', 'pane');
+    var head = h('div', 'head'); head.appendChild(h('b', null, '다이어그램 JSON'));
+    head.appendChild(h('span', 'sp'));
+    var closeB = btn('닫기'); head.appendChild(closeB);
+    var ta = h('textarea'); ta.spellcheck = false;
+    var foot = h('div', 'foot');
+    var copyB = btn('전체 복사'); var applyB = btn('붙여넣은 JSON 적용');
+    foot.appendChild(h('span', 'dgm__hint', '원본 HTML의 dgm-data 블록에 붙여넣으면 수정이 영구 반영됩니다'));
+    foot.appendChild(h('span', 'sp')); foot.appendChild(applyB); foot.appendChild(copyB);
+    pane.appendChild(head); pane.appendChild(ta); pane.appendChild(foot);
+    modal.appendChild(pane); this.root.appendChild(modal);
+    this.modal = modal; this.ta = ta;
+    closeB.addEventListener('click', function () { modal.classList.remove('is-open'); });
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.remove('is-open'); });
+    copyB.addEventListener('click', function () {
+      ta.select(); ta.setSelectionRange(0, ta.value.length);
+      try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); }
+      copyB.textContent = '복사됨'; setTimeout(function () { copyB.textContent = '전체 복사'; }, 1200);
+    });
+    applyB.addEventListener('click', function () {
+      try {
+        var d = JSON.parse(ta.value);
+        self.push(); self.data = d; self.data.nodes = d.nodes || []; self.data.edges = d.edges || []; self.data.groups = d.groups || [];
+        self.render(); self.fit(); modal.classList.remove('is-open');
+      } catch (e) { alert('JSON 형식이 올바르지 않습니다: ' + e.message); }
+    });
+
+    this.bind();
+  };
+
+  /* ---------- 렌더 ---------- */
+  Diagram.prototype.render = function () {
+    var self = this;
+    this.gGroups.textContent = ''; this.gEdges.textContent = ''; this.gNodes.textContent = '';
+    this.index = {};
+    this.data.nodes.forEach(function (n) { self.index[n.id] = n; });
+
+    this.data.groups.forEach(function (g) {
+      var el = s('g', { 'class': 'dgm-grp', 'data-id': g.id, transform: 'translate(' + g.x + ',' + g.y + ')' });
+      el.appendChild(s('rect', { 'class': 'box', x: 0, y: 0, width: g.w, height: g.h, rx: 10 }));
+      var t = s('text', { 'class': 'gl', x: 12, y: 20 }); t.textContent = g.label || '';
+      el.appendChild(t);
+      self.gGroups.appendChild(el);
+    });
+
+    this.data.edges.forEach(function (e, i) {
+      var a = self.index[e.from], b = self.index[e.to];
+      if (!a || !b) return;
+      var r = route(a, b);
+      var g = s('g', { 'class': 'dgm-edge', 'data-i': i });
+      if (e.tone) g.setAttribute('data-tone', e.tone);
+      if (e.style) g.setAttribute('data-style', e.style);
+      var wire = s('path', { 'class': 'wire', d: r.d });
+      var mid = e.tone === 'primary' ? self.mk_primary : e.tone === 'risk' ? self.mk_risk : e.tone === 'ok' ? self.mk_ok : self.mk_default;
+      if (e.arrow !== false) wire.setAttribute('marker-end', 'url(#' + mid + ')');
+      g.appendChild(s('path', { 'class': 'hit', d: r.d }));
+      g.appendChild(wire);
+      if (e.label) {
+        var txt = String(e.label), wpx = 0;
+        for (var ci = 0; ci < txt.length; ci++) wpx += txt.charCodeAt(ci) > 0x2E80 ? 12.5 : 7;
+        var w = Math.max(34, Math.ceil(wpx) + 22);
+        var fo = s('foreignObject', { x: r.mid.x - w / 2, y: r.mid.y - 11, width: w, height: 22 });
+        var div = h('div', 'elbl'); div.appendChild(h('span', null, e.label));
+        fo.appendChild(div); g.appendChild(fo);
+      }
+      self.gEdges.appendChild(g);
+    });
+
+    this.data.nodes.forEach(function (n) {
+      var g = s('g', { 'class': 'dgm-node', 'data-id': n.id, 'data-tone': n.tone, transform: 'translate(' + n.x + ',' + n.y + ')' });
+      g.appendChild(boxShape(n));
+      var pad = n.shape === 'diamond' ? Math.round(n.w * .18) : 0;
+      var fo = s('foreignObject', { x: pad, y: 0, width: n.w - pad * 2, height: n.h });
+      var lbl = h('div', 'lbl');
+      lbl.appendChild(h('span', 't', n.label || ''));
+      if (n.sub) lbl.appendChild(h('span', 'sub', n.sub));
+      fo.appendChild(lbl); g.appendChild(fo);
+      self.gNodes.appendChild(g);
+    });
+
+    this.paint();
+  };
+
+  Diagram.prototype.paint = function () {
+    var self = this;
+    this.gRoot.setAttribute('transform', 'translate(' + this.view.tx + ',' + this.view.ty + ') scale(' + this.view.k + ')');
+    Array.prototype.forEach.call(this.root.querySelectorAll('.is-sel'), function (e) { e.classList.remove('is-sel'); });
+    if (!this.sel) return;
+    var q = this.sel.type === 'edge' ? '.dgm-edge[data-i="' + this.sel.id + '"]'
+      : this.sel.type === 'group' ? '.dgm-grp[data-id="' + this.sel.id + '"]'
+        : '.dgm-node[data-id="' + this.sel.id + '"]';
+    var el = this.root.querySelector(q);
+    if (el) el.classList.add('is-sel');
+  };
+
+  /* ---------- 좌표 ---------- */
+  Diagram.prototype.world = function (ev) {
+    var r = this.svg.getBoundingClientRect();
+    return { x: (ev.clientX - r.left - this.view.tx) / this.view.k, y: (ev.clientY - r.top - this.view.ty) / this.view.k };
+  };
+
+  /* 화면 가득 펼치기. 다른 다이어그램이 펼쳐져 있으면 먼저 닫는다. */
+  Diagram.prototype.toggleMax = function (force) {
+    var self = this;
+    var on = (force == null) ? !this.root.classList.contains('is-max') : !!force;
+    if (on) {
+      var cur = document.querySelector('.dgm.is-max');
+      if (cur && cur !== this.root && cur.__dgm) cur.__dgm.toggleMax(false);
+    }
+    this.root.classList.toggle('is-max', on);
+    document.documentElement.classList.toggle('dgm-locked', on);
+    if (this.bMax) {
+      this.bMax.classList.toggle('is-on', on);
+      this.bMax.textContent = on ? '닫기' : '넓게';
+      this.bMax.title = on ? '원래 크기로 (Esc)' : '화면 가득 펼치기 (Esc 로 닫기)';
+    }
+    (window.requestAnimationFrame || setTimeout)(function () { self.fit(); });
+  };
+
+  Diagram.prototype.fit = function () {
+    var items = this.data.nodes.concat(this.data.groups);
+    var r = this.svg.getBoundingClientRect();
+    var W = r.width || 800, H = r.height || 420;
+    if (!items.length) { this.view = { tx: 20, ty: 20, k: 1 }; return this.paint(); }
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    items.forEach(function (n) {
+      x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+      x1 = Math.max(x1, n.x + n.w); y1 = Math.max(y1, n.y + n.h);
+    });
+    var pad = 24, bw = (x1 - x0) + pad * 2, bh = (y1 - y0) + pad * 2;
+    var k = Math.min(W / bw, H / bh, 1.6);
+    this.view.k = k;
+    this.view.tx = (W - bw * k) / 2 - (x0 - pad) * k;
+    this.view.ty = (H - bh * k) / 2 - (y0 - pad) * k;
+    this.paint();
+  };
+
+  Diagram.prototype.zoom = function (f, cx, cy) {
+    var r = this.svg.getBoundingClientRect();
+    cx = cx == null ? r.width / 2 : cx; cy = cy == null ? r.height / 2 : cy;
+    var k0 = this.view.k, k1 = Math.max(.25, Math.min(3, k0 * f));
+    this.view.tx = cx - (cx - this.view.tx) * (k1 / k0);
+    this.view.ty = cy - (cy - this.view.ty) * (k1 / k0);
+    this.view.k = k1; this.paint();
+  };
+
+  /* ---------- 편집 ---------- */
+  Diagram.prototype.push = function () {
+    this.undo.push(JSON.stringify(this.data));
+    if (this.undo.length > 40) this.undo.shift();
+  };
+  Diagram.prototype.popUndo = function () {
+    if (!this.undo.length) return;
+    this.data = JSON.parse(this.undo.pop());
+    this.sel = null; this.render();
+  };
+  Diagram.prototype.addNode = function () {
+    this.push();
+    var id = 'n' + Date.now().toString(36).slice(-5);
+    var r = this.svg.getBoundingClientRect();
+    var wx = snap((r.width / 2 - this.view.tx) / this.view.k - 85);
+    var wy = snap((r.height / 2 - this.view.ty) / this.view.k - 31);
+    this.data.nodes.push({ id: id, label: '새 단계', x: wx, y: wy, w: 170, h: 62, shape: 'rect', tone: 'neutral' });
+    this.sel = { type: 'node', id: id };
+    this.render();
+  };
+  Diagram.prototype.toggleLink = function () {
+    this.linkMode = !this.linkMode; this.linkFrom = null;
+    this.bLink.classList.toggle('is-on', this.linkMode);
+  };
+  Diagram.prototype.cycleTone = function () {
+    if (!this.sel) return;
+    this.push();
+    if (this.sel.type === 'node') {
+      var n = this.index[this.sel.id];
+      n.tone = TONES[(TONES.indexOf(n.tone) + 1) % TONES.length];
+    } else if (this.sel.type === 'edge') {
+      var order = [undefined, 'primary', 'ok', 'risk'];
+      var e = this.data.edges[this.sel.id];
+      e.tone = order[(order.indexOf(e.tone) + 1) % order.length];
+    }
+    this.render();
+  };
+  Diagram.prototype.cycleShape = function () {
+    if (!this.sel || this.sel.type !== 'node') return;
+    var SH = ['rect', 'round', 'pill', 'diamond', 'store', 'note'];
+    this.push();
+    var n = this.index[this.sel.id];
+    n.shape = SH[(SH.indexOf(n.shape) + 1) % SH.length];
+    this.render();
+  };
+  Diagram.prototype.remove = function () {
+    if (!this.sel) return;
+    this.push();
+    var self = this;
+    if (this.sel.type === 'node') {
+      this.data.nodes = this.data.nodes.filter(function (n) { return n.id !== self.sel.id; });
+      this.data.edges = this.data.edges.filter(function (e) { return e.from !== self.sel.id && e.to !== self.sel.id; });
+    } else if (this.sel.type === 'edge') {
+      this.data.edges.splice(this.sel.id, 1);
+    } else {
+      this.data.groups = this.data.groups.filter(function (g) { return g.id !== self.sel.id; });
+    }
+    this.sel = null; this.render();
+  };
+  Diagram.prototype.openJson = function () {
+    this.ta.value = JSON.stringify(this.data, null, 2);
+    this.modal.classList.add('is-open');
+  };
+
+  /* ---------- 이벤트 ---------- */
+  Diagram.prototype.bind = function () {
+    var self = this, drag = null, pan = null;
+
+    this.svg.addEventListener('pointerdown', function (ev) {
+      if (ev.target.closest('[contenteditable="true"]')) return;
+      var nodeEl = ev.target.closest('.dgm-node');
+      var edgeEl = ev.target.closest('.dgm-edge');
+      var grpEl = ev.target.closest('.dgm-grp');
+
+      if (self.linkMode && nodeEl) {
+        var id = nodeEl.getAttribute('data-id');
+        if (!self.linkFrom) { self.linkFrom = id; self.sel = { type: 'node', id: id }; self.paint(); }
+        else if (self.linkFrom !== id) {
+          self.push();
+          self.data.edges.push({ from: self.linkFrom, to: id, label: '' });
+          self.linkFrom = null; self.toggleLink(); self.render();
+        }
+        return;
+      }
+      if (nodeEl && self.editable) {
+        self.sel = { type: 'node', id: nodeEl.getAttribute('data-id') };
+        var n = self.index[self.sel.id];
+        var w = self.world(ev);
+        drag = { kind: 'node', obj: n, dx: w.x - n.x, dy: w.y - n.y, moved: false };
+        self.push();
+      } else if (grpEl && self.editable) {
+        self.sel = { type: 'group', id: grpEl.getAttribute('data-id') };
+        var g = self.data.groups.filter(function (q) { return q.id === self.sel.id; })[0];
+        var w2 = self.world(ev);
+        drag = { kind: 'group', obj: g, dx: w2.x - g.x, dy: w2.y - g.y, moved: false };
+        self.push();
+      } else if (edgeEl) {
+        self.sel = { type: 'edge', id: +edgeEl.getAttribute('data-i') };
+      } else {
+        self.sel = null;
+        pan = { x: ev.clientX, y: ev.clientY, tx: self.view.tx, ty: self.view.ty };
+        self.svg.classList.add('is-panning');
+      }
+      self.svg.setPointerCapture(ev.pointerId);
+      self.paint();
+    });
+
+    this.svg.addEventListener('pointermove', function (ev) {
+      if (drag) {
+        var w = self.world(ev);
+        drag.obj.x = snap(w.x - drag.dx); drag.obj.y = snap(w.y - drag.dy);
+        drag.moved = true;
+        self.render();
+      } else if (pan) {
+        self.view.tx = pan.tx + (ev.clientX - pan.x);
+        self.view.ty = pan.ty + (ev.clientY - pan.y);
+        self.paint();
+      }
+    });
+
+    var end = function (ev) {
+      if (drag && !drag.moved) self.undo.pop();
+      drag = null; pan = null;
+      self.svg.classList.remove('is-panning');
+      try { self.svg.releasePointerCapture(ev.pointerId); } catch (e) { }
+    };
+    this.svg.addEventListener('pointerup', end);
+    this.svg.addEventListener('pointercancel', end);
+
+    this.svg.addEventListener('wheel', function (ev) {
+      ev.preventDefault();
+      var r = self.svg.getBoundingClientRect();
+      self.zoom(ev.deltaY < 0 ? 1.12 : 1 / 1.12, ev.clientX - r.left, ev.clientY - r.top);
+    }, { passive: false });
+
+    this.svg.addEventListener('dblclick', function (ev) {
+      if (!self.editable) return;
+      var nodeEl = ev.target.closest('.dgm-node');
+      if (nodeEl) return self.edit(nodeEl.querySelector('.lbl .t'), function (v) {
+        self.index[nodeEl.getAttribute('data-id')].label = v;
+      });
+      var edgeEl = ev.target.closest('.dgm-edge');
+      if (edgeEl) {
+        var i = +edgeEl.getAttribute('data-i');
+        var v = prompt('연결 라벨', self.data.edges[i].label || '');
+        if (v !== null) { self.push(); self.data.edges[i].label = v; self.render(); }
+      }
+    });
+
+    this.root.addEventListener('keydown', function (ev) {
+      if (ev.target.getAttribute && ev.target.getAttribute('contenteditable') === 'true') return;
+      if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); self.remove(); }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); self.popUndo(); }
+    });
+    this.root.tabIndex = 0;
+
+    var ro = window.ResizeObserver ? new ResizeObserver(function () { self.paint(); }) : null;
+    if (ro) ro.observe(this.svg);
+  };
+
+  Diagram.prototype.edit = function (el, done) {
+    if (!el) return;
+    var self = this;
+    this.push();
+    el.parentNode.setAttribute('contenteditable', 'true');
+    el.parentNode.focus();
+    var save = function () {
+      el.parentNode.removeAttribute('contenteditable');
+      done(el.textContent.trim());
+      self.render();
+    };
+    el.parentNode.addEventListener('blur', save, { once: true });
+    el.parentNode.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); el.parentNode.blur(); }
+      if (ev.key === 'Escape') { el.parentNode.removeAttribute('contenteditable'); self.popUndo(); }
+      ev.stopPropagation();
+    });
+    var rg = document.createRange(); rg.selectNodeContents(el);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+  };
+
+  function initAll(scope) {
+    var list = (scope || document).querySelectorAll('.dgm');
+    Array.prototype.forEach.call(list, function (el) {
+      if (el.__dgm) return;
+      el.__dgm = new Diagram(el);
+    });
+  }
+  /* Esc 는 펼쳐 놓은 다이어그램을 닫는다. 라벨 편집 중의 Esc 는
+     edit() 안에서 stopPropagation 되므로 여기까지 오지 않는다. */
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    var el = document.querySelector('.dgm.is-max');
+    if (el && el.__dgm) { ev.preventDefault(); el.__dgm.toggleMax(false); }
+  });
+
+  window.HWDiagram = { initAll: initAll, Diagram: Diagram };
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', function () { initAll(); });
+  else initAll();
+})();
+
+/* ============================================================
+   HW Doc Kit - 개발용 문서 런타임 (TOC 스크롤스파이 / 체크 상태 / 복사)
+   ============================================================ */
+(function () {
+  'use strict';
+  var KEY = 'hwdoc:' + (document.title || location.pathname);
+
+  /* --- TOC 자동 생성 (비어 있을 때만) --- */
+  var toc = document.querySelector('.toc');
+  if (toc && !toc.children.length) {
+    document.querySelectorAll('.sec').forEach(function (sec) {
+      if (!sec.id) return;
+      var h = sec.querySelector('h2');
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + sec.id;
+      a.textContent = h
+        ? Array.prototype.map.call(h.childNodes, function (x) { return x.textContent.trim(); })
+          .filter(Boolean).join(' ')
+        : sec.id;
+      li.appendChild(a); toc.appendChild(li);
+    });
+  }
+
+  /* --- 스크롤스파이 --- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  if (window.IntersectionObserver && secs.length) {
+    var io = new IntersectionObserver(function (ents) {
+      ents.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        links.forEach(function (a) { a.classList.toggle('is-cur', a.getAttribute('href') === '#' + e.target.id); });
+      });
+    }, { rootMargin: '-10% 0px -75% 0px', threshold: 0 });
+    secs.forEach(function (s) { io.observe(s); });
+  }
+
+  /* --- 체크리스트 상태 저장 --- */
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { }
+  document.querySelectorAll('.chk input[type="checkbox"]').forEach(function (cb, i) {
+    var id = cb.id || ('chk' + i); cb.id = id;
+    if (saved[id]) cb.checked = true;
+    var sync = function () {
+      cb.closest('li').classList.toggle('is-done', cb.checked);
+      saved[id] = cb.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { }
+      count();
+    };
+    cb.addEventListener('change', sync);
+    cb.closest('li').classList.toggle('is-done', cb.checked);
+  });
+  function count() {
+    document.querySelectorAll('.chk').forEach(function (ul) {
+      var all = ul.querySelectorAll('input[type="checkbox"]');
+      var done = ul.querySelectorAll('input[type="checkbox"]:checked');
+      var badge = ul.previousElementSibling && ul.previousElementSibling.querySelector('.chk-count');
+      if (badge) badge.textContent = done.length + ' / ' + all.length;
+    });
+  }
+  count();
+
+  /* --- 코드 복사 --- */
+  document.querySelectorAll('.code__copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var pre = b.closest('.code').querySelector('pre');
+      try { navigator.clipboard.writeText(pre.innerText); } catch (e) { }
+      var t = b.textContent; b.textContent = '복사됨';
+      setTimeout(function () { b.textContent = t; }, 1200);
+    });
+  });
+
+  /* --- 사이드 버튼 --- */
+  function bind(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
+  bind('bTheme', function () {
+    var r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+  bind('bPrint', function () { window.print(); });
+  bind('bReset', function () {
+    if (!confirm('체크 상태를 모두 초기화할까요?')) return;
+    try { localStorage.removeItem(KEY); } catch (e) { }
+    location.reload();
+  });
+})();
+</script>
+</body>
+</html>
