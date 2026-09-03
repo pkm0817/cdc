@@ -39,7 +39,10 @@ cdc_slot:
   query: |
     SELECT slot_name,
            active::int AS active,
-           COALESCE(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn), 0)::float AS lag_bytes
+           COALESCE(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn), 0)::float AS lag_bytes,
+           COALESCE(pg_wal_lsn_diff(restart_lsn, '0/0'::pg_lsn), 0)::float           AS restart_lsn_bytes,
+           COALESCE(pg_wal_lsn_diff(confirmed_flush_lsn, '0/0'::pg_lsn), 0)::float   AS confirmed_lsn_bytes,
+           COALESCE(safe_wal_size, -1)::float                                        AS safe_wal_size_bytes
     FROM pg_replication_slots
   metrics:
     - slot_name:
@@ -51,6 +54,54 @@ cdc_slot:
     - lag_bytes:
         usage: "GAUGE"
         description: "WAL bytes retained but not yet confirmed by the consumer"
+    - restart_lsn_bytes:
+        usage: "GAUGE"
+        description: "restart_lsn 을 바이트 오프셋으로. 슬롯이 아직 필요로 하는 가장 오래된 WAL 지점 (V3 캡처 갭 판정)"
+    - confirmed_lsn_bytes:
+        usage: "GAUGE"
+        description: "confirmed_flush_lsn 을 바이트 오프셋으로. 유휴 구간에 이 값이 안 오르면 heartbeat 가 죽은 것 (V6)"
+    - safe_wal_size_bytes:
+        usage: "GAUGE"
+        description: "슬롯이 무효화되기까지 남은 WAL 여유. -1 = max_slot_wal_keep_size 가 -1(상한 없음)이라 산출 불가"
+
+# ── 슬롯 건전성 상태 (V3) ───────────────────────────────────────────────────
+# lag_bytes 는 "얼마나 밀렸나"만 말한다. 슬롯이 살아 있으면서 쓸모없어지는 상태
+# (max_slot_wal_keep_size 초과로 필요한 WAL 이 잘림)는 wal_status 로만 보인다.
+#
+#   reserved(0)   : 정상
+#   extended(1)   : wal_keep_size 를 넘겼지만 아직 보관 중
+#   unreserved(2) : 곧 잘린다 — 경고
+#   lost(3)       : 이미 잘렸다 — 재동기화 외에 방법 없음
+#
+# 여기서는 이 지표의 무게가 Java 판보다 무겁다. go-pq-cdc 는 슬롯이 사라져도
+# 조용히 새로 만들고 이어서 돌기 때문에(V3), 상시 관측으로 잡지 못하면
+# 사고가 흔적 없이 지나간다.
+#
+# wal_status 를 별도 네임스페이스로 뺀 이유: 같은 쿼리의 LABEL 은 그 쿼리의 모든
+# 메트릭에 붙는다. cdc_slot 에 넣으면 lag_bytes 계열에 status 라벨이 붙어
+# 상태가 바뀔 때마다 시계열이 끊긴다.
+cdc_slot_status:
+  query: |
+    SELECT slot_name,
+           wal_status,
+           (CASE wal_status
+              WHEN 'reserved'   THEN 0
+              WHEN 'extended'   THEN 1
+              WHEN 'unreserved' THEN 2
+              WHEN 'lost'       THEN 3
+              ELSE -1
+            END)::float AS code
+    FROM pg_replication_slots
+  metrics:
+    - slot_name:
+        usage: "LABEL"
+        description: "replication slot name"
+    - wal_status:
+        usage: "LABEL"
+        description: "reserved / extended / unreserved / lost"
+    - code:
+        usage: "GAUGE"
+        description: "wal_status 를 정렬 가능한 숫자로. 경보는 이 값으로 건다 (>=2 경고, ==3 즉시)"
 
 # ── WAL 디렉터리 사용량 ──────────────────────────────────────────────────────
 # 슬롯이 붙잡은 WAL 은 pg_wal/ 안에 파일로 남아 디스크를 먹는다. cdc_slot_lag_bytes 가
@@ -83,3 +134,198 @@ cdc_db:
     - connections:
         usage: "GAUGE"
         description: "current backend connections to this database"
+
+# ── WAL 생성량 카운터 (V2) ──────────────────────────────────────────────────
+# cdc_wal_size_bytes 는 pg_wal/ 의 현재 크기라 체크포인트마다 오르내린다.
+# "얼마나 빨리 쌓이는가"를 재려면 단조 증가하는 값이 필요하다.
+# 현재 LSN 을 0/0 기준 바이트 오프셋으로 노출하고 rate() 로 증가율을 뽑는다.
+#
+# 이 값이 있어야 V2 의 "다운 허용시간 = 디스크 여유 / WAL 증가율" 이 산출된다.
+cdc_wal_lsn:
+  query: |
+    SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0'::pg_lsn)::float AS bytes_total
+  metrics:
+    - bytes_total:
+        usage: "COUNTER"
+        description: "current WAL LSN as a byte offset — rate() 로 WAL 증가율(B/s)을 낸다"
+
+# ── DB 시계 (V1) ────────────────────────────────────────────────────────────
+# cdc_end_to_end_lag_seconds 는 source 의 커밋 시각(DB 시계)과 target 적재 시각
+# (앱 시계)의 차다. 두 시계가 어긋나 있으면 지연 수치 자체가 무의미해진다.
+#
+# 스크랩 시점의 DB 시계를 그대로 노출한다. Prometheus 쪽에서
+#   cdc_clock_epoch_seconds - timestamp(cdc_clock_epoch_seconds)
+# 로 "DB 시계 − 스크랩 시각" 을 얻는다.
+# timestamp() 를 쓰는 이유: time() 을 쓰면 스크랩 간격(5s)이 편차로 잡힌다.
+cdc_clock:
+  query: |
+    SELECT extract(epoch from clock_timestamp())::float AS epoch_seconds
+  metrics:
+    - epoch_seconds:
+        usage: "GAUGE"
+        description: "DB wall clock at scrape time (unix epoch seconds)"
+
+# ── 운영 파라미터 현재값 (V2) ───────────────────────────────────────────────
+# max_slot_wal_keep_size 가 -1 인 한 다운 허용시간은 "디스크 찰 때까지" 다.
+# 숫자로 변환 가능한 것만 넣는다 (wal_level 같은 enum 은 cast 가 실패한다).
+cdc_guc:
+  query: |
+    SELECT name,
+           COALESCE(unit, '') AS unit,
+           setting::float     AS value
+    FROM pg_settings
+    WHERE name IN ('max_slot_wal_keep_size', 'wal_keep_size', 'max_wal_size',
+                   'min_wal_size', 'checkpoint_timeout', 'max_replication_slots',
+                   'max_wal_senders')
+  metrics:
+    - name:
+        usage: "LABEL"
+        description: "GUC name"
+    - unit:
+        usage: "LABEL"
+        description: "unit as reported by pg_settings (MB, s, ...)"
+    - value:
+        usage: "GAUGE"
+        description: "current setting. max_slot_wal_keep_size = -1 이면 상한 없음"
+
+# ── REPLICA IDENTITY 현황 (V5 · V2) ─────────────────────────────────────────
+# V5 는 FULL 을 요구하고(그래야 TOAST 미변경 컬럼의 old 이미지가 온전히 온다),
+# V2 는 FULL 때문에 WAL 이 커진다(update/delete 마다 변경 전 행 전체를 쓴다).
+# 두 요구가 충돌하므로 테이블별 현재 설정을 보이는 곳에 둔다.
+#
+# go-pq-cdc 에서는 이 설정의 의미가 Debezium 판보다 크다. Debezium 은 TOAST 로
+# 빠진 값을 __debezium_unavailable_value 자리표시자로 채워 "못 받았다"를 알려
+# 주지만, 여기서는 컬럼 자체가 실리지 않는다. FULL 이 아니면 그 컬럼이
+# "안 바뀐 것"인지 "못 받은 것"인지 구분할 근거가 사라진다.
+cdc_replica_identity:
+  query: |
+    SELECT c.relname AS table_name,
+           (CASE c.relreplident
+              WHEN 'd' THEN 'default'
+              WHEN 'n' THEN 'nothing'
+              WHEN 'f' THEN 'full'
+              WHEN 'i' THEN 'index'
+              ELSE 'unknown'
+            END) AS identity,
+           (CASE WHEN c.relreplident = 'f' THEN 1 ELSE 0 END)::float AS full_image
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name"
+    - identity:
+        usage: "LABEL"
+        description: "default / nothing / full / index"
+    - full_image:
+        usage: "GAUGE"
+        description: "1 if REPLICA IDENTITY FULL (old 이미지가 전체 컬럼)"
+
+# ── TOAST 저장소 (V5) ───────────────────────────────────────────────────────
+# TOAST 임계는 대략 2KB(블록의 1/4). 그보다 큰 값이 실제로 들어간 테이블만
+# V5 의 "컬럼이 통째로 안 실려 오는" 문제에 걸린다.
+#
+# has_toast 는 판별에 못 쓴다 — varlena 컬럼이 하나라도 있으면 PostgreSQL 이
+# TOAST 릴레이션을 미리 만들어 두므로 거의 모든 테이블이 1 이다.
+# 실제 신호는 bytes 다. 비어 있으면 8KB 안팎이고, 그보다 크면 외부 저장이 일어났다는 뜻.
+cdc_toast:
+  query: |
+    SELECT c.relname AS table_name,
+           (CASE WHEN c.reltoastrelid <> 0 THEN 1 ELSE 0 END)::float          AS has_toast,
+           COALESCE(pg_total_relation_size(NULLIF(c.reltoastrelid, 0)), 0)::float AS bytes
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name"
+    - has_toast:
+        usage: "GAUGE"
+        description: "1 if the table has a TOAST relation (varlena 컬럼이 있으면 대부분 1 — 판별용 아님)"
+    - bytes:
+        usage: "GAUGE"
+        description: "TOAST 저장소 실제 크기. 8KB 를 크게 넘으면 외부 저장이 일어난 것"
+
+# ── 컬럼 폭 (V5) ────────────────────────────────────────────────────────────
+# "관심 필드가 TOAST 에 걸리는가"를 스캔 없이 가늠하는 지표.
+# pg_stats.avg_width 는 ANALYZE 가 남긴 통계라 비용이 0 이다. 대신 평균이므로
+# 후보를 좁히는 용도이고, 확정은 아래 쿼리를 한 번 돌려서 한다:
+#
+#   SELECT max(pg_column_size(<컬럼>)) FROM <테이블>;
+#
+# ANALYZE 를 한 번도 안 돈 테이블은 여기 안 나온다(통계가 없다).
+cdc_column:
+  query: |
+    SELECT s.tablename AS table_name,
+           s.attname   AS column_name,
+           s.avg_width::float AS avg_width_bytes
+    FROM pg_stats s
+    JOIN pg_class c     ON c.relname = s.tablename
+    JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = s.schemaname
+    WHERE s.schemaname = 'public' AND c.relkind = 'r'
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name"
+    - column_name:
+        usage: "LABEL"
+        description: "column name"
+    - avg_width_bytes:
+        usage: "GAUGE"
+        description: "ANALYZE 기준 평균 저장 폭. 2KB 근처면 TOAST 후보"
+
+# ── heartbeat 신선도 ────────────────────────────────────────────────────────
+# "프로세스는 살아 있는데 실제로는 아무것도 안 하는" 상태의 판별식이다.
+#
+# go-pq-cdc 는 이 표에 자기 커넥션으로 직접 쓴다(Debezium 의 heartbeat.action.query
+# 에 해당). 따라서 age 가 자라는 것은 곧 "커넥터가 원천에 붙어 있지 않다" 는 뜻이다
+# — up==1 이어도 그렇다. 이벤트 처리량은 원천에 변경이 없으면 0 이 정상이라
+# 이 판별에 쓸 수 없다. 그래서 silent failure 탐지는 이 지표가 맡는다.
+#
+# 표 모양이 Java 판과 다르다. 이 표는 라이브러리 규격(단일 행, id=1)이라
+# pipeline 컬럼이 없다. 대시보드 쿼리를 그대로 쓰기 위해 라벨만 상수로 맞춘다.
+cdc_heartbeat:
+  query: |
+    SELECT 'embedded-cdc-go'::text AS pipeline,
+           EXTRACT(EPOCH FROM (now() - last_heartbeat))::float AS age_seconds
+    FROM cdc_heartbeat
+  metrics:
+    - pipeline:
+        usage: "LABEL"
+        description: "pipeline name (표에 컬럼이 없어 상수로 붙인다)"
+    - age_seconds:
+        usage: "GAUGE"
+        description: "seconds since the connector last wrote a heartbeat (silent-failure detector)"
+
+# ── 스냅샷 진행 상황 (Go 판 고유) ───────────────────────────────────────────
+# Debezium 은 스냅샷 진행을 오프셋 파일 안에 감춰 두지만, go-pq-cdc 는 원천 DB 의
+# cdc_snapshot_job / cdc_snapshot_chunks 에 남긴다(여러 인스턴스가 청크를 나눠
+# 잡을 수 있게 하려는 설계다). 그 대가로 초기 적재 진행률을 밖에서 볼 수 있다.
+#
+# 재적재(재동기화)를 걸었을 때 "지금 몇 %인가"를 답하는 유일한 지표다.
+cdc_snapshot:
+  query: |
+    SELECT slot_name,
+           (CASE WHEN completed THEN 1 ELSE 0 END)::float AS completed,
+           total_chunks::float                            AS total_chunks,
+           completed_chunks::float                        AS completed_chunks,
+           EXTRACT(EPOCH FROM (now() - started_at))::float AS age_seconds
+    FROM cdc_snapshot_job
+  metrics:
+    - slot_name:
+        usage: "LABEL"
+        description: "슬롯 이름 (스냅샷 작업의 키)"
+    - completed:
+        usage: "GAUGE"
+        description: "1 이면 초기 적재가 끝났다"
+    - total_chunks:
+        usage: "GAUGE"
+        description: "나눠 잡은 청크 수"
+    - completed_chunks:
+        usage: "GAUGE"
+        description: "끝난 청크 수. total 과의 비가 곧 진행률이다"
+    - age_seconds:
+        usage: "GAUGE"
+        description: "스냅샷 시작 이후 경과. completed=0 인 채로 자라면 멈춘 것이다"

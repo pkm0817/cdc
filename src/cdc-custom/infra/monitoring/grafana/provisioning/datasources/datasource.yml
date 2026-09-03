@@ -10,3 +10,24 @@ datasources:
     editable: false
     jsonData:
       timeInterval: 5s
+
+  # 수신 측 DB 직결.
+  #
+  # 왜 필요한가. DLQ 의 실패 원인 문자열은 Prometheus 레이블로 올릴 수 없다 —
+  # 메시지가 조금만 달라져도 시계열이 하나씩 생겨 터진다. 그래서 지표로는 건수만
+  # 내고 내용은 sync_dead_letter 표에 남긴다. 그 표를 화면에서 보려면 Grafana 가
+  # DB 를 직접 읽어야 한다. 카디널리티 문제는 SQL 에는 없다.
+  - name: Target PostgreSQL
+    uid: cdc-custom-target-db
+    type: postgres
+    access: proxy
+    url: target-postgres:5432
+    database: targetdb
+    user: postgres
+    editable: false
+    secureJsonData:
+      password: postgres
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false

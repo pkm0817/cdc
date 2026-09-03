@@ -90,3 +90,165 @@ cdc_db:
     - connections:
         usage: "GAUGE"
         description: "current backend connections to this database"
+
+# ── WAL 생성량 카운터 ───────────────────────────────────────────────────────
+# 대량 UPSERT 구간에는 수신 측 WAL 이 오히려 더 크게 뛴다. source 와 같은 축에 놓는다.
+cdc_wal_lsn:
+  query: |
+    SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0'::pg_lsn)::float AS bytes_total
+  metrics:
+    - bytes_total:
+        usage: "COUNTER"
+        description: "current WAL LSN as a byte offset — rate() 로 WAL 증가율(B/s)"
+
+# ── DB 시계 ─────────────────────────────────────────────────────────────────
+cdc_clock:
+  query: |
+    SELECT extract(epoch from clock_timestamp())::float AS epoch_seconds
+  metrics:
+    - epoch_seconds:
+        usage: "GAUGE"
+        description: "DB wall clock at scrape time (unix epoch seconds)"
+
+# ── DLQ 총계 ────────────────────────────────────────────────────────────────
+# 격리된 행은 유실이 아니라 "추적되는 미반영" 이다. 대사 불일치가 났을 때
+# 진짜 유실인지 격리 때문인지 구분하려면 이 수치가 대시보드에 있어야 한다.
+# 대사 판정식:  |source − target| − DLQ(PENDING) = 0
+#
+# 집계 쿼리라서 표가 비어도 항상 0 이 나온다(테이블별 cdc_dlq 는 행이 없으면
+# 시계열 자체가 사라져 패널이 "No data" 가 된다 — 총계 쪽을 경보 기준으로 쓴다).
+cdc_dlq_total:
+  query: |
+    SELECT count(*) FILTER (WHERE status = 'PENDING')::float         AS pending,
+           count(*) FILTER (WHERE status = 'RETRY_REQUESTED')::float AS retry_requested,
+           count(*) FILTER (WHERE status = 'RESOLVED')::float        AS resolved,
+           count(*) FILTER (WHERE status = 'DISCARDED')::float       AS discarded,
+           count(*)::float                                           AS rows
+    FROM sync_dead_letter
+  metrics:
+    - pending:
+        usage: "GAUGE"
+        description: "격리된 채 대기 중 — 대사 불일치의 정당한 사유이자 경보 대상"
+    - retry_requested:
+        usage: "GAUGE"
+        description: "재처리 대상으로 표시된 건"
+    - resolved:
+        usage: "GAUGE"
+        description: "재처리 성공"
+    - discarded:
+        usage: "GAUGE"
+        description: "버리기로 결정한 건"
+    - rows:
+        usage: "GAUGE"
+        description: "DLQ 전체 건수"
+
+# 표·상태별 DLQ 건수 — 어느 표가 막혔는지 본다.
+cdc_dlq:
+  query: |
+    SELECT source_table AS table_name,
+           status,
+           count(*)::float AS rows
+    FROM sync_dead_letter
+    GROUP BY source_table, status
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "source table the row came from"
+    - status:
+        usage: "LABEL"
+        description: "PENDING / RETRY_REQUESTED / RESOLVED / DISCARDED"
+    - rows:
+        usage: "GAUGE"
+        description: "격리 건수"
+
+# ── 진행 지점 ───────────────────────────────────────────────────────────────
+# CDC 두 스택의 진행 지점이 LSN 이라면 여기서는 outbox 의 seq 다.
+# 원천의 cdc_outbox_max_seq 와 이 값의 차가 곧 "아직 안 읽은 줄 수" 이고,
+# 그것이 이 방식에서 슬롯 지연에 해당하는 값이다.
+#
+# stale_seconds 는 "마지막 반영 이후 흐른 시간" 이다. 변경이 없으면 자연히 커지므로
+# 그 자체로는 이상이 아니고, outbox 에 줄이 쌓이는데도 커지면 정체다.
+cdc_checkpoint:
+  query: |
+    SELECT pipeline,
+           last_seq::float AS seq,
+           extract(epoch from (now() - updated_at))::float AS stale_seconds
+    FROM sync_checkpoint
+  metrics:
+    - pipeline:
+        usage: "LABEL"
+        description: "pipeline name"
+    - seq:
+        usage: "GAUGE"
+        description: "마지막으로 반영한 outbox seq"
+    - stale_seconds:
+        usage: "GAUGE"
+        description: "마지막 반영 이후 경과 시간"
+
+# ── 표별 방어 기제 ──────────────────────────────────────────────────────────
+#   lsn_guard=1  : 수신 행에 source_seq 가 있어 순서 역전을 막을 수 있다
+#   soft_delete  : deleted 컬럼으로 소프트 삭제를 쓰는 표
+# 컬럼 이름은 CDC 두 스택과 맞춘다(그쪽은 source_lsn). 대시보드 쿼리를 공유하기 위해서다.
+cdc_guard:
+  query: |
+    SELECT t.tablename AS table_name,
+           max(CASE WHEN c.column_name IN ('source_seq', 'source_lsn') THEN 1 ELSE 0 END)::float AS lsn_guard,
+           max(CASE WHEN c.column_name = 'deleted' THEN 1 ELSE 0 END)::float                     AS soft_delete
+    FROM pg_tables t
+    JOIN information_schema.columns c
+      ON c.table_schema = t.schemaname AND c.table_name = t.tablename
+    WHERE t.schemaname = 'public'
+      AND t.tablename NOT LIKE 'sync\_%'
+      AND t.tablename NOT LIKE 'cdc\_%'
+    GROUP BY t.tablename
+  metrics:
+    - table_name:
+        usage: "LABEL"
+        description: "table name"
+    - lsn_guard:
+        usage: "GAUGE"
+        description: "1 이면 순서 역전 방어(source_seq)가 걸린 표"
+    - soft_delete:
+        usage: "GAUGE"
+        description: "1 이면 소프트 삭제를 쓰는 표"
+
+# ── 고아 참조 대사 ──────────────────────────────────────────────────────────
+# 건수 대사로는 안 잡히는 종류의 불일치다. 양쪽 표 건수가 각각 맞아도 참조가
+# 끊어질 수 있다. 수신 측에는 FK 를 걸지 않으므로 DB 가 막아주지 않는다.
+#
+# 이 방식에서는 특히 더 필요하다 — 접기 때문에 부모·자식의 반영 순서가
+# 원천의 커밋 순서와 달라질 수 있다.
+#
+# 관계를 목록으로 적지 않는다. `<부모>_id` 규칙으로 카탈로그에서 찾는다.
+cdc_orphan:
+  query: |
+    SELECT c.table_name AS child_table,
+           p.table_name AS parent_table,
+           (xpath('/row/c/text()',
+                  query_to_xml(format(
+                    'SELECT count(*) AS c FROM %I.%I ch LEFT JOIN %I.%I pa ON pa.id = ch.%I WHERE ch.%I IS NOT NULL AND pa.id IS NULL',
+                    c.table_schema, c.table_name, p.table_schema, p.table_name, c.column_name, c.column_name),
+                  false, true, '')))[1]::text::float AS rows
+    FROM information_schema.columns c
+    JOIN information_schema.tables p
+      ON p.table_schema = c.table_schema
+     AND p.table_type = 'BASE TABLE'
+     AND p.table_name = left(c.column_name, length(c.column_name) - 3)
+    WHERE c.table_schema = 'public'
+      AND c.column_name LIKE '%\_id'
+      AND c.table_name NOT LIKE 'sync\_%'
+      AND c.table_name NOT LIKE 'cdc\_%'
+      AND EXISTS (SELECT 1 FROM information_schema.columns pc
+                  WHERE pc.table_schema = p.table_schema
+                    AND pc.table_name = p.table_name
+                    AND pc.column_name = 'id')
+  metrics:
+    - child_table:
+        usage: "LABEL"
+        description: "referencing table"
+    - parent_table:
+        usage: "LABEL"
+        description: "referenced table (컬럼 이름 규칙으로 추론)"
+    - rows:
+        usage: "GAUGE"
+        description: "부모가 사라진 자식 행 수. 0 이 아니면 참조 무결성이 깨진 것"
