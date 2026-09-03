@@ -68,6 +68,23 @@ tasks.withType<Test> {
     systemProperty("cdc.verify.user", System.getProperty("cdc.verify.user", "postgres"))
     systemProperty("cdc.verify.password", System.getProperty("cdc.verify.password", "postgres"))
 
+    // V4-b 만 기동 중인 서비스 자체를 쓴다 — 운영 DLQ 재처리기와 테이블별 가드가 검증 대상이라
+    // 복제본으로는 답이 나오지 않는다. 파이프라인 이름은 cdc.source.name 과 같아야 한다.
+    systemProperty("cdc.verify.pipeline", System.getProperty("cdc.verify.pipeline", "embedded-cdc"))
+    systemProperty("cdc.verify.health.url",
+        System.getProperty("cdc.verify.health.url", "http://localhost:56080/actuator/health"))
+
+    // V5-b 의 1단계 선별 질의. 테스트가 SQL 을 따로 들고 있으면 운영자가 손으로 돌리는 것과
+    // 갈라진다 — 검증에서 통과한 질의와 실제로 쓰는 질의는 같은 파일이어야 한다.
+    systemProperty("cdc.verify.toast.sql",
+        layout.projectDirectory.file("../../scripts/toast-candidates.sql").asFile.path)
+
+    // V6-b 도 같은 이유로 운영이 쓰는 파일을 그대로 읽는다 — 대사 질의와 고아 참조 질의.
+    systemProperty("cdc.verify.reconcile.sql",
+        layout.projectDirectory.file("../../scripts/reconcile.sql").asFile.path)
+    systemProperty("cdc.verify.exporter.target.yaml",
+        layout.projectDirectory.file("../../infra/monitoring/exporter/queries-target.yaml").asFile.path)
+
     // 계측치를 한 파일로 모은다. 검증 보고서의 원자료가 된다.
     systemProperty("cdc.verify.report", layout.buildDirectory.file("verification/results.md").get().asFile.path)
 

@@ -1,0 +1,1459 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CDC PoC V6 검증 보고서</title>
+<style>
+/* ============================================================
+   HW Doc Kit - design tokens & base primitives
+   금지: 이모지, 보라/바이올렛/인디고 계열, 무지개 그라데이션
+   기준색: 한화 오렌지 계열
+   ============================================================ */
+:root{
+  /* brand */
+  --hw:#F37321;          /* 기본 오렌지 */
+  --hw-dk:#D2590F;       /* 진한 오렌지 (호버/강조선) */
+  --hw-dp:#A8420A;       /* 가장 진한 오렌지 (제목 강조) */
+  --hw-lt:#FFB27A;       /* 밝은 오렌지 (보조 채움) */
+  --hw-pale:#FFF1E7;     /* 아주 옅은 오렌지 (배경 톤) */
+  --hw-tint:#FDE3D1;     /* 옅은 오렌지 (테두리/칩) */
+
+  /* ink & surface */
+  --ink:#141414; --ink2:#3F3F3F; --ink3:#6E6E6E; --ink4:#9A9A9A;
+  --bg:#FFFFFF; --bg2:#FAF8F6; --bg3:#F2EEEA;
+  --line:#E4E1DE; --line2:#CFCAC5;
+
+  /* semantic (보라 금지 - 보색은 청록/황토/벽돌색으로) */
+  --ok:#2E7D5B; --ok-bg:#E8F3EE;
+  --warn:#B8791A; --warn-bg:#FBF1DF;
+  --risk:#C0392B; --risk-bg:#FBEAE7;
+  --info:#2A6F97; --info-bg:#E7F0F6;
+
+  --radius:10px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(20,20,20,.06), 0 8px 24px rgba(20,20,20,.06);
+  --font:"Pretendard","Malgun Gothic","Apple SD Gothic Neo","Segoe UI",system-ui,sans-serif;
+  --mono:"D2Coding","Cascadia Mono","Consolas","JetBrains Mono",ui-monospace,monospace;
+}
+:root[data-theme="dark"]{
+  --hw:#FF8A3D; --hw-dk:#F37321; --hw-dp:#FFB27A; --hw-lt:#7A3E14; --hw-pale:#241812; --hw-tint:#4A2A15;
+  --ink:#F2EFEC; --ink2:#CFC9C3; --ink3:#9E9691; --ink4:#77706B;
+  --bg:#141312; --bg2:#1C1A18; --bg3:#252220;
+  --line:#332F2C; --line2:#464038;
+  --ok:#5CB58C; --ok-bg:#17251F; --warn:#D9A445; --warn-bg:#2A2317;
+  --risk:#E2705F; --risk-bg:#2A1917; --info:#6BA6CC; --info-bg:#161F26;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.35);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font); color:var(--ink); background:var(--bg2);
+  -webkit-font-smoothing:antialiased; line-height:1.55;
+  font-variant-numeric:tabular-nums;
+}
+h1,h2,h3,h4{margin:0; line-height:1.25; font-weight:700; letter-spacing:-.01em}
+p{margin:0 0 .6em}
+a{color:var(--hw-dk); text-underline-offset:2px}
+:root[data-theme="dark"] a{color:var(--hw)}
+code,kbd,pre,samp{font-family:var(--mono)}
+hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+
+/* ---------- 공통 프리미티브 ---------- */
+.kicker{
+  font-size:13px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--hw-dk);
+}
+.rule{height:3px;background:var(--hw);border-radius:2px;width:56px}
+.muted{color:var(--ink3)}
+.small{font-size:13px}
+.mono{font-family:var(--mono);font-size:.92em}
+
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;
+  background:var(--hw-pale);color:var(--hw-dp);border:1px solid var(--hw-tint);
+}
+.chip--ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
+.chip--warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn)}
+.chip--risk{background:var(--risk-bg);color:var(--risk);border-color:var(--risk)}
+.chip--info{background:var(--info-bg);color:var(--info);border-color:var(--info)}
+.chip--neutral{background:var(--bg3);color:var(--ink2);border-color:var(--line2)}
+
+.card{
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;
+}
+.card--accent{border-left:4px solid var(--hw)}
+.card__t{font-size:16px;font-weight:700;margin:0 0 6px}
+.card__d{font-size:14px;color:var(--ink2);margin:0}
+
+.kpi{display:flex;gap:14px;flex-wrap:wrap}
+.kpi__item{
+  flex:1 1 0;min-width:140px;background:var(--bg);border:1px solid var(--line);
+  border-top:3px solid var(--hw);border-radius:var(--radius);padding:14px 16px;
+}
+.kpi__v{font-size:30px;font-weight:800;letter-spacing:-.02em;color:var(--hw-dp)}
+:root[data-theme="dark"] .kpi__v{color:var(--hw)}
+.kpi__l{font-size:12px;color:var(--ink3);font-weight:600}
+
+.tbl{width:100%;border-collapse:collapse;font-size:14px;background:var(--bg)}
+.tbl th,.tbl td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+.tbl thead th{background:var(--hw-pale);color:var(--hw-dp);font-size:12.5px;
+  letter-spacing:.03em;text-transform:uppercase;border-color:var(--hw-tint)}
+.tbl tbody tr:nth-child(even){background:var(--bg2)}
+.tbl td.num{text-align:right;font-family:var(--mono)}
+.tbl-wrap{overflow-x:auto;border-radius:var(--radius-sm)}
+
+.note{
+  border:1px solid var(--line);border-left:4px solid var(--ink3);
+  background:var(--bg);border-radius:var(--radius-sm);padding:12px 16px;font-size:14px;
+}
+.note__t{font-weight:700;font-size:13px;margin:0 0 4px;letter-spacing:.02em}
+.note--info{border-left-color:var(--info);background:var(--info-bg)}
+.note--info .note__t{color:var(--info)}
+.note--ok{border-left-color:var(--ok);background:var(--ok-bg)}
+.note--ok .note__t{color:var(--ok)}
+.note--warn{border-left-color:var(--warn);background:var(--warn-bg)}
+.note--warn .note__t{color:var(--warn)}
+.note--risk{border-left-color:var(--risk);background:var(--risk-bg)}
+.note--risk .note__t{color:var(--risk)}
+
+/* 코드 블록 */
+.code{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--bg)}
+.code__bar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:6px 12px;background:var(--bg3);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:12px;color:var(--ink3)
+}
+.code__copy{
+  border:1px solid var(--line2);background:var(--bg);color:var(--ink2);
+  border-radius:5px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer
+}
+.code__copy:hover{border-color:var(--hw);color:var(--hw-dk)}
+.code pre{margin:0;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.6}
+.code .cm{color:var(--ink4)}
+.code .hl{color:var(--hw-dk);font-weight:700}
+
+/* 단계 흐름 */
+.steps{display:flex;gap:8px;flex-wrap:wrap}
+.step{
+  flex:1 1 0;min-width:150px;position:relative;background:var(--bg);
+  border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px
+}
+.step__n{
+  display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--hw);color:#fff;font-size:12px;font-weight:800;margin-bottom:6px
+}
+.step__t{font-weight:700;font-size:14px}
+.step__d{font-size:12.5px;color:var(--ink3)}
+
+/* UI 목업 프레임 */
+.ui{border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--bg);box-shadow:var(--shadow)}
+.ui__bar{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-bottom:1px solid var(--line)}
+.ui__dot{width:9px;height:9px;border-radius:50%;background:var(--line2)}
+.ui__addr{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;
+  padding:2px 8px;font-family:var(--mono);font-size:11.5px;color:var(--ink3)}
+.ui__body{padding:14px}
+.ui-row{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.ui-row:last-child{border-bottom:0}
+.ui-btn{background:var(--hw);color:#fff;border:0;border-radius:5px;padding:6px 14px;font-size:12.5px;font-weight:700}
+.ui-btn--ghost{background:transparent;color:var(--hw-dk);border:1px solid var(--hw)}
+.ui-field{flex:1;border:1px solid var(--line2);border-radius:5px;padding:6px 9px;font-size:12.5px;color:var(--ink3);background:var(--bg2)}
+
+/* 출처 표기 */
+.ref{
+  font-size:.62em;font-weight:800;vertical-align:super;color:var(--hw-dk);
+  background:var(--hw-pale);border:1px solid var(--hw-tint);border-radius:4px;
+  padding:0 4px;margin-left:2px;cursor:pointer;text-decoration:none
+}
+.refs{list-style:none;padding:0;margin:0;font-size:13px}
+.refs li{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.refs li:last-child{border-bottom:0}
+.refs .refs__n{color:var(--hw-dk);font-weight:800;font-family:var(--mono)}
+.refs .refs__src{color:var(--ink);font-weight:600}
+.refs .refs__meta{color:var(--ink3);font-size:12px;font-family:var(--mono);word-break:break-all}
+
+/* 그리드 */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.g-2-1{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* ---------- 다이어그램 캔버스 ---------- */
+.dgm{
+  position:relative;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--bg);overflow:hidden;display:flex;flex-direction:column
+}
+.dgm__bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:6px 8px;border-bottom:1px solid var(--line);background:var(--bg3);flex:0 0 auto
+}
+.dgm__bar .sp{flex:1}
+.dgm__btn{
+  border:1px solid var(--line2);background:var(--bg);color:var(--ink2);
+  border-radius:5px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer;
+  font-family:var(--font)
+}
+.dgm__btn:hover{border-color:var(--hw);color:var(--hw-dk)}
+.dgm__btn.is-on{background:var(--hw);border-color:var(--hw);color:#fff}
+.dgm__hint{font-size:11.5px;color:var(--ink4)}
+.dgm__svg{display:block;width:100%;flex:1 1 auto;min-height:0;touch-action:none;cursor:grab;
+  background:radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0/20px 20px}
+.dgm__svg.is-panning{cursor:grabbing}
+.dgm[data-edit="off"] .dgm__bar{display:none}
+
+/* 화면 가득 펼치기 — 툴바의 "넓게" 버튼 / Esc 로 닫는다 */
+.dgm.is-max{
+  position:fixed;inset:14px;z-index:80;
+  width:auto !important;max-width:none !important;height:auto !important;
+  box-shadow:0 12px 48px rgba(20,20,20,.28);border-color:var(--line2)
+}
+html.dgm-locked,html.dgm-locked body{overflow:hidden}
+
+.dgm-node{cursor:move}
+.dgm-node .box{fill:var(--bg);stroke:var(--line2);stroke-width:1.5}
+.dgm-node .lbl{
+  font-family:var(--font);font-size:13.5px;font-weight:700;color:var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;text-align:center;padding:4px 8px;line-height:1.3;overflow:hidden
+}
+.dgm-node .lbl .sub{font-size:11px;font-weight:500;color:var(--ink3);margin-top:2px}
+.dgm-node .lbl[contenteditable="true"]{outline:2px solid var(--hw);background:var(--bg);border-radius:4px}
+.dgm-node.is-sel .box{stroke:var(--hw);stroke-width:2.5}
+.dgm-node[data-tone="primary"] .box{fill:var(--hw);stroke:var(--hw-dk)}
+.dgm-node[data-tone="primary"] .lbl{color:#fff}
+.dgm-node[data-tone="primary"] .lbl .sub{color:rgba(255,255,255,.85)}
+.dgm-node[data-tone="accent"] .box{fill:var(--hw-pale);stroke:var(--hw)}
+.dgm-node[data-tone="accent"] .lbl{color:var(--hw-dp)}
+.dgm-node[data-tone="muted"] .box{fill:var(--bg3);stroke:var(--line2)}
+.dgm-node[data-tone="muted"] .lbl{color:var(--ink3)}
+.dgm-node[data-tone="ok"] .box{fill:var(--ok-bg);stroke:var(--ok)}
+.dgm-node[data-tone="ok"] .lbl{color:var(--ok)}
+.dgm-node[data-tone="warn"] .box{fill:var(--warn-bg);stroke:var(--warn)}
+.dgm-node[data-tone="warn"] .lbl{color:var(--warn)}
+.dgm-node[data-tone="risk"] .box{fill:var(--risk-bg);stroke:var(--risk)}
+.dgm-node[data-tone="risk"] .lbl{color:var(--risk)}
+.dgm-node[data-tone="info"] .box{fill:var(--info-bg);stroke:var(--info)}
+.dgm-node[data-tone="info"] .lbl{color:var(--info)}
+
+.dgm-grp .box{fill:var(--bg2);stroke:var(--line2);stroke-dasharray:6 4;stroke-width:1.5}
+.dgm-grp .gl{font-family:var(--font);font-size:11.5px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;fill:var(--ink4)}
+.dgm-grp{cursor:move}
+
+.dgm-edge .wire{fill:none;stroke:var(--ink3);stroke-width:1.8}
+.dgm-edge .hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
+.dgm-edge.is-sel .wire{stroke:var(--hw);stroke-width:2.6}
+.dgm-edge[data-style="dash"] .wire{stroke-dasharray:6 4}
+.dgm-edge[data-tone="primary"] .wire{stroke:var(--hw)}
+.dgm-edge[data-tone="risk"] .wire{stroke:var(--risk)}
+.dgm-edge[data-tone="ok"] .wire{stroke:var(--ok)}
+.dgm-edge .elbl{
+  font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--ink2);
+  display:flex;align-items:center;justify-content:center;height:100%;text-align:center;
+}
+.dgm-edge .elbl span{background:var(--bg);padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+
+.dgm__modal{
+  position:absolute;inset:0;background:rgba(0,0,0,.45);display:none;
+  align-items:center;justify-content:center;padding:24px;z-index:9
+}
+.dgm__modal.is-open{display:flex}
+.dgm__modal .pane{background:var(--bg);border-radius:var(--radius);width:min(680px,100%);
+  max-height:100%;display:flex;flex-direction:column;border:1px solid var(--line2)}
+.dgm__modal textarea{
+  flex:1;min-height:240px;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  padding:12px;font-family:var(--mono);font-size:12px;resize:vertical;background:var(--bg2);color:var(--ink)
+}
+.dgm__modal .head,.dgm__modal .foot{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.dgm__modal .head b{font-size:14px}
+.dgm__modal .sp{flex:1}
+
+/* 인쇄 */
+@media print{
+  body{background:#fff}
+  .no-print{display:none !important}
+  .dgm__bar{display:none !important}
+  .dgm__svg{background:none}
+  .dgm.is-max{position:static;inset:auto;box-shadow:none}
+}
+
+/* ============================================================
+   HW Doc Kit - 개발용 문서 레이아웃 (사이드 TOC + 본문 단일 컬럼)
+   ============================================================ */
+body{ background:var(--bg2) }
+
+.doc{ display:grid; grid-template-columns:270px minmax(0,1fr); align-items:start; }
+
+/* 사이드바 */
+.side{
+  position:sticky; top:0; height:100vh; overflow:auto;
+  background:var(--bg); border-right:1px solid var(--line); padding:20px 16px 40px;
+}
+.side__brand{ display:flex; align-items:center; gap:9px; margin-bottom:6px }
+.side__brand .bar{ width:5px; height:26px; background:var(--hw); border-radius:2px }
+.side__brand b{ font-size:14.5px; letter-spacing:-.01em }
+.side__meta{ font-size:11.5px; color:var(--ink4); margin:0 0 16px; font-family:var(--mono) }
+.toc{ list-style:none; margin:0; padding:0; font-size:13.5px }
+.toc li{ margin:1px 0 }
+.toc a{
+  display:block; padding:5px 10px; border-radius:6px; color:var(--ink2);
+  text-decoration:none; border-left:2px solid transparent;
+}
+.toc a:hover{ background:var(--bg3); color:var(--ink) }
+.toc a.is-cur{ background:var(--hw-pale); color:var(--hw-dp); font-weight:700; border-left-color:var(--hw) }
+.toc .sub a{ padding-left:22px; font-size:12.5px; color:var(--ink3) }
+.side__foot{ margin-top:18px; padding-top:14px; border-top:1px solid var(--line); display:flex; gap:6px; flex-wrap:wrap }
+.side__foot button{
+  border:1px solid var(--line2); background:var(--bg); color:var(--ink2); border-radius:5px;
+  padding:3px 9px; font-size:11.5px; font-weight:600; cursor:pointer; font-family:var(--font);
+}
+.side__foot button:hover{ border-color:var(--hw); color:var(--hw-dk) }
+
+/* 본문 */
+.main{ padding:34px 44px 100px; max-width:1040px; }
+.doc-head{ border-bottom:2px solid var(--hw); padding-bottom:18px; margin-bottom:26px }
+.doc-head h1{ font-size:32px; letter-spacing:-.025em; margin:6px 0 8px }
+.doc-head .sub{ font-size:15px; color:var(--ink2); max-width:80ch }
+.doc-head .meta{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px }
+
+.sec{ margin:0 0 44px; scroll-margin-top:18px }
+.sec > h2{
+  font-size:21px; margin:0 0 4px; display:flex; align-items:baseline; gap:10px;
+}
+.sec > h2 .n{ font-family:var(--mono); font-size:14px; font-weight:800; color:var(--hw) }
+.sec > .why{ font-size:13.5px; color:var(--ink3); margin:0 0 16px; padding-left:2px }
+.sec h3{ font-size:16px; margin:24px 0 10px; padding-left:10px; border-left:3px solid var(--hw-tint) }
+.sec h4{ font-size:14px; margin:16px 0 6px; color:var(--ink2) }
+.sec p, .sec li{ font-size:14.5px }
+.sec ul, .sec ol{ margin:0 0 12px; padding-left:20px }
+.sec li{ margin:3px 0 }
+
+/* 체크리스트 */
+.chk{ list-style:none; padding:0; margin:0 }
+.chk li{
+  display:flex; gap:10px; align-items:flex-start; padding:9px 12px;
+  border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--bg); margin-bottom:6px;
+}
+.chk input{ margin-top:3px; width:15px; height:15px; accent-color:var(--hw); flex:0 0 auto }
+.chk li.is-done{ background:var(--bg2); border-color:var(--line) }
+.chk li.is-done .t{ text-decoration:line-through; color:var(--ink4) }
+.chk .t{ font-weight:600; font-size:14px }
+.chk .d{ font-size:12.5px; color:var(--ink3); display:block; margin-top:2px }
+
+/* 시나리오 (Given/When/Then) */
+.gwt{ border:1px solid var(--line); border-left:4px solid var(--hw); border-radius:var(--radius-sm);
+  background:var(--bg); padding:14px 16px; margin:0 0 12px }
+.gwt__t{ font-weight:700; font-size:14.5px; margin:0 0 8px }
+.gwt dl{ margin:0; display:grid; grid-template-columns:64px 1fr; gap:4px 10px; font-size:13.5px }
+.gwt dt{ font-weight:800; font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--hw-dk); padding-top:2px }
+.gwt dd{ margin:0; color:var(--ink2) }
+
+/* 작업 단위 카드 */
+.slice{ border:1px solid var(--line); border-radius:var(--radius); background:var(--bg); overflow:hidden; margin-bottom:12px }
+.slice__h{ display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--bg3); border-bottom:1px solid var(--line) }
+.slice__h .no{ font-family:var(--mono); font-weight:800; color:#fff; background:var(--hw);
+  border-radius:5px; padding:1px 8px; font-size:12px }
+.slice__h b{ font-size:14.5px }
+.slice__h .sp{ flex:1 }
+.slice__b{ padding:12px 14px; font-size:13.5px }
+.slice__b dl{ margin:0; display:grid; grid-template-columns:110px 1fr; gap:6px 12px }
+.slice__b dt{ color:var(--ink3); font-size:12.5px; font-weight:700 }
+.slice__b dd{ margin:0; color:var(--ink2) }
+
+/* 의사결정 기록 */
+.adr{ border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; background:var(--bg); margin-bottom:12px }
+.adr__t{ font-size:15px; font-weight:700; margin:0 0 8px }
+.adr dl{ margin:0; display:grid; grid-template-columns:96px 1fr; gap:5px 12px; font-size:13.5px }
+.adr dt{ color:var(--hw-dk); font-weight:700; font-size:12.5px }
+.adr dd{ margin:0; color:var(--ink2) }
+
+.dgm{ margin:0 0 14px; height:520px }
+/* 다이어그램은 본문 글줄 폭에 갇히지 않고 사이드바 오른쪽을 전부 쓴다.
+   270px 사이드바 + 본문 좌우 패딩 88px + 스크롤바 여유 18px 를 뺀 값. */
+@media (min-width:1001px){
+  .dgm{ width:min(calc(100vw - 376px), 1700px); max-width:none }
+}
+.tbl-wrap{ margin-bottom:14px }
+.note{ margin-bottom:12px }
+.code{ margin-bottom:14px }
+
+@media (max-width:1000px){
+  .doc{ grid-template-columns:1fr }
+  .side{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line) }
+  .main{ padding:24px 20px 60px }
+}
+@media print{
+  @page{ size:A4; margin:14mm }
+  .side{ display:none }
+  .doc{ display:block }
+  .main{ max-width:none; padding:0 }
+  .sec{ page-break-inside:avoid }
+  .dgm{ height:320px; width:auto }
+}
+/* ── 막대 비교 (이 문서 추가) ─────────────────────────────────
+   숫자를 표로만 늘어놓으면 "5초 예산에 얼마나 붙었는지"가 안 읽힌다.
+   기준선(예산)을 트랙 위에 그어 값과 기준을 한 눈에 견주게 한다. */
+.bars{margin:16px 0 6px}
+.bars__cap{font-size:12px;color:var(--ink3);margin:0 0 10px}
+.bar{display:grid;grid-template-columns:210px 1fr 118px;gap:14px;align-items:center;margin-bottom:9px}
+.bar__lb{font-size:13.5px;color:var(--ink2);font-weight:600;line-height:1.35}
+.bar__lb small{display:block;font-size:11.5px;color:var(--ink4);font-weight:500}
+.bar__track{position:relative;height:24px;background:var(--bg3);border-radius:var(--radius-sm);overflow:hidden}
+.bar__fill{position:absolute;left:0;top:0;bottom:0;background:var(--hw-lt);border-radius:var(--radius-sm)}
+.bar__fill--key{background:var(--hw)}
+.bar__fill--ok{background:var(--ok)}
+.bar__fill--warn{background:var(--warn)}
+.bar__fill--risk{background:var(--risk)}
+.bar__fill--mute{background:var(--line2)}
+.bar__line{position:absolute;top:0;bottom:0;width:2px;background:var(--risk);z-index:2}
+.bar__v{font-family:var(--mono);font-size:13.5px;font-weight:700;color:var(--hw-dp);text-align:right}
+.bar__v small{display:block;font-family:var(--font);font-size:11px;font-weight:600;color:var(--ink4)}
+@media (max-width:760px){ .bar{grid-template-columns:1fr;gap:4px} .bar__v{text-align:left} }
+
+/* 결론 한 줄 — 절 맨 위에 놓아 스크롤만으로 요지가 잡히게 한다 */
+.lead{border-left:3px solid var(--hw);background:var(--hw-pale);
+      padding:11px 14px;border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+      font-size:14.5px;font-weight:600;color:var(--ink);margin:0 0 14px}
+.lead b{color:var(--hw-dp)}
+
+/* 요약 판정 타일 */
+.verd{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:12px;margin:16px 0}
+.verd__i{border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:var(--radius);
+         background:var(--bg);padding:12px 14px}
+.verd__i--warn{border-left-color:var(--warn)}
+.verd__t{font-size:12px;font-weight:700;color:var(--ink3);margin:0 0 5px}
+.verd__d{font-size:13.5px;color:var(--ink2);margin:0;line-height:1.5}
+.verd__d b{color:var(--ink)}
+
+/* ── 증거 스크린샷 ─────────────────────────────────────────
+   글로 "이렇게 나온다" 고 쓰는 것과 실제 화면을 붙이는 것은 다르다.
+   근거로 쓰는 그림만 넣는다 — 장식용 스크린샷은 문서를 무겁게만 한다.
+   외부 링크가 아니라 data URI 로 박아 단일 파일 원칙을 지킨다. */
+.shot{margin:14px 0 18px}
+.shot img{display:block;width:100%;height:auto;border:1px solid var(--line);
+          border-radius:var(--radius-sm);background:var(--bg)}
+.shot figcaption{font-size:12px;color:var(--ink3);margin-top:7px;line-height:1.55}
+.shot figcaption b{color:var(--ink2)}
+.shot__src{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--ink4);
+           border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-right:7px}
+
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!-- ================= 사이드바 ================= -->
+  <aside class="side no-print">
+    <div class="side__brand"><span class="bar"></span><b>CDC PoC · V6 검증</b></div>
+    <p class="side__meta">2026-09-03 · embedded-cdc</p>
+    <ul class="toc"></ul>
+    <div class="side__foot">
+      <button id="bTheme" type="button">테마</button>
+      <button id="bPrint" type="button">인쇄</button>
+      <button id="bReset" type="button">체크 초기화</button>
+    </div>
+  </aside>
+
+  <!-- ================= 본문 ================= -->
+  <main class="main">
+
+    <header class="doc-head">
+      <span class="kicker">Verification Progress Report</span>
+      <h1>V6 대사 — 통과하는데 깨져 있는 경우, 그리고 상시로 못 도는 질의</h1>
+      <p class="sub">「PoC CDC 기술 검토 - 시나리오」의 V6 에서 <b>지표는 만들었지만 검증한 적 없던 것</b>과
+        <b>전략만 적히고 수치가 없던 것</b>을 채웠습니다.
+        건수 대사가 <b>통과하는 동안 참조가 끊어져 있는</b> 상태를 실제로 만들어 봤고,
+        상시로 돌릴 수 없는 체크섬 대사를 구간으로 나눴을 때 <b>무엇을 얻고 무엇을 잃는지</b>를 쟀습니다.</p>
+      <div class="meta">
+        <span class="chip chip--ok">V6 신규 4/4 통과</span>
+        <span class="chip chip--ok">전체 회귀 29/29</span>
+        <span class="chip chip--risk">대사 통과 + 참조 파손 재현</span>
+        <span class="chip chip--warn">computer 는 건수 대사만 가능</span>
+        <span class="chip chip--info">대사 질의 스크립트화</span>
+      </div>
+    </header>
+
+    <!-- ---------- 0. 요약 ---------- -->
+    <section class="sec" id="s0">
+      <h2><span class="n">00</span>한눈에 보기</h2>
+      <p class="lead">대사는 <b>하나가 아니라 셋</b>입니다 — 건수, 체크섬, 고아 참조.
+        셋 다 있어야 하는 이유가 이번에 수치로 나왔습니다.
+        건수 대사가 <b>정상</b>을 말하는 동안 수신 측 참조가 끊어져 있었고, 그것을 잡은 것은 고아 대사뿐이었습니다.</p>
+
+      <div class="kpi">
+        <div class="kpi__item"><div class="kpi__v">0</div><div class="kpi__l">격리 시 건수 대사 판정식 (=통과)</div></div>
+        <div class="kpi__item"><div class="kpi__v">1</div><div class="kpi__l">그때 실제로 있던 고아 참조</div></div>
+        <div class="kpi__item"><div class="kpi__v">12×</div><div class="kpi__l">구간 대사가 줄인 체크섬 비용</div></div>
+        <div class="kpi__item"><div class="kpi__v">29 / 29</div><div class="kpi__l">전체 시나리오 통과</div></div>
+      </div>
+
+      <div class="g2" style="margin-top:18px">
+        <div class="card card--accent">
+          <p class="card__t">이번에 확인된 사실</p>
+          <ul style="margin:6px 0 0">
+            <li>격리된 행이 <b>부모</b>였을 때, 건수 대사는 통과하고 고아 대사만 잡는다</li>
+            <li>체크섬 대사가 되는 표는 <b>car · grade · member</b> 셋. <span class="mono">computer</span> 는 변환이라 <b>건수 대사만</b></li>
+            <li><span class="mono">computer</span> 는 원천 시각을 수신이 보존하지 않아 <b>구간 대사도 불가</b></li>
+            <li>비용을 만드는 것은 스캔이 아니라 <b>정렬·집계</b> — 구간을 2%로 좁히면 144ms → 12ms</li>
+            <li>구간 대사는 <b>구간 밖의 조용한 어긋남을 못 잡는다</b> (실측)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <p class="card__t">그래서 정해야 할 것</p>
+          <ul style="margin:6px 0 0">
+            <li>구간 대사 <b>주기와 구간 폭</b>, 전체 대사 <b>야간 배치 시각</b></li>
+            <li><span class="mono">computer</span> 같은 변환 표의 <b>값 대사를 포기할지</b>, 아니면 수신에 원천 시각을 실을지</li>
+            <li>고아 대사를 <b>어느 관계까지</b> 돌릴지 — 지금은 <span class="mono">&lt;부모&gt;_id</span> 규칙으로 자동 탐지</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note note--risk" style="margin-top:16px">
+        <p class="note__t">한 문장으로</p>
+        <b>대사가 "정상"이라고 말하는 것과 데이터가 온전한 것은 다릅니다.</b>
+        DLQ 를 판정식에서 빼는 것은 옳지만, 그 순간 "격리된 그 행이 누군가의 부모였는지"는 판정식 밖으로 나갑니다.
+        그 빈자리를 메우는 것이 고아 참조 대사입니다.
+      </div>
+    </section>
+
+    <!-- ---------- 1. 범위 ---------- -->
+    <section class="sec" id="s1">
+      <h2><span class="n">01</span>이번 회차 범위</h2>
+      <p class="lead">V6 는 지표·경보가 이미 들어가 있는 항목이 많습니다. 그래서 이번 회차는
+        <b>"만들어 둔 것이 실제로 그 상황을 잡는가"</b>와 <b>수치가 없던 전략</b>에 집중했습니다<sup class="ref" data-ref="2">2</sup>.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:32%">시나리오 문서의 지적</th><th style="width:34%">이전 상태</th><th>이번 회차</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>DLQ 건수도 대사에 넣어야 함. 판정식을 source − target − DLQ(PENDING) = 0 으로</td>
+              <td>exporter 지표(<span class="mono">cdc_dlq_total_pending</span>)와 경보(<span class="mono">CdcReconcileMismatch</span>)에 <b>이미 반영</b>. 다만 그 판정식이 무엇을 놓치는지는 확인된 적 없음</td>
+              <td>격리가 있을 때 판정식이 <b>0(통과)</b> 이 되는 것을 재현하고, 그때 무엇이 남는지 측정</td>
+            </tr>
+            <tr>
+              <td>관계 있는 테이블은 고아 참조 대사가 따로 필요</td>
+              <td>exporter 질의(<span class="mono">cdc_orphan</span>)와 경보(<span class="mono">CdcOrphanRows</span>)는 있으나 <b>검증 시나리오 없음</b></td>
+              <td>건수 대사가 통과하는 상태에서 고아만 검출되는 상황을 만들어 확인</td>
+            </tr>
+            <tr>
+              <td>추가적인 값에 대한 부분은 야간 배치나 최근 N시간 구간 한정으로 돌리는 전략 수립 및 적용</td>
+              <td>필요성만 적혀 있고 <b>질의도 수치도 없음</b></td>
+              <td><span class="mono">scripts/reconcile.sql</span> 로 전략을 구현하고 비용·검출력을 측정</td>
+            </tr>
+            <tr>
+              <td>heartbeat 이 통과 기준에 있는데 설정 자체가 안 들어가 있음</td>
+              <td><b>이미 반영됨</b> — <span class="mono">heartbeat-interval-ms</span> 10000 + <span class="mono">heartbeat-action-query</span></td>
+              <td>기존 V6 시나리오가 계속 통과 (이번 회차 변경 없음)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--info">
+        <p class="note__t">검증이 운영 질의를 그대로 읽는다</p>
+        대사 질의는 <span class="mono">scripts/reconcile.sql</span> 을, 고아 참조 질의는 exporter 의
+        <span class="mono">queries-target.yaml</span> 을 파일에서 읽어 실행합니다.
+        테스트가 같은 질의를 따로 들고 있으면 대시보드가 쓰는 것과 조용히 갈라집니다 —
+        V5 에서 세운 원칙을 그대로 적용했습니다.
+      </div>
+    </section>
+
+    <!-- ---------- 2. 대사의 사각지대 ---------- -->
+    <section class="sec" id="s2">
+      <h2><span class="n">02</span>대사가 통과하는데 깨져 있는 경우</h2>
+      <p class="lead">판정식 <span class="mono">|source − target| − DLQ(PENDING) = 0</span> 은
+        "격리로 설명되는 차이"를 정상으로 봅니다. 옳은 판정입니다.
+        <b>문제는 그 격리된 행이 다른 행의 부모였을 때</b>입니다.</p>
+
+      <div class="dgm" data-edit="on" style="height:400px">
+        <script type="application/json" class="dgm-data">
+{
+  "groups": [
+    {"id":"g1","label":"원천","x":20,"y":10,"w":250,"h":360},
+    {"id":"g2","label":"수신","x":330,"y":10,"w":270,"h":360},
+    {"id":"g3","label":"대사가 말하는 것","x":640,"y":10,"w":250,"h":360}
+  ],
+  "nodes": [
+    {"id":"sg","label":"grade (부모)","sub":"20건 삽입","x":45,"y":70,"w":200,"h":54,"tone":"primary"},
+    {"id":"sm","label":"member (자식)","sub":"그 등급을 참조","x":45,"y":230,"w":200,"h":54,"tone":"primary"},
+    {"id":"tg","label":"grade 19건만 반영","sub":"1건은 적재 실패 → DLQ","x":355,"y":70,"w":220,"h":54,"tone":"risk"},
+    {"id":"tm","label":"member 반영됨","sub":"수신에 FK 가 없어 그대로 들어간다","x":355,"y":230,"w":220,"h":62,"tone":"warn"},
+    {"id":"v1","label":"건수 대사","sub":"|25 − 24| − DLQ 1 = 0","x":665,"y":70,"w":200,"h":58,"tone":"ok"},
+    {"id":"v2","label":"체크섬 대사","sub":"각 표 안에서는 이상 없음","x":665,"y":165,"w":200,"h":58,"tone":"ok"},
+    {"id":"v3","label":"고아 참조 대사","sub":"member → grade  1건","x":665,"y":265,"w":200,"h":58,"tone":"risk"}
+  ],
+  "edges": [
+    {"from":"sg","to":"tg","label":"1건 격리","tone":"risk"},
+    {"from":"sm","to":"tm","tone":"primary"},
+    {"from":"tm","to":"tg","label":"끊어진 참조","tone":"risk","style":"dash"},
+    {"from":"tg","to":"v1"},
+    {"from":"tg","to":"v2"},
+    {"from":"tm","to":"v3","tone":"risk"}
+  ]
+}
+        </script>
+      </div>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:26%">시점</th><th style="width:28%">건수 대사 판정식</th><th style="width:22%">고아 참조</th><th>경보</th></tr></thead>
+          <tbody>
+            <tr><td>부모 1건 격리 직후</td><td><b>0</b> — 차이가 DLQ 로 설명됨</td><td><span class="chip chip--risk">1 건</span></td><td>대사 경보 없음 / 고아 경보만</td></tr>
+            <tr><td>DLQ 재처리 후</td><td>0</td><td><span class="chip chip--ok">0 건</span></td><td>없음</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--risk" style="margin-top:14px">
+        <p class="note__t">왜 이것이 위험한가</p>
+        <b>파이프라인 관점에서는 아무 문제가 없습니다.</b> 격리는 추적되고 있고, 건수 차이는 그것으로 설명되며,
+        각 표의 체크섬도 자기들끼리는 맞습니다. 그런데 하류에서 <span class="mono">member</span> 를 등급과 조인하면
+        그 회원만 사라집니다. 수신 측에 FK 가 없으므로 DB 가 막아 주지도 않습니다.
+        <br><br>
+        <b>고아 대사는 "영구 손상"이 아니라 "지금 조치가 필요한가"를 말합니다.</b>
+        부모가 반영되는 순간 고아도 함께 사라졌습니다 — 그래서 이 지표는 경보로서 의미가 있고, 재처리 뒤 저절로 내려갑니다.
+      </div>
+
+      <div class="code">
+        <div class="code__bar"><span>고아 참조 질의 — 관계를 목록으로 적지 않는다 (exporter queries-target.yaml)</span><button class="code__copy" type="button">복사</button></div>
+<pre><span class="cm">-- `&lt;부모&gt;_id` 규칙으로 카탈로그에서 관계를 찾는다 (member.grade_id → grade).</span>
+<span class="cm">-- 규칙에 맞는 컬럼이 생기면 다음 스크랩부터 자동으로 대사 대상이 된다.</span>
+SELECT count(*) FROM public.member ch
+LEFT JOIN public.grade pa ON pa.id = ch.grade_id
+WHERE ch.grade_id IS NOT NULL AND pa.id IS NULL;</pre>
+      </div>
+    </section>
+
+    <!-- ---------- 3. 어떤 표가 대사되는가 ---------- -->
+    <section class="sec" id="s3">
+      <h2><span class="n">03</span>어떤 표가 어디까지 대사되는가</h2>
+      <p class="lead">대사 질의를 양쪽 DB 에서 돌려 봤습니다. <b>표마다 가능한 대사의 깊이가 다릅니다.</b></p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:16%">표</th><th style="width:16%">건수 대사</th><th style="width:30%">체크섬 대사</th><th>구간 대사</th></tr></thead>
+          <tbody>
+            <tr><td><span class="mono">car</span></td>
+              <td><span class="chip chip--ok">3 / 3 일치</span></td>
+              <td><span class="chip chip--ok">가능 · 일치</span></td>
+              <td>가능 (<span class="mono">updated_at</span>)</td></tr>
+            <tr><td><span class="mono">grade</span></td>
+              <td><span class="chip chip--ok">5 / 5 일치</span></td>
+              <td><span class="chip chip--ok">가능 · 일치</span></td>
+              <td>가능 (<span class="mono">created_at</span>)</td></tr>
+            <tr><td><span class="mono">member</span></td>
+              <td><span class="chip chip--ok">5 / 5 일치</span></td>
+              <td><span class="chip chip--ok">가능 · 일치</span></td>
+              <td>가능 (<span class="mono">updated_at</span>)</td></tr>
+            <tr><td><span class="mono">computer</span></td>
+              <td><span class="chip chip--ok">3 / 3 일치</span></td>
+              <td><span class="chip chip--risk">불가 — 변환 테이블</span></td>
+              <td><span class="chip chip--risk">불가 — 원천 <span class="mono">created_at</span> vs 수신 <span class="mono">synced_at</span></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--ok" style="margin-top:14px">
+        <p class="note__t">관리 컬럼을 빼면 셋이 맞는다</p>
+        수신 측에만 있는 <span class="mono">deleted · source_lsn · synced_at</span> 을 체크섬에서 빼면
+        <span class="mono">car · grade · member</span> 는 컬럼 집합이 양쪽에서 <b>같아지고 체크섬도 일치</b>합니다.
+        그래서 비교 기준은 컬럼 목록 전체가 아니라 <b>관리 컬럼을 뺀 집합</b>입니다 — 질의가 그것을
+        <span class="mono">checksum_columns</span> 로 함께 냅니다.
+      </div>
+
+      <div class="note note--warn">
+        <p class="note__t">computer 만 두 겹으로 막힌다</p>
+        <b>(1) 값 대사</b> — <span class="mono">brand+model → full_name</span> 처럼 변환이 걸려 양쪽 컬럼이 애초에 다릅니다.
+        체크섬을 견줄 수 없고 건수 대사만 성립합니다.
+        <br>
+        <b>(2) 구간 대사</b> — 수신 <span class="mono">computer</span> 에는 원천의 <span class="mono">created_at</span> 이 없어
+        <span class="mono">synced_at</span>(적재 시각)밖에 없습니다. "최근 24시간에 원천에서 바뀐 행"과
+        "최근 24시간에 수신이 적재한 행"은 <b>다른 집합</b>이므로 구간을 견줄 수 없습니다.
+        <br><br>
+        이 둘은 스키마 설계로만 풀립니다 — <b>수신 표에 원천의 변경 시각을 그대로 실으면</b> (2)는 해소되고,
+        (1)은 변환 전 값을 함께 남기지 않는 한 남습니다.
+      </div>
+      <div class="note note--info">
+        <p class="note__t">Prometheus 실측 · 2026-09-03<sup class="ref" data-ref="5">5</sup></p>
+        대사 세 갈래가 모두 상시 지표로 나와 있습니다 — 정상 상태에서 조회한 값입니다.
+        <div class="tbl-wrap" style="margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th style="width:46%">질의</th><th>값</th></tr></thead>
+            <tbody>
+              <tr><td><span class="mono">cdc_source_rows</span> vs <span class="mono">cdc_target_rows</span></td>
+                <td>car 3/3 · computer 3/3 · grade 5/5 · member 5/5 — 전부 일치</td></tr>
+              <tr><td><span class="mono">cdc_orphan_rows{child_table="member",parent_table="grade"}</span></td>
+                <td><b>0</b> — 02 절 시나리오가 끝난 뒤 정상으로 돌아온 상태</td></tr>
+              <tr><td><span class="mono">cdc_dlq_total_pending</span></td><td><b>0</b> — 판정식에서 뺄 격리가 없다</td></tr>
+              <tr><td><span class="mono">cdc_heartbeat_age_seconds</span></td>
+                <td><b>6.9 s</b> — <span class="mono">heartbeat-interval-ms 10000</span> 이 실제로 돌고 있다</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin:10px 0 0">경보 규칙 <b>22건이 로드</b>돼 있고 발화 중인 것은 없습니다.
+          다만 <b>체크섬 대사만은 이 목록에 없습니다</b> — 스크립트로만 돌아가므로 경보로 연결되지 않습니다.
+          05 절의 "대사 실행 주체 결정"이 가리키는 것이 이 빈자리입니다.</p>
+      </div>
+
+    </section>
+
+    <!-- ---------- 4. 구간 한정 ---------- -->
+    <section class="sec" id="s4">
+      <h2><span class="n">04</span>구간 한정 전략 — 얻는 것과 잃는 것</h2>
+      <p class="lead">체크섬은 <span class="mono">md5(string_agg(...))</span> 라 정렬을 동반한 전체 스캔입니다.
+        표가 커지면 상시로 돌릴 수 없습니다. 그래서 <b>전체 대사(야간)</b>와 <b>구간 대사(상시)</b>로 나눴습니다.</p>
+
+      <h3>비용 <span class="chip chip--neutral">5만 행 · 최근 24시간 1,000행(2.0%)</span></h3>
+      <div class="bars">
+        <p class="bars__cap">막대는 대사 질의 한 번의 소요 시간이고 셋 다 같은 축(0~160 ms)입니다. 캐시를 데운 뒤 잰 값입니다.</p>
+        <div class="bar"><div class="bar__lb">전체 대사 (5만 행)</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--risk" style="width:90.0%"></div></div>
+          <div class="bar__v">144 ms<small>기준</small></div></div>
+        <div class="bar"><div class="bar__lb">구간 대사 · 인덱스 없음</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--warn" style="width:7.5%"></div></div>
+          <div class="bar__v">12 ms<small>12배 빠름 · Seq Scan</small></div></div>
+        <div class="bar"><div class="bar__lb">구간 대사 · 인덱스 있음</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--ok" style="width:5.6%"></div></div>
+          <div class="bar__v">9 ms<small>Index Only Scan</small></div></div>
+      </div>
+
+      <div class="note note--info" style="margin-top:14px">
+        <p class="note__t">예상과 다른 결과 — 비용을 만드는 것은 스캔이 아니었다</p>
+        인덱스가 있어야 구간 한정이 의미 있을 것으로 봤지만, <b>인덱스 없이도 12배가 줄었습니다</b>(144 → 12 ms).
+        5만 행 규모에서 무거운 쪽은 스캔이 아니라 <b>정렬과 문자열 집계</b>이고, 구간이 그 대상 행 수를 2%로 줄이기 때문입니다.
+        인덱스는 읽는 방식만 바꿨을 뿐(<span class="mono">Seq Scan → Index Only Scan</span>) 시간은 9 ms 로 사실상 같았습니다.
+        <br><br>
+        <b>그래도 인덱스는 필요합니다</b> — 표가 커져 스캔이 지배적이 되는 지점이 옵니다.
+        다만 선택도가 낮으면(구간이 전체의 수십 %) 플래너가 아예 쓰지 않으므로, <b>구간 폭은 표 크기에 맞춰</b> 정해야 합니다.
+      </div>
+
+      <h3>잃는 것 — 구간 밖의 조용한 어긋남</h3>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:34%">주입한 상황</th><th style="width:22%">전체 대사</th><th style="width:22%">구간 대사</th><th>뜻</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>구간 밖(2일 전) 행 1건의 값만 변조. <span class="mono">updated_at</span> 은 건드리지 않음</td>
+              <td><span class="chip chip--ok">검출</span></td>
+              <td><span class="chip chip--risk">검출 못 함</span></td>
+              <td>구간만 돌리면 이 어긋남은 <b>영원히 안 잡힌다</b></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn" style="margin-top:14px">
+        <p class="note__t">그래서 둘은 대체재가 아니라 짝이다</p>
+        수신 측에서 값이 조용히 어긋나는 상황은 정확히 이 모양입니다 — <b>변경 시각은 그대로인데 값만 다른 행</b>.
+        구간 대사는 그 행을 아예 보지 않습니다.
+        <br><br>
+        <b>운영 형태</b>: 구간 대사를 상시(수십 분 주기)로 돌려 방금 생긴 어긋남을 빨리 잡고,
+        전체 대사를 야간 배치로 하루 한 번 돌려 오래된 어긋남을 훑습니다.
+        구간 폭은 <b>야간 배치 주기보다 넉넉히</b> 잡아야 두 그물 사이에 구멍이 생기지 않습니다.
+      </div>
+
+      <div class="adr">
+        <p class="adr__t">ADR · 대사를 구간(상시)과 전체(야간)로 나눈다</p>
+        <dl>
+          <dt>배경</dt><dd>체크섬 대사는 정렬을 동반한 전체 스캔이라 상시 주기로 돌릴 수 없다. 그렇다고 야간에만 돌리면 어긋남을 하루 뒤에야 안다.</dd>
+          <dt>결정</dt><dd>같은 질의를 <b>구간 한정</b>과 <b>전체</b> 두 벌로 낸다(<span class="mono">scripts/reconcile.sql</span> 이 한 번에 둘 다 낸다). 구간은 상시, 전체는 야간 배치.</dd>
+          <dt>대가</dt><dd>구간 대사는 구간 밖의 조용한 어긋남을 못 잡는다(실측). 그 공백은 야간 전체 대사가 메우므로, <b>최대 탐지 지연은 야간 배치 주기</b>가 된다.</dd>
+          <dt>전제</dt><dd>수신 표가 <b>원천의 변경 시각을 보존</b>해야 한다. 보존하지 않는 표(computer)는 구간 대사를 할 수 없고 건수 대사에만 의존한다.</dd>
+          <dt>재검토 조건</dt><dd>대상 표가 커져 구간 대사조차 상시 주기 안에 안 끝날 때. 그때는 구간 폭을 줄이고 구간 컬럼 인덱스를 확인한다.</dd>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ---------- 5. 남은 판단 ---------- -->
+    <section class="sec" id="s5">
+      <h2><span class="n">05</span>남은 판단과 조치</h2>
+      <p class="lead">질의와 지표는 다 있습니다. 남은 것은 <b>주기·구간 폭과 스키마 판단</b>입니다. 항목을 클릭하면 체크 상태가 브라우저에 저장됩니다.</p>
+
+      <h3>V6 안에서 남은 판단 <span class="chip chk-count">0 / 0</span></h3>
+      <ul class="chk">
+        <li><input type="checkbox" id="v6a"><span><span class="t">구간 대사 주기와 구간 폭, 전체 대사 야간 시각 확정 (필수)</span><span class="d">구간 폭은 야간 배치 주기보다 넉넉해야 두 그물 사이에 구멍이 안 생긴다. 최대 탐지 지연 = 야간 배치 주기</span></span></li>
+        <li><input type="checkbox" id="v6b"><span><span class="t">변환 표(computer)의 값 대사를 포기할지 결정</span><span class="d">건수 대사만으로는 값이 틀어진 것을 못 잡는다. 수신에 원천 시각을 실으면 구간 대사는 살아나지만 값 대사는 여전히 안 된다</span></span></li>
+        <li><input type="checkbox" id="v6c"><span><span class="t">대사 실행 주체 결정 — 배치 잡인지 exporter 인지</span><span class="d">지금 건수·고아는 exporter 가 상시로 내고, 체크섬은 스크립트다. 체크섬을 어디서 돌릴지 정해야 경보로 연결된다</span></span></li>
+        <li><input type="checkbox" id="v6d"><span><span class="t">고아 대사 대상 관계 확인</span><span class="d">지금은 &lt;부모&gt;_id 이름 규칙으로 자동 탐지한다. 규칙에 안 맞는 관계가 실제 스키마에 있는지 확인할 것</span></span></li>
+      </ul>
+
+      <h3>이번 회차에서 코드·설정에 들어간 것</h3>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:34%">항목</th><th style="width:30%">위치</th><th>내용</th></tr></thead>
+          <tbody>
+            <tr><td>대사 질의 (전체 + 구간)</td><td><span class="mono">scripts/reconcile.sql</span></td>
+              <td>표별로 checksum_columns · 구간 컬럼을 스스로 찾아 건수/체크섬을 둘 다 낸다</td></tr>
+            <tr><td>사각지대와 비용 검증</td><td><span class="mono">V6ReconciliationScopeTest.java</span></td>
+              <td>격리→고아 재현 · 표별 대사 가능 여부 · 비용 3구간 · 구간 대사의 검출력 한계</td></tr>
+            <tr><td>검증용 파일 경로 전달</td><td><span class="mono">build.gradle.kts</span></td>
+              <td><span class="mono">cdc.verify.reconcile.sql</span>, <span class="mono">cdc.verify.exporter.target.yaml</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>V6 항목별 결론</h3>
+      <div class="verd">
+        <div class="verd__i">
+          <p class="verd__t">DLQ 판정식</p>
+          <p class="verd__d"><b>옳다.</b> 격리가 있을 때 판정식이 0 이 되어 거짓 경보를 내지 않습니다.</p>
+        </div>
+        <div class="verd__i verd__i--warn">
+          <p class="verd__t">그 판정식의 사각지대</p>
+          <p class="verd__d"><b>재현됨.</b> 격리된 행이 부모면 고아가 남고, 고아 대사만 그것을 잡습니다.</p>
+        </div>
+        <div class="verd__i">
+          <p class="verd__t">구간 한정 전략</p>
+          <p class="verd__d"><b>수립·구현·측정 완료.</b> 구간 12배 절감, 검출력 한계까지 수치화했습니다.</p>
+        </div>
+        <div class="verd__i verd__i--warn">
+          <p class="verd__t">변환 표</p>
+          <p class="verd__d"><span class="mono">computer</span> 는 <b>건수 대사만</b> 가능합니다. 스키마 판단이 필요합니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 6. 재현 ---------- -->
+    <section class="sec" id="s6">
+      <h2><span class="n">06</span>재현 방법</h2>
+
+      <div class="code">
+        <div class="code__bar"><span>대사 — 양쪽에서 같은 질의를 돌려 비교한다</span><button class="code__copy" type="button">복사</button></div>
+<pre>docker exec -i emb-cdc-source-pg psql -U postgres -d sourcedb -f - &lt; src/embedded-cdc/scripts/reconcile.sql
+docker exec -i emb-cdc-target-pg psql -U postgres -d targetdb -f - &lt; src/embedded-cdc/scripts/reconcile.sql
+
+<span class="cm"># 읽는 법</span>
+<span class="cm">#   checksum_columns 가 양쪽에서 같아야 체크섬을 견줄 수 있다</span>
+<span class="cm">#   window_column 이 양쪽에서 같아야 구간을 견줄 수 있다</span>
+<span class="cm">#   구간 폭은 질의 안의 interval '24 hours' 를 고쳐서 바꾼다</span></pre>
+      </div>
+
+      <div class="code">
+        <div class="code__bar"><span>V6 전체 검증</span><button class="code__copy" type="button">복사</button></div>
+<pre>cd src/embedded-cdc
+docker compose up -d --build
+./scripts/verify.sh 'dev.embeddedcdc.verification.V6*'</pre>
+      </div>
+
+      <div class="note note--warn">
+        <p class="note__t">이 시나리오가 건드리는 것</p>
+        고아 재현은 <b>운영 표(grade · member)</b>에 행을 넣고 수신 <span class="mono">grade</span> 에 CHECK 제약을 잠시 겁니다.
+        제약 해제와 행 정리는 <span class="mono">finally</span> 로 보장하며, DLQ 행만 증거로 남깁니다.
+        비용 측정은 <span class="mono">verify_recon_cost</span> 전용 표(5만 행)에서 돌고 끝나면 지웁니다.
+      </div>
+    </section>
+
+    <!-- ---------- 7. 참고 ---------- -->
+    <section class="sec" id="s7">
+      <h2><span class="n">07</span>참고 자료</h2>
+      <ol class="refs">
+        <li id="ref-1"><span class="refs__n">1</span><span><span class="refs__src">V1~V6 계측치 (verify 스크립트 산출물, 29/29 통과)</span>
+          <span class="refs__meta">code · src/embedded-cdc/dev/cdc-service/build/verification/results.md (2026-09-03 실행)</span></span></li>
+        <li id="ref-2"><span class="refs__n">2</span><span><span class="refs__src">[PoC] CDC 기술 검토 - 시나리오 (V6 항목)</span>
+          <span class="refs__meta">doc · advancedre-[PoC] CDC 기술 검토 - 시나리오-010926-225135.pdf</span></span></li>
+        <li id="ref-3"><span class="refs__n">3</span><span><span class="refs__src">대사 질의와 고아 참조 질의</span>
+          <span class="refs__meta">code · src/embedded-cdc/scripts/reconcile.sql, infra/monitoring/exporter/queries-target.yaml (cdc_orphan)</span></span></li>
+        <li id="ref-4"><span class="refs__n">4</span><span><span class="refs__src">대사 경보 규칙</span>
+          <span class="refs__meta">code · src/embedded-cdc/infra/monitoring/prometheus/rules/cdc-alerts.yml — CdcReconcileMismatch, CdcOrphanRows, CdcDeadLetterPending</span></span></li>
+        <li id="ref-5"><span class="refs__n">5</span><span><span class="refs__src">운영 지표 실측</span>
+          <span class="refs__meta">data · Prometheus http://localhost:56090 — cdc_source_rows, cdc_target_rows, cdc_orphan_rows, cdc_dlq_total_pending, cdc_heartbeat_age_seconds (2026-09-03 조회)</span></span></li>
+      </ol>
+    </section>
+  </main>
+</div>
+<script>
+/* ============================================================
+   HW Doc Kit - diagram engine (의존성 없음, 단일 파일 내장용)
+   drawio 느낌의 조작: 드래그 이동 / 연결 / 라벨 인라인 편집 /
+   팬·줌 / 톤 변경 / 삭제 / Ctrl+Z / JSON 내보내기(붙여넣기로 영구 반영)
+
+   마크업 (자세한 내용은 references/diagram.md):
+     div.dgm[data-edit=on] 안에
+     script[type=application/json][class=dgm-data] 로 노드·엣지 JSON 을 넣습니다.
+   ============================================================ */
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var GRID = 10;
+  var TONES = ['neutral', 'primary', 'accent', 'muted', 'ok', 'warn', 'risk', 'info'];
+
+  function s(n, a) {
+    var e = document.createElementNS(NS, n);
+    for (var k in (a || {})) e.setAttribute(k, a[k]);
+    return e;
+  }
+  function h(t, c, txt) {
+    var e = document.createElement(t);
+    if (c) e.className = c;
+    if (txt != null) e.textContent = txt;
+    return e;
+  }
+  function btn(label, title) {
+    var b = h('button', 'dgm__btn', label);
+    b.type = 'button';
+    if (title) b.title = title;
+    return b;
+  }
+  function snap(v) { return Math.round(v / GRID) * GRID; }
+
+  function boxShape(n) {
+    var sh = n.shape || 'rect', w = n.w, ht = n.h;
+    if (sh === 'diamond')
+      return s('path', { 'class': 'box', d: 'M' + w / 2 + ',0 L' + w + ',' + ht / 2 + ' L' + w / 2 + ',' + ht + ' L0,' + ht / 2 + ' Z' });
+    if (sh === 'store') {
+      var r = Math.min(14, ht / 4);
+      var d = 'M0,' + r +
+        ' C0,' + (r * .45) + ' ' + (w * .22) + ',0 ' + (w / 2) + ',0' +
+        ' C' + (w * .78) + ',0 ' + w + ',' + (r * .45) + ' ' + w + ',' + r +
+        ' L' + w + ',' + (ht - r) +
+        ' C' + w + ',' + (ht - r * .45) + ' ' + (w * .78) + ',' + ht + ' ' + (w / 2) + ',' + ht +
+        ' C' + (w * .22) + ',' + ht + ' 0,' + (ht - r * .45) + ' 0,' + (ht - r) + ' Z';
+      return s('path', { 'class': 'box', d: d });
+    }
+    if (sh === 'note') {
+      var f = 14;
+      return s('path', { 'class': 'box', d: 'M0,0 L' + (w - f) + ',0 L' + w + ',' + f + ' L' + w + ',' + ht + ' L0,' + ht + ' Z' });
+    }
+    var rx = sh === 'pill' ? ht / 2 : (sh === 'round' ? 12 : 4);
+    return s('rect', { 'class': 'box', x: 0, y: 0, width: w, height: ht, rx: rx });
+  }
+
+  /* 노드 두 개 사이의 직교(엘보) 경로 */
+  function route(a, b) {
+    var ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    var dx = bc.x - ac.x, dy = bc.y - ac.y, p1, p2, dir;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      dir = 'h';
+      p1 = { x: dx > 0 ? a.x + a.w : a.x, y: ac.y };
+      p2 = { x: dx > 0 ? b.x : b.x + b.w, y: bc.y };
+    } else {
+      dir = 'v';
+      p1 = { x: ac.x, y: dy > 0 ? a.y + a.h : a.y };
+      p2 = { x: bc.x, y: dy > 0 ? b.y : b.y + b.h };
+    }
+    var d, mid;
+    if (dir === 'h') {
+      var mx = (p1.x + p2.x) / 2;
+      d = 'M' + p1.x + ',' + p1.y + ' L' + mx + ',' + p1.y + ' L' + mx + ',' + p2.y + ' L' + p2.x + ',' + p2.y;
+      mid = { x: mx, y: (p1.y + p2.y) / 2 };
+    } else {
+      var my = (p1.y + p2.y) / 2;
+      d = 'M' + p1.x + ',' + p1.y + ' L' + p1.x + ',' + my + ' L' + p2.x + ',' + my + ' L' + p2.x + ',' + p2.y;
+      mid = { x: (p1.x + p2.x) / 2, y: my };
+    }
+    return { d: d, mid: mid };
+  }
+
+  function Diagram(root) {
+    this.root = root;
+    this.editable = root.getAttribute('data-edit') !== 'off';
+    this.data = this.read();
+    this.view = { tx: 0, ty: 0, k: 1 };
+    this.sel = null;          /* {type:'node'|'edge'|'group', id} */
+    this.linkMode = false;
+    this.linkFrom = null;
+    this.undo = [];
+    this.build();
+    this.render();
+    this.fit();
+  }
+
+  Diagram.prototype.read = function () {
+    var tag = this.root.querySelector('script.dgm-data');
+    var d = { nodes: [], edges: [], groups: [] };
+    if (tag) { try { d = JSON.parse(tag.textContent); } catch (e) { console.warn('[dgm] JSON 파싱 실패', e); } }
+    d.nodes = d.nodes || []; d.edges = d.edges || []; d.groups = d.groups || [];
+    d.nodes.forEach(function (n) {
+      n.w = n.w || 170; n.h = n.h || 62;
+      n.shape = n.shape || 'rect'; n.tone = n.tone || 'neutral';
+      n.x = n.x || 0; n.y = n.y || 0;
+    });
+    return d;
+  };
+
+  Diagram.prototype.build = function () {
+    var self = this;
+    var bar = h('div', 'dgm__bar no-print');
+    var mk = function (label, title, fn) { var b = btn(label, title); b.addEventListener('click', fn); bar.appendChild(b); return b; };
+
+    mk('박스', '새 박스 추가', function () { self.addNode(); });
+    this.bLink = mk('연결', '두 박스를 차례로 클릭해 화살표 연결', function () { self.toggleLink(); });
+    mk('색', '선택 항목의 톤 변경', function () { self.cycleTone(); });
+    mk('모양', '선택 박스의 모양 변경', function () { self.cycleShape(); });
+    mk('삭제', '선택 항목 삭제 (Delete)', function () { self.remove(); });
+    bar.appendChild(h('span', 'sp'));
+    mk('−', '축소', function () { self.zoom(1 / 1.2); });
+    mk('+', '확대', function () { self.zoom(1.2); });
+    mk('맞춤', '화면에 맞추기', function () { self.fit(); });
+    this.bMax = mk('넓게', '화면 가득 펼치기 (Esc 로 닫기)', function () { self.toggleMax(); });
+    mk('JSON', '수정 결과를 JSON으로 복사해 원본 파일에 붙여넣기', function () { self.openJson(); });
+    bar.appendChild(h('span', 'dgm__hint', '드래그 이동 · 더블클릭 라벨수정 · 휠 줌 · 빈 곳 드래그 팬'));
+
+    var svg = s('svg', { 'class': 'dgm__svg' });
+    var defs = s('defs');
+    [['ar-default', 'var(--ink3)'], ['ar-primary', 'var(--hw)'], ['ar-risk', 'var(--risk)'], ['ar-ok', 'var(--ok)']]
+      .forEach(function (m) {
+        var mk2 = s('marker', {
+          id: m[0] + '-' + Math.random().toString(36).slice(2, 7),
+          viewBox: '0 0 10 10', refX: 9, refY: 5,
+          markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse'
+        });
+        var p = s('path', { d: 'M0,1 L10,5 L0,9 z' });
+        p.setAttribute('style', 'fill:' + m[1]);
+        mk2.appendChild(p); defs.appendChild(mk2);
+        self['mk_' + m[0].slice(3)] = mk2.getAttribute('id');
+      });
+    svg.appendChild(defs);
+
+    this.gRoot = s('g');
+    this.gGroups = s('g'); this.gEdges = s('g'); this.gNodes = s('g');
+    this.gRoot.appendChild(this.gGroups);
+    this.gRoot.appendChild(this.gEdges);
+    this.gRoot.appendChild(this.gNodes);
+    svg.appendChild(this.gRoot);
+
+    this.svg = svg;
+    this.root.insertBefore(svg, this.root.firstChild);
+    if (this.editable) this.root.insertBefore(bar, svg);
+
+    /* JSON 모달 */
+    var modal = h('div', 'dgm__modal no-print');
+    var pane = h('div', 'pane');
+    var head = h('div', 'head'); head.appendChild(h('b', null, '다이어그램 JSON'));
+    head.appendChild(h('span', 'sp'));
+    var closeB = btn('닫기'); head.appendChild(closeB);
+    var ta = h('textarea'); ta.spellcheck = false;
+    var foot = h('div', 'foot');
+    var copyB = btn('전체 복사'); var applyB = btn('붙여넣은 JSON 적용');
+    foot.appendChild(h('span', 'dgm__hint', '원본 HTML의 dgm-data 블록에 붙여넣으면 수정이 영구 반영됩니다'));
+    foot.appendChild(h('span', 'sp')); foot.appendChild(applyB); foot.appendChild(copyB);
+    pane.appendChild(head); pane.appendChild(ta); pane.appendChild(foot);
+    modal.appendChild(pane); this.root.appendChild(modal);
+    this.modal = modal; this.ta = ta;
+    closeB.addEventListener('click', function () { modal.classList.remove('is-open'); });
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.remove('is-open'); });
+    copyB.addEventListener('click', function () {
+      ta.select(); ta.setSelectionRange(0, ta.value.length);
+      try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); }
+      copyB.textContent = '복사됨'; setTimeout(function () { copyB.textContent = '전체 복사'; }, 1200);
+    });
+    applyB.addEventListener('click', function () {
+      try {
+        var d = JSON.parse(ta.value);
+        self.push(); self.data = d; self.data.nodes = d.nodes || []; self.data.edges = d.edges || []; self.data.groups = d.groups || [];
+        self.render(); self.fit(); modal.classList.remove('is-open');
+      } catch (e) { alert('JSON 형식이 올바르지 않습니다: ' + e.message); }
+    });
+
+    this.bind();
+  };
+
+  /* ---------- 렌더 ---------- */
+  Diagram.prototype.render = function () {
+    var self = this;
+    this.gGroups.textContent = ''; this.gEdges.textContent = ''; this.gNodes.textContent = '';
+    this.index = {};
+    this.data.nodes.forEach(function (n) { self.index[n.id] = n; });
+
+    this.data.groups.forEach(function (g) {
+      var el = s('g', { 'class': 'dgm-grp', 'data-id': g.id, transform: 'translate(' + g.x + ',' + g.y + ')' });
+      el.appendChild(s('rect', { 'class': 'box', x: 0, y: 0, width: g.w, height: g.h, rx: 10 }));
+      var t = s('text', { 'class': 'gl', x: 12, y: 20 }); t.textContent = g.label || '';
+      el.appendChild(t);
+      self.gGroups.appendChild(el);
+    });
+
+    this.data.edges.forEach(function (e, i) {
+      var a = self.index[e.from], b = self.index[e.to];
+      if (!a || !b) return;
+      var r = route(a, b);
+      var g = s('g', { 'class': 'dgm-edge', 'data-i': i });
+      if (e.tone) g.setAttribute('data-tone', e.tone);
+      if (e.style) g.setAttribute('data-style', e.style);
+      var wire = s('path', { 'class': 'wire', d: r.d });
+      var mid = e.tone === 'primary' ? self.mk_primary : e.tone === 'risk' ? self.mk_risk : e.tone === 'ok' ? self.mk_ok : self.mk_default;
+      if (e.arrow !== false) wire.setAttribute('marker-end', 'url(#' + mid + ')');
+      g.appendChild(s('path', { 'class': 'hit', d: r.d }));
+      g.appendChild(wire);
+      if (e.label) {
+        var txt = String(e.label), wpx = 0;
+        for (var ci = 0; ci < txt.length; ci++) wpx += txt.charCodeAt(ci) > 0x2E80 ? 12.5 : 7;
+        var w = Math.max(34, Math.ceil(wpx) + 22);
+        var fo = s('foreignObject', { x: r.mid.x - w / 2, y: r.mid.y - 11, width: w, height: 22 });
+        var div = h('div', 'elbl'); div.appendChild(h('span', null, e.label));
+        fo.appendChild(div); g.appendChild(fo);
+      }
+      self.gEdges.appendChild(g);
+    });
+
+    this.data.nodes.forEach(function (n) {
+      var g = s('g', { 'class': 'dgm-node', 'data-id': n.id, 'data-tone': n.tone, transform: 'translate(' + n.x + ',' + n.y + ')' });
+      g.appendChild(boxShape(n));
+      var pad = n.shape === 'diamond' ? Math.round(n.w * .18) : 0;
+      var fo = s('foreignObject', { x: pad, y: 0, width: n.w - pad * 2, height: n.h });
+      var lbl = h('div', 'lbl');
+      lbl.appendChild(h('span', 't', n.label || ''));
+      if (n.sub) lbl.appendChild(h('span', 'sub', n.sub));
+      fo.appendChild(lbl); g.appendChild(fo);
+      self.gNodes.appendChild(g);
+    });
+
+    this.paint();
+  };
+
+  Diagram.prototype.paint = function () {
+    var self = this;
+    this.gRoot.setAttribute('transform', 'translate(' + this.view.tx + ',' + this.view.ty + ') scale(' + this.view.k + ')');
+    Array.prototype.forEach.call(this.root.querySelectorAll('.is-sel'), function (e) { e.classList.remove('is-sel'); });
+    if (!this.sel) return;
+    var q = this.sel.type === 'edge' ? '.dgm-edge[data-i="' + this.sel.id + '"]'
+      : this.sel.type === 'group' ? '.dgm-grp[data-id="' + this.sel.id + '"]'
+        : '.dgm-node[data-id="' + this.sel.id + '"]';
+    var el = this.root.querySelector(q);
+    if (el) el.classList.add('is-sel');
+  };
+
+  /* ---------- 좌표 ---------- */
+  Diagram.prototype.world = function (ev) {
+    var r = this.svg.getBoundingClientRect();
+    return { x: (ev.clientX - r.left - this.view.tx) / this.view.k, y: (ev.clientY - r.top - this.view.ty) / this.view.k };
+  };
+
+  /* 화면 가득 펼치기. 다른 다이어그램이 펼쳐져 있으면 먼저 닫는다. */
+  Diagram.prototype.toggleMax = function (force) {
+    var self = this;
+    var on = (force == null) ? !this.root.classList.contains('is-max') : !!force;
+    if (on) {
+      var cur = document.querySelector('.dgm.is-max');
+      if (cur && cur !== this.root && cur.__dgm) cur.__dgm.toggleMax(false);
+    }
+    this.root.classList.toggle('is-max', on);
+    document.documentElement.classList.toggle('dgm-locked', on);
+    if (this.bMax) {
+      this.bMax.classList.toggle('is-on', on);
+      this.bMax.textContent = on ? '닫기' : '넓게';
+      this.bMax.title = on ? '원래 크기로 (Esc)' : '화면 가득 펼치기 (Esc 로 닫기)';
+    }
+    (window.requestAnimationFrame || setTimeout)(function () { self.fit(); });
+  };
+
+  Diagram.prototype.fit = function () {
+    var items = this.data.nodes.concat(this.data.groups);
+    var r = this.svg.getBoundingClientRect();
+    var W = r.width || 800, H = r.height || 420;
+    if (!items.length) { this.view = { tx: 20, ty: 20, k: 1 }; return this.paint(); }
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    items.forEach(function (n) {
+      x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+      x1 = Math.max(x1, n.x + n.w); y1 = Math.max(y1, n.y + n.h);
+    });
+    var pad = 24, bw = (x1 - x0) + pad * 2, bh = (y1 - y0) + pad * 2;
+    var k = Math.min(W / bw, H / bh, 1.6);
+    this.view.k = k;
+    this.view.tx = (W - bw * k) / 2 - (x0 - pad) * k;
+    this.view.ty = (H - bh * k) / 2 - (y0 - pad) * k;
+    this.paint();
+  };
+
+  Diagram.prototype.zoom = function (f, cx, cy) {
+    var r = this.svg.getBoundingClientRect();
+    cx = cx == null ? r.width / 2 : cx; cy = cy == null ? r.height / 2 : cy;
+    var k0 = this.view.k, k1 = Math.max(.25, Math.min(3, k0 * f));
+    this.view.tx = cx - (cx - this.view.tx) * (k1 / k0);
+    this.view.ty = cy - (cy - this.view.ty) * (k1 / k0);
+    this.view.k = k1; this.paint();
+  };
+
+  /* ---------- 편집 ---------- */
+  Diagram.prototype.push = function () {
+    this.undo.push(JSON.stringify(this.data));
+    if (this.undo.length > 40) this.undo.shift();
+  };
+  Diagram.prototype.popUndo = function () {
+    if (!this.undo.length) return;
+    this.data = JSON.parse(this.undo.pop());
+    this.sel = null; this.render();
+  };
+  Diagram.prototype.addNode = function () {
+    this.push();
+    var id = 'n' + Date.now().toString(36).slice(-5);
+    var r = this.svg.getBoundingClientRect();
+    var wx = snap((r.width / 2 - this.view.tx) / this.view.k - 85);
+    var wy = snap((r.height / 2 - this.view.ty) / this.view.k - 31);
+    this.data.nodes.push({ id: id, label: '새 단계', x: wx, y: wy, w: 170, h: 62, shape: 'rect', tone: 'neutral' });
+    this.sel = { type: 'node', id: id };
+    this.render();
+  };
+  Diagram.prototype.toggleLink = function () {
+    this.linkMode = !this.linkMode; this.linkFrom = null;
+    this.bLink.classList.toggle('is-on', this.linkMode);
+  };
+  Diagram.prototype.cycleTone = function () {
+    if (!this.sel) return;
+    this.push();
+    if (this.sel.type === 'node') {
+      var n = this.index[this.sel.id];
+      n.tone = TONES[(TONES.indexOf(n.tone) + 1) % TONES.length];
+    } else if (this.sel.type === 'edge') {
+      var order = [undefined, 'primary', 'ok', 'risk'];
+      var e = this.data.edges[this.sel.id];
+      e.tone = order[(order.indexOf(e.tone) + 1) % order.length];
+    }
+    this.render();
+  };
+  Diagram.prototype.cycleShape = function () {
+    if (!this.sel || this.sel.type !== 'node') return;
+    var SH = ['rect', 'round', 'pill', 'diamond', 'store', 'note'];
+    this.push();
+    var n = this.index[this.sel.id];
+    n.shape = SH[(SH.indexOf(n.shape) + 1) % SH.length];
+    this.render();
+  };
+  Diagram.prototype.remove = function () {
+    if (!this.sel) return;
+    this.push();
+    var self = this;
+    if (this.sel.type === 'node') {
+      this.data.nodes = this.data.nodes.filter(function (n) { return n.id !== self.sel.id; });
+      this.data.edges = this.data.edges.filter(function (e) { return e.from !== self.sel.id && e.to !== self.sel.id; });
+    } else if (this.sel.type === 'edge') {
+      this.data.edges.splice(this.sel.id, 1);
+    } else {
+      this.data.groups = this.data.groups.filter(function (g) { return g.id !== self.sel.id; });
+    }
+    this.sel = null; this.render();
+  };
+  Diagram.prototype.openJson = function () {
+    this.ta.value = JSON.stringify(this.data, null, 2);
+    this.modal.classList.add('is-open');
+  };
+
+  /* ---------- 이벤트 ---------- */
+  Diagram.prototype.bind = function () {
+    var self = this, drag = null, pan = null;
+
+    this.svg.addEventListener('pointerdown', function (ev) {
+      if (ev.target.closest('[contenteditable="true"]')) return;
+      var nodeEl = ev.target.closest('.dgm-node');
+      var edgeEl = ev.target.closest('.dgm-edge');
+      var grpEl = ev.target.closest('.dgm-grp');
+
+      if (self.linkMode && nodeEl) {
+        var id = nodeEl.getAttribute('data-id');
+        if (!self.linkFrom) { self.linkFrom = id; self.sel = { type: 'node', id: id }; self.paint(); }
+        else if (self.linkFrom !== id) {
+          self.push();
+          self.data.edges.push({ from: self.linkFrom, to: id, label: '' });
+          self.linkFrom = null; self.toggleLink(); self.render();
+        }
+        return;
+      }
+      if (nodeEl && self.editable) {
+        self.sel = { type: 'node', id: nodeEl.getAttribute('data-id') };
+        var n = self.index[self.sel.id];
+        var w = self.world(ev);
+        drag = { kind: 'node', obj: n, dx: w.x - n.x, dy: w.y - n.y, moved: false };
+        self.push();
+      } else if (grpEl && self.editable) {
+        self.sel = { type: 'group', id: grpEl.getAttribute('data-id') };
+        var g = self.data.groups.filter(function (q) { return q.id === self.sel.id; })[0];
+        var w2 = self.world(ev);
+        drag = { kind: 'group', obj: g, dx: w2.x - g.x, dy: w2.y - g.y, moved: false };
+        self.push();
+      } else if (edgeEl) {
+        self.sel = { type: 'edge', id: +edgeEl.getAttribute('data-i') };
+      } else {
+        self.sel = null;
+        pan = { x: ev.clientX, y: ev.clientY, tx: self.view.tx, ty: self.view.ty };
+        self.svg.classList.add('is-panning');
+      }
+      self.svg.setPointerCapture(ev.pointerId);
+      self.paint();
+    });
+
+    this.svg.addEventListener('pointermove', function (ev) {
+      if (drag) {
+        var w = self.world(ev);
+        drag.obj.x = snap(w.x - drag.dx); drag.obj.y = snap(w.y - drag.dy);
+        drag.moved = true;
+        self.render();
+      } else if (pan) {
+        self.view.tx = pan.tx + (ev.clientX - pan.x);
+        self.view.ty = pan.ty + (ev.clientY - pan.y);
+        self.paint();
+      }
+    });
+
+    var end = function (ev) {
+      if (drag && !drag.moved) self.undo.pop();
+      drag = null; pan = null;
+      self.svg.classList.remove('is-panning');
+      try { self.svg.releasePointerCapture(ev.pointerId); } catch (e) { }
+    };
+    this.svg.addEventListener('pointerup', end);
+    this.svg.addEventListener('pointercancel', end);
+
+    this.svg.addEventListener('wheel', function (ev) {
+      ev.preventDefault();
+      var r = self.svg.getBoundingClientRect();
+      self.zoom(ev.deltaY < 0 ? 1.12 : 1 / 1.12, ev.clientX - r.left, ev.clientY - r.top);
+    }, { passive: false });
+
+    this.svg.addEventListener('dblclick', function (ev) {
+      if (!self.editable) return;
+      var nodeEl = ev.target.closest('.dgm-node');
+      if (nodeEl) return self.edit(nodeEl.querySelector('.lbl .t'), function (v) {
+        self.index[nodeEl.getAttribute('data-id')].label = v;
+      });
+      var edgeEl = ev.target.closest('.dgm-edge');
+      if (edgeEl) {
+        var i = +edgeEl.getAttribute('data-i');
+        var v = prompt('연결 라벨', self.data.edges[i].label || '');
+        if (v !== null) { self.push(); self.data.edges[i].label = v; self.render(); }
+      }
+    });
+
+    this.root.addEventListener('keydown', function (ev) {
+      if (ev.target.getAttribute && ev.target.getAttribute('contenteditable') === 'true') return;
+      if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); self.remove(); }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); self.popUndo(); }
+    });
+    this.root.tabIndex = 0;
+
+    var ro = window.ResizeObserver ? new ResizeObserver(function () { self.paint(); }) : null;
+    if (ro) ro.observe(this.svg);
+  };
+
+  Diagram.prototype.edit = function (el, done) {
+    if (!el) return;
+    var self = this;
+    this.push();
+    el.parentNode.setAttribute('contenteditable', 'true');
+    el.parentNode.focus();
+    var save = function () {
+      el.parentNode.removeAttribute('contenteditable');
+      done(el.textContent.trim());
+      self.render();
+    };
+    el.parentNode.addEventListener('blur', save, { once: true });
+    el.parentNode.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); el.parentNode.blur(); }
+      if (ev.key === 'Escape') { el.parentNode.removeAttribute('contenteditable'); self.popUndo(); }
+      ev.stopPropagation();
+    });
+    var rg = document.createRange(); rg.selectNodeContents(el);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+  };
+
+  function initAll(scope) {
+    var list = (scope || document).querySelectorAll('.dgm');
+    Array.prototype.forEach.call(list, function (el) {
+      if (el.__dgm) return;
+      el.__dgm = new Diagram(el);
+    });
+  }
+  /* Esc 는 펼쳐 놓은 다이어그램을 닫는다. 라벨 편집 중의 Esc 는
+     edit() 안에서 stopPropagation 되므로 여기까지 오지 않는다. */
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    var el = document.querySelector('.dgm.is-max');
+    if (el && el.__dgm) { ev.preventDefault(); el.__dgm.toggleMax(false); }
+  });
+
+  window.HWDiagram = { initAll: initAll, Diagram: Diagram };
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', function () { initAll(); });
+  else initAll();
+})();
+
+/* ============================================================
+   HW Doc Kit - 개발용 문서 런타임 (TOC 스크롤스파이 / 체크 상태 / 복사)
+   ============================================================ */
+(function () {
+  'use strict';
+  var KEY = 'hwdoc:' + (document.title || location.pathname);
+
+  /* --- TOC 자동 생성 (비어 있을 때만) --- */
+  var toc = document.querySelector('.toc');
+  if (toc && !toc.children.length) {
+    document.querySelectorAll('.sec').forEach(function (sec) {
+      if (!sec.id) return;
+      var h = sec.querySelector('h2');
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + sec.id;
+      a.textContent = h
+        ? Array.prototype.map.call(h.childNodes, function (x) { return x.textContent.trim(); })
+          .filter(Boolean).join(' ')
+        : sec.id;
+      li.appendChild(a); toc.appendChild(li);
+    });
+  }
+
+  /* --- 스크롤스파이 --- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  if (window.IntersectionObserver && secs.length) {
+    var io = new IntersectionObserver(function (ents) {
+      ents.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        links.forEach(function (a) { a.classList.toggle('is-cur', a.getAttribute('href') === '#' + e.target.id); });
+      });
+    }, { rootMargin: '-10% 0px -75% 0px', threshold: 0 });
+    secs.forEach(function (s) { io.observe(s); });
+  }
+
+  /* --- 체크리스트 상태 저장 --- */
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { }
+  document.querySelectorAll('.chk input[type="checkbox"]').forEach(function (cb, i) {
+    var id = cb.id || ('chk' + i); cb.id = id;
+    if (saved[id]) cb.checked = true;
+    var sync = function () {
+      cb.closest('li').classList.toggle('is-done', cb.checked);
+      saved[id] = cb.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { }
+      count();
+    };
+    cb.addEventListener('change', sync);
+    cb.closest('li').classList.toggle('is-done', cb.checked);
+  });
+  function count() {
+    document.querySelectorAll('.chk').forEach(function (ul) {
+      var all = ul.querySelectorAll('input[type="checkbox"]');
+      var done = ul.querySelectorAll('input[type="checkbox"]:checked');
+      var badge = ul.previousElementSibling && ul.previousElementSibling.querySelector('.chk-count');
+      if (badge) badge.textContent = done.length + ' / ' + all.length;
+    });
+  }
+  count();
+
+  /* --- 코드 복사 --- */
+  document.querySelectorAll('.code__copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var pre = b.closest('.code').querySelector('pre');
+      try { navigator.clipboard.writeText(pre.innerText); } catch (e) { }
+      var t = b.textContent; b.textContent = '복사됨';
+      setTimeout(function () { b.textContent = t; }, 1200);
+    });
+  });
+
+  /* --- 사이드 버튼 --- */
+  function bind(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
+  bind('bTheme', function () {
+    var r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+  bind('bPrint', function () { window.print(); });
+  bind('bReset', function () {
+    if (!confirm('체크 상태를 모두 초기화할까요?')) return;
+    try { localStorage.removeItem(KEY); } catch (e) { }
+    location.reload();
+  });
+})();
+</script>
+</body>
+</html>

@@ -3,12 +3,18 @@ package dev.embeddedcdc.verification;
 import dev.embeddedcdc.domain.model.ChangeEvent;
 import dev.embeddedcdc.domain.model.FieldDiff;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * 검증 테스트 공통 준비물.
@@ -213,6 +219,58 @@ public abstract class VerificationSupport {
         }
         return new LatencySample(roundTrip, commit, skew, valid);
     }
+
+    // ── 기다리기와 전제조건 ────────────────────────────────────────────────
+
+    /**
+     * 값이 나올 때까지 짧은 간격으로 다시 묻는다. 시간이 다 되면 무엇을 기다렸는지 밝히고 실패한다.
+     *
+     * probe 가 null 을 주면 "아직"이라는 뜻이다. 파이프라인을 거쳐 오는 결과는 언제 도착할지
+     * 알 수 없으므로, 고정 sleep 으로 맞추면 느린 회차에서 거짓 실패가 난다.
+     */
+    protected static <T> T await(String what, Duration timeout, Supplier<T> probe) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            T value = probe.get();
+            if (value != null) {
+                return value;
+            }
+            sleep(500);
+        }
+        throw new AssertionError(what + " 을(를) " + timeout.toSeconds() + "초 안에 관측하지 못했다");
+    }
+
+    /**
+     * 기동 중인 emb-cdc-service 를 전제로 하는 시나리오의 사전 확인.
+     *
+     * 서비스가 없으면 "가드가 막았다"와 "아무 일도 일어나지 않았다"가 같은 결과로 보인다 —
+     * 그 상태로 통과하면 통과가 거짓이 된다.
+     */
+    protected static void requireServiceRunning() {
+        boolean up;
+        try {
+            HttpResponse<String> res = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create(HEALTH_URL))
+                            .timeout(Duration.ofSeconds(5)).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            up = res.statusCode() == 200 && res.body().contains("\"engine\":\"running\"");
+        } catch (IOException e) {
+            up = false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            up = false;
+        }
+        if (!up) {
+            throw new IllegalStateException(
+                    "emb-cdc-service 가 기동 중이어야 한다 (" + HEALTH_URL + "). 먼저 ./scripts/up.sh 를 실행할 것");
+        }
+    }
+
+    /** 운영 파이프라인의 이름. DLQ·감사 로그가 이 값으로 건을 고른다 (cdc.source.name 과 같아야 한다). */
+    protected static final String PIPELINE = System.getProperty("cdc.verify.pipeline", "embedded-cdc");
+
+    protected static final String HEALTH_URL =
+            System.getProperty("cdc.verify.health.url", "http://localhost:56080/actuator/health");
 
     protected static void sleep(long millis) {
         try {

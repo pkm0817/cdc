@@ -1,0 +1,1549 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CDC PoC V5 검증 보고서</title>
+<style>
+/* ============================================================
+   HW Doc Kit - design tokens & base primitives
+   금지: 이모지, 보라/바이올렛/인디고 계열, 무지개 그라데이션
+   기준색: 한화 오렌지 계열
+   ============================================================ */
+:root{
+  /* brand */
+  --hw:#F37321;          /* 기본 오렌지 */
+  --hw-dk:#D2590F;       /* 진한 오렌지 (호버/강조선) */
+  --hw-dp:#A8420A;       /* 가장 진한 오렌지 (제목 강조) */
+  --hw-lt:#FFB27A;       /* 밝은 오렌지 (보조 채움) */
+  --hw-pale:#FFF1E7;     /* 아주 옅은 오렌지 (배경 톤) */
+  --hw-tint:#FDE3D1;     /* 옅은 오렌지 (테두리/칩) */
+
+  /* ink & surface */
+  --ink:#141414; --ink2:#3F3F3F; --ink3:#6E6E6E; --ink4:#9A9A9A;
+  --bg:#FFFFFF; --bg2:#FAF8F6; --bg3:#F2EEEA;
+  --line:#E4E1DE; --line2:#CFCAC5;
+
+  /* semantic (보라 금지 - 보색은 청록/황토/벽돌색으로) */
+  --ok:#2E7D5B; --ok-bg:#E8F3EE;
+  --warn:#B8791A; --warn-bg:#FBF1DF;
+  --risk:#C0392B; --risk-bg:#FBEAE7;
+  --info:#2A6F97; --info-bg:#E7F0F6;
+
+  --radius:10px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(20,20,20,.06), 0 8px 24px rgba(20,20,20,.06);
+  --font:"Pretendard","Malgun Gothic","Apple SD Gothic Neo","Segoe UI",system-ui,sans-serif;
+  --mono:"D2Coding","Cascadia Mono","Consolas","JetBrains Mono",ui-monospace,monospace;
+}
+:root[data-theme="dark"]{
+  --hw:#FF8A3D; --hw-dk:#F37321; --hw-dp:#FFB27A; --hw-lt:#7A3E14; --hw-pale:#241812; --hw-tint:#4A2A15;
+  --ink:#F2EFEC; --ink2:#CFC9C3; --ink3:#9E9691; --ink4:#77706B;
+  --bg:#141312; --bg2:#1C1A18; --bg3:#252220;
+  --line:#332F2C; --line2:#464038;
+  --ok:#5CB58C; --ok-bg:#17251F; --warn:#D9A445; --warn-bg:#2A2317;
+  --risk:#E2705F; --risk-bg:#2A1917; --info:#6BA6CC; --info-bg:#161F26;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.35);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font); color:var(--ink); background:var(--bg2);
+  -webkit-font-smoothing:antialiased; line-height:1.55;
+  font-variant-numeric:tabular-nums;
+}
+h1,h2,h3,h4{margin:0; line-height:1.25; font-weight:700; letter-spacing:-.01em}
+p{margin:0 0 .6em}
+a{color:var(--hw-dk); text-underline-offset:2px}
+:root[data-theme="dark"] a{color:var(--hw)}
+code,kbd,pre,samp{font-family:var(--mono)}
+hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+
+/* ---------- 공통 프리미티브 ---------- */
+.kicker{
+  font-size:13px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--hw-dk);
+}
+.rule{height:3px;background:var(--hw);border-radius:2px;width:56px}
+.muted{color:var(--ink3)}
+.small{font-size:13px}
+.mono{font-family:var(--mono);font-size:.92em}
+
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;
+  background:var(--hw-pale);color:var(--hw-dp);border:1px solid var(--hw-tint);
+}
+.chip--ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
+.chip--warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn)}
+.chip--risk{background:var(--risk-bg);color:var(--risk);border-color:var(--risk)}
+.chip--info{background:var(--info-bg);color:var(--info);border-color:var(--info)}
+.chip--neutral{background:var(--bg3);color:var(--ink2);border-color:var(--line2)}
+
+.card{
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;
+}
+.card--accent{border-left:4px solid var(--hw)}
+.card__t{font-size:16px;font-weight:700;margin:0 0 6px}
+.card__d{font-size:14px;color:var(--ink2);margin:0}
+
+.kpi{display:flex;gap:14px;flex-wrap:wrap}
+.kpi__item{
+  flex:1 1 0;min-width:140px;background:var(--bg);border:1px solid var(--line);
+  border-top:3px solid var(--hw);border-radius:var(--radius);padding:14px 16px;
+}
+.kpi__v{font-size:30px;font-weight:800;letter-spacing:-.02em;color:var(--hw-dp)}
+:root[data-theme="dark"] .kpi__v{color:var(--hw)}
+.kpi__l{font-size:12px;color:var(--ink3);font-weight:600}
+
+.tbl{width:100%;border-collapse:collapse;font-size:14px;background:var(--bg)}
+.tbl th,.tbl td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+.tbl thead th{background:var(--hw-pale);color:var(--hw-dp);font-size:12.5px;
+  letter-spacing:.03em;text-transform:uppercase;border-color:var(--hw-tint)}
+.tbl tbody tr:nth-child(even){background:var(--bg2)}
+.tbl td.num{text-align:right;font-family:var(--mono)}
+.tbl-wrap{overflow-x:auto;border-radius:var(--radius-sm)}
+
+.note{
+  border:1px solid var(--line);border-left:4px solid var(--ink3);
+  background:var(--bg);border-radius:var(--radius-sm);padding:12px 16px;font-size:14px;
+}
+.note__t{font-weight:700;font-size:13px;margin:0 0 4px;letter-spacing:.02em}
+.note--info{border-left-color:var(--info);background:var(--info-bg)}
+.note--info .note__t{color:var(--info)}
+.note--ok{border-left-color:var(--ok);background:var(--ok-bg)}
+.note--ok .note__t{color:var(--ok)}
+.note--warn{border-left-color:var(--warn);background:var(--warn-bg)}
+.note--warn .note__t{color:var(--warn)}
+.note--risk{border-left-color:var(--risk);background:var(--risk-bg)}
+.note--risk .note__t{color:var(--risk)}
+
+/* 코드 블록 */
+.code{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--bg)}
+.code__bar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:6px 12px;background:var(--bg3);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:12px;color:var(--ink3)
+}
+.code__copy{
+  border:1px solid var(--line2);background:var(--bg);color:var(--ink2);
+  border-radius:5px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer
+}
+.code__copy:hover{border-color:var(--hw);color:var(--hw-dk)}
+.code pre{margin:0;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.6}
+.code .cm{color:var(--ink4)}
+.code .hl{color:var(--hw-dk);font-weight:700}
+
+/* 단계 흐름 */
+.steps{display:flex;gap:8px;flex-wrap:wrap}
+.step{
+  flex:1 1 0;min-width:150px;position:relative;background:var(--bg);
+  border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px
+}
+.step__n{
+  display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--hw);color:#fff;font-size:12px;font-weight:800;margin-bottom:6px
+}
+.step__t{font-weight:700;font-size:14px}
+.step__d{font-size:12.5px;color:var(--ink3)}
+
+/* UI 목업 프레임 */
+.ui{border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--bg);box-shadow:var(--shadow)}
+.ui__bar{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-bottom:1px solid var(--line)}
+.ui__dot{width:9px;height:9px;border-radius:50%;background:var(--line2)}
+.ui__addr{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;
+  padding:2px 8px;font-family:var(--mono);font-size:11.5px;color:var(--ink3)}
+.ui__body{padding:14px}
+.ui-row{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.ui-row:last-child{border-bottom:0}
+.ui-btn{background:var(--hw);color:#fff;border:0;border-radius:5px;padding:6px 14px;font-size:12.5px;font-weight:700}
+.ui-btn--ghost{background:transparent;color:var(--hw-dk);border:1px solid var(--hw)}
+.ui-field{flex:1;border:1px solid var(--line2);border-radius:5px;padding:6px 9px;font-size:12.5px;color:var(--ink3);background:var(--bg2)}
+
+/* 출처 표기 */
+.ref{
+  font-size:.62em;font-weight:800;vertical-align:super;color:var(--hw-dk);
+  background:var(--hw-pale);border:1px solid var(--hw-tint);border-radius:4px;
+  padding:0 4px;margin-left:2px;cursor:pointer;text-decoration:none
+}
+.refs{list-style:none;padding:0;margin:0;font-size:13px}
+.refs li{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.refs li:last-child{border-bottom:0}
+.refs .refs__n{color:var(--hw-dk);font-weight:800;font-family:var(--mono)}
+.refs .refs__src{color:var(--ink);font-weight:600}
+.refs .refs__meta{color:var(--ink3);font-size:12px;font-family:var(--mono);word-break:break-all}
+
+/* 그리드 */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.g-2-1{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* ---------- 다이어그램 캔버스 ---------- */
+.dgm{
+  position:relative;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--bg);overflow:hidden;display:flex;flex-direction:column
+}
+.dgm__bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:6px 8px;border-bottom:1px solid var(--line);background:var(--bg3);flex:0 0 auto
+}
+.dgm__bar .sp{flex:1}
+.dgm__btn{
+  border:1px solid var(--line2);background:var(--bg);color:var(--ink2);
+  border-radius:5px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer;
+  font-family:var(--font)
+}
+.dgm__btn:hover{border-color:var(--hw);color:var(--hw-dk)}
+.dgm__btn.is-on{background:var(--hw);border-color:var(--hw);color:#fff}
+.dgm__hint{font-size:11.5px;color:var(--ink4)}
+.dgm__svg{display:block;width:100%;flex:1 1 auto;min-height:0;touch-action:none;cursor:grab;
+  background:radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0/20px 20px}
+.dgm__svg.is-panning{cursor:grabbing}
+.dgm[data-edit="off"] .dgm__bar{display:none}
+
+/* 화면 가득 펼치기 — 툴바의 "넓게" 버튼 / Esc 로 닫는다 */
+.dgm.is-max{
+  position:fixed;inset:14px;z-index:80;
+  width:auto !important;max-width:none !important;height:auto !important;
+  box-shadow:0 12px 48px rgba(20,20,20,.28);border-color:var(--line2)
+}
+html.dgm-locked,html.dgm-locked body{overflow:hidden}
+
+.dgm-node{cursor:move}
+.dgm-node .box{fill:var(--bg);stroke:var(--line2);stroke-width:1.5}
+.dgm-node .lbl{
+  font-family:var(--font);font-size:13.5px;font-weight:700;color:var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;text-align:center;padding:4px 8px;line-height:1.3;overflow:hidden
+}
+.dgm-node .lbl .sub{font-size:11px;font-weight:500;color:var(--ink3);margin-top:2px}
+.dgm-node .lbl[contenteditable="true"]{outline:2px solid var(--hw);background:var(--bg);border-radius:4px}
+.dgm-node.is-sel .box{stroke:var(--hw);stroke-width:2.5}
+.dgm-node[data-tone="primary"] .box{fill:var(--hw);stroke:var(--hw-dk)}
+.dgm-node[data-tone="primary"] .lbl{color:#fff}
+.dgm-node[data-tone="primary"] .lbl .sub{color:rgba(255,255,255,.85)}
+.dgm-node[data-tone="accent"] .box{fill:var(--hw-pale);stroke:var(--hw)}
+.dgm-node[data-tone="accent"] .lbl{color:var(--hw-dp)}
+.dgm-node[data-tone="muted"] .box{fill:var(--bg3);stroke:var(--line2)}
+.dgm-node[data-tone="muted"] .lbl{color:var(--ink3)}
+.dgm-node[data-tone="ok"] .box{fill:var(--ok-bg);stroke:var(--ok)}
+.dgm-node[data-tone="ok"] .lbl{color:var(--ok)}
+.dgm-node[data-tone="warn"] .box{fill:var(--warn-bg);stroke:var(--warn)}
+.dgm-node[data-tone="warn"] .lbl{color:var(--warn)}
+.dgm-node[data-tone="risk"] .box{fill:var(--risk-bg);stroke:var(--risk)}
+.dgm-node[data-tone="risk"] .lbl{color:var(--risk)}
+.dgm-node[data-tone="info"] .box{fill:var(--info-bg);stroke:var(--info)}
+.dgm-node[data-tone="info"] .lbl{color:var(--info)}
+
+.dgm-grp .box{fill:var(--bg2);stroke:var(--line2);stroke-dasharray:6 4;stroke-width:1.5}
+.dgm-grp .gl{font-family:var(--font);font-size:11.5px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;fill:var(--ink4)}
+.dgm-grp{cursor:move}
+
+.dgm-edge .wire{fill:none;stroke:var(--ink3);stroke-width:1.8}
+.dgm-edge .hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
+.dgm-edge.is-sel .wire{stroke:var(--hw);stroke-width:2.6}
+.dgm-edge[data-style="dash"] .wire{stroke-dasharray:6 4}
+.dgm-edge[data-tone="primary"] .wire{stroke:var(--hw)}
+.dgm-edge[data-tone="risk"] .wire{stroke:var(--risk)}
+.dgm-edge[data-tone="ok"] .wire{stroke:var(--ok)}
+.dgm-edge .elbl{
+  font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--ink2);
+  display:flex;align-items:center;justify-content:center;height:100%;text-align:center;
+}
+.dgm-edge .elbl span{background:var(--bg);padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+
+.dgm__modal{
+  position:absolute;inset:0;background:rgba(0,0,0,.45);display:none;
+  align-items:center;justify-content:center;padding:24px;z-index:9
+}
+.dgm__modal.is-open{display:flex}
+.dgm__modal .pane{background:var(--bg);border-radius:var(--radius);width:min(680px,100%);
+  max-height:100%;display:flex;flex-direction:column;border:1px solid var(--line2)}
+.dgm__modal textarea{
+  flex:1;min-height:240px;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  padding:12px;font-family:var(--mono);font-size:12px;resize:vertical;background:var(--bg2);color:var(--ink)
+}
+.dgm__modal .head,.dgm__modal .foot{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.dgm__modal .head b{font-size:14px}
+.dgm__modal .sp{flex:1}
+
+/* 인쇄 */
+@media print{
+  body{background:#fff}
+  .no-print{display:none !important}
+  .dgm__bar{display:none !important}
+  .dgm__svg{background:none}
+  .dgm.is-max{position:static;inset:auto;box-shadow:none}
+}
+
+/* ============================================================
+   HW Doc Kit - 개발용 문서 레이아웃 (사이드 TOC + 본문 단일 컬럼)
+   ============================================================ */
+body{ background:var(--bg2) }
+
+.doc{ display:grid; grid-template-columns:270px minmax(0,1fr); align-items:start; }
+
+/* 사이드바 */
+.side{
+  position:sticky; top:0; height:100vh; overflow:auto;
+  background:var(--bg); border-right:1px solid var(--line); padding:20px 16px 40px;
+}
+.side__brand{ display:flex; align-items:center; gap:9px; margin-bottom:6px }
+.side__brand .bar{ width:5px; height:26px; background:var(--hw); border-radius:2px }
+.side__brand b{ font-size:14.5px; letter-spacing:-.01em }
+.side__meta{ font-size:11.5px; color:var(--ink4); margin:0 0 16px; font-family:var(--mono) }
+.toc{ list-style:none; margin:0; padding:0; font-size:13.5px }
+.toc li{ margin:1px 0 }
+.toc a{
+  display:block; padding:5px 10px; border-radius:6px; color:var(--ink2);
+  text-decoration:none; border-left:2px solid transparent;
+}
+.toc a:hover{ background:var(--bg3); color:var(--ink) }
+.toc a.is-cur{ background:var(--hw-pale); color:var(--hw-dp); font-weight:700; border-left-color:var(--hw) }
+.toc .sub a{ padding-left:22px; font-size:12.5px; color:var(--ink3) }
+.side__foot{ margin-top:18px; padding-top:14px; border-top:1px solid var(--line); display:flex; gap:6px; flex-wrap:wrap }
+.side__foot button{
+  border:1px solid var(--line2); background:var(--bg); color:var(--ink2); border-radius:5px;
+  padding:3px 9px; font-size:11.5px; font-weight:600; cursor:pointer; font-family:var(--font);
+}
+.side__foot button:hover{ border-color:var(--hw); color:var(--hw-dk) }
+
+/* 본문 */
+.main{ padding:34px 44px 100px; max-width:1040px; }
+.doc-head{ border-bottom:2px solid var(--hw); padding-bottom:18px; margin-bottom:26px }
+.doc-head h1{ font-size:32px; letter-spacing:-.025em; margin:6px 0 8px }
+.doc-head .sub{ font-size:15px; color:var(--ink2); max-width:80ch }
+.doc-head .meta{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px }
+
+.sec{ margin:0 0 44px; scroll-margin-top:18px }
+.sec > h2{
+  font-size:21px; margin:0 0 4px; display:flex; align-items:baseline; gap:10px;
+}
+.sec > h2 .n{ font-family:var(--mono); font-size:14px; font-weight:800; color:var(--hw) }
+.sec > .why{ font-size:13.5px; color:var(--ink3); margin:0 0 16px; padding-left:2px }
+.sec h3{ font-size:16px; margin:24px 0 10px; padding-left:10px; border-left:3px solid var(--hw-tint) }
+.sec h4{ font-size:14px; margin:16px 0 6px; color:var(--ink2) }
+.sec p, .sec li{ font-size:14.5px }
+.sec ul, .sec ol{ margin:0 0 12px; padding-left:20px }
+.sec li{ margin:3px 0 }
+
+/* 체크리스트 */
+.chk{ list-style:none; padding:0; margin:0 }
+.chk li{
+  display:flex; gap:10px; align-items:flex-start; padding:9px 12px;
+  border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--bg); margin-bottom:6px;
+}
+.chk input{ margin-top:3px; width:15px; height:15px; accent-color:var(--hw); flex:0 0 auto }
+.chk li.is-done{ background:var(--bg2); border-color:var(--line) }
+.chk li.is-done .t{ text-decoration:line-through; color:var(--ink4) }
+.chk .t{ font-weight:600; font-size:14px }
+.chk .d{ font-size:12.5px; color:var(--ink3); display:block; margin-top:2px }
+
+/* 시나리오 (Given/When/Then) */
+.gwt{ border:1px solid var(--line); border-left:4px solid var(--hw); border-radius:var(--radius-sm);
+  background:var(--bg); padding:14px 16px; margin:0 0 12px }
+.gwt__t{ font-weight:700; font-size:14.5px; margin:0 0 8px }
+.gwt dl{ margin:0; display:grid; grid-template-columns:64px 1fr; gap:4px 10px; font-size:13.5px }
+.gwt dt{ font-weight:800; font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--hw-dk); padding-top:2px }
+.gwt dd{ margin:0; color:var(--ink2) }
+
+/* 작업 단위 카드 */
+.slice{ border:1px solid var(--line); border-radius:var(--radius); background:var(--bg); overflow:hidden; margin-bottom:12px }
+.slice__h{ display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--bg3); border-bottom:1px solid var(--line) }
+.slice__h .no{ font-family:var(--mono); font-weight:800; color:#fff; background:var(--hw);
+  border-radius:5px; padding:1px 8px; font-size:12px }
+.slice__h b{ font-size:14.5px }
+.slice__h .sp{ flex:1 }
+.slice__b{ padding:12px 14px; font-size:13.5px }
+.slice__b dl{ margin:0; display:grid; grid-template-columns:110px 1fr; gap:6px 12px }
+.slice__b dt{ color:var(--ink3); font-size:12.5px; font-weight:700 }
+.slice__b dd{ margin:0; color:var(--ink2) }
+
+/* 의사결정 기록 */
+.adr{ border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; background:var(--bg); margin-bottom:12px }
+.adr__t{ font-size:15px; font-weight:700; margin:0 0 8px }
+.adr dl{ margin:0; display:grid; grid-template-columns:96px 1fr; gap:5px 12px; font-size:13.5px }
+.adr dt{ color:var(--hw-dk); font-weight:700; font-size:12.5px }
+.adr dd{ margin:0; color:var(--ink2) }
+
+.dgm{ margin:0 0 14px; height:520px }
+/* 다이어그램은 본문 글줄 폭에 갇히지 않고 사이드바 오른쪽을 전부 쓴다.
+   270px 사이드바 + 본문 좌우 패딩 88px + 스크롤바 여유 18px 를 뺀 값. */
+@media (min-width:1001px){
+  .dgm{ width:min(calc(100vw - 376px), 1700px); max-width:none }
+}
+.tbl-wrap{ margin-bottom:14px }
+.note{ margin-bottom:12px }
+.code{ margin-bottom:14px }
+
+@media (max-width:1000px){
+  .doc{ grid-template-columns:1fr }
+  .side{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line) }
+  .main{ padding:24px 20px 60px }
+}
+@media print{
+  @page{ size:A4; margin:14mm }
+  .side{ display:none }
+  .doc{ display:block }
+  .main{ max-width:none; padding:0 }
+  .sec{ page-break-inside:avoid }
+  .dgm{ height:320px; width:auto }
+}
+/* ── 막대 비교 (이 문서 추가) ─────────────────────────────────
+   숫자를 표로만 늘어놓으면 "5초 예산에 얼마나 붙었는지"가 안 읽힌다.
+   기준선(예산)을 트랙 위에 그어 값과 기준을 한 눈에 견주게 한다. */
+.bars{margin:16px 0 6px}
+.bars__cap{font-size:12px;color:var(--ink3);margin:0 0 10px}
+.bar{display:grid;grid-template-columns:210px 1fr 118px;gap:14px;align-items:center;margin-bottom:9px}
+.bar__lb{font-size:13.5px;color:var(--ink2);font-weight:600;line-height:1.35}
+.bar__lb small{display:block;font-size:11.5px;color:var(--ink4);font-weight:500}
+.bar__track{position:relative;height:24px;background:var(--bg3);border-radius:var(--radius-sm);overflow:hidden}
+.bar__fill{position:absolute;left:0;top:0;bottom:0;background:var(--hw-lt);border-radius:var(--radius-sm)}
+.bar__fill--key{background:var(--hw)}
+.bar__fill--ok{background:var(--ok)}
+.bar__fill--warn{background:var(--warn)}
+.bar__fill--risk{background:var(--risk)}
+.bar__fill--mute{background:var(--line2)}
+.bar__line{position:absolute;top:0;bottom:0;width:2px;background:var(--risk);z-index:2}
+.bar__v{font-family:var(--mono);font-size:13.5px;font-weight:700;color:var(--hw-dp);text-align:right}
+.bar__v small{display:block;font-family:var(--font);font-size:11px;font-weight:600;color:var(--ink4)}
+@media (max-width:760px){ .bar{grid-template-columns:1fr;gap:4px} .bar__v{text-align:left} }
+
+/* 결론 한 줄 — 절 맨 위에 놓아 스크롤만으로 요지가 잡히게 한다 */
+.lead{border-left:3px solid var(--hw);background:var(--hw-pale);
+      padding:11px 14px;border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+      font-size:14.5px;font-weight:600;color:var(--ink);margin:0 0 14px}
+.lead b{color:var(--hw-dp)}
+
+/* 요약 판정 타일 */
+.verd{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:12px;margin:16px 0}
+.verd__i{border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:var(--radius);
+         background:var(--bg);padding:12px 14px}
+.verd__i--warn{border-left-color:var(--warn)}
+.verd__t{font-size:12px;font-weight:700;color:var(--ink3);margin:0 0 5px}
+.verd__d{font-size:13.5px;color:var(--ink2);margin:0;line-height:1.5}
+.verd__d b{color:var(--ink)}
+
+/* ── 증거 스크린샷 ─────────────────────────────────────────
+   글로 "이렇게 나온다" 고 쓰는 것과 실제 화면을 붙이는 것은 다르다.
+   근거로 쓰는 그림만 넣는다 — 장식용 스크린샷은 문서를 무겁게만 한다.
+   외부 링크가 아니라 data URI 로 박아 단일 파일 원칙을 지킨다. */
+.shot{margin:14px 0 18px}
+.shot img{display:block;width:100%;height:auto;border:1px solid var(--line);
+          border-radius:var(--radius-sm);background:var(--bg)}
+.shot figcaption{font-size:12px;color:var(--ink3);margin-top:7px;line-height:1.55}
+.shot figcaption b{color:var(--ink2)}
+.shot__src{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--ink4);
+           border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-right:7px}
+
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!-- ================= 사이드바 ================= -->
+  <aside class="side no-print">
+    <div class="side__brand"><span class="bar"></span><b>CDC PoC · V5 검증</b></div>
+    <p class="side__meta">2026-09-03 · embedded-cdc</p>
+    <ul class="toc"></ul>
+    <div class="side__foot">
+      <button id="bTheme" type="button">테마</button>
+      <button id="bPrint" type="button">인쇄</button>
+      <button id="bReset" type="button">체크 초기화</button>
+    </div>
+  </aside>
+
+  <!-- ================= 본문 ================= -->
+  <main class="main">
+
+    <header class="doc-head">
+      <span class="kicker">Verification Progress Report</span>
+      <h1>V5 빈 이벤트 — 걸리는지 판별하는 법과, 해소의 대가</h1>
+      <p class="sub">「PoC CDC 기술 검토 - 시나리오」의 V5 에서 <b>결론은 났지만 실행할 수 없던 두 가지</b>를 이번에 채웠습니다.
+        하나는 <b>관심 필드가 이 케이스에 걸리는지 판별하는 방법</b>이고,
+        다른 하나는 <b>REPLICA IDENTITY FULL 이 실제로 얼마를 무는지</b>입니다.
+        재보니 지금 스키마에는 걸리는 컬럼이 <b>하나도 없고</b>, 그런데도 FULL 을 못 내리는 이유는 V5 가 아니라 <b>V1</b> 이었습니다.</p>
+      <div class="meta">
+        <span class="chip chip--ok">V5 신규 6/6 통과</span>
+        <span class="chip chip--ok">전체 회귀 25/25</span>
+        <span class="chip chip--risk">대용량 컬럼 시 656배</span>
+        <span class="chip chip--warn">V2 계측치 해석 교정</span>
+        <span class="chip chip--info">판별 절차 스크립트화</span>
+      </div>
+    </header>
+
+    <!-- ---------- 0. 요약 ---------- -->
+    <section class="sec" id="s0">
+      <h2><span class="n">00</span>한눈에 보기</h2>
+      <p class="lead">FULL 의 대가는 <b>스키마에 달려 있고 그 편차가 극단적</b>입니다. 대용량 컬럼이 없으면 UPDATE 기준 <b>1.12배</b>,
+        하나라도 있으면 그 컬럼을 <b>건드리지 않은</b> UPDATE 한 건이 <b>656배</b>가 됩니다.
+        "전 테이블 FULL 을 유지할지"는 그래서 취향이 아니라 <b>후보 컬럼이 있느냐</b>의 문제입니다.</p>
+
+      <div class="kpi">
+        <div class="kpi__item"><div class="kpi__v">0</div><div class="kpi__l">캡처 대상 13개 컬럼 중 TOAST 후보</div></div>
+        <div class="kpi__item"><div class="kpi__v">1.12 배</div><div class="kpi__l">대용량 없는 표 · UPDATE WAL 증가</div></div>
+        <div class="kpi__item"><div class="kpi__v">656 배</div><div class="kpi__l">대용량 있는 표 · UPDATE WAL 증가</div></div>
+        <div class="kpi__item"><div class="kpi__v">25 / 25</div><div class="kpi__l">전체 시나리오 통과</div></div>
+      </div>
+
+      <div class="g2" style="margin-top:18px">
+        <div class="card card--accent">
+          <p class="card__t">이번에 확인된 사실</p>
+          <ul style="margin:6px 0 0">
+            <li>지금 캡처 대상 스키마에 <b>TOAST 후보 컬럼이 없다</b> (가장 큰 컬럼이 17 bytes)</li>
+            <li>그래도 <span class="mono">car</span> 는 FULL 을 못 내린다 — <b>V1 감사 로그</b>가 before 이미지를 쓴다</li>
+            <li><span class="mono">computer</span> 는 DEFAULT 로 내려도 동기화가 그대로 유지된다 (실측)</li>
+            <li>V2 의 <b>165 bytes/변경</b> 은 INSERT 부하라 REPLICA IDENTITY 와 무관하다</li>
+          </ul>
+        </div>
+        <div class="card">
+          <p class="card__t">그래서 정해야 할 것</p>
+          <ul style="margin:6px 0 0">
+            <li>실제 대상 테이블에 대해 <b>1단계 선별 질의를 언제 돌릴지</b> (스키마 변경 절차에 넣을지)</li>
+            <li>감사 대상이 아닌 테이블의 <b>REPLICA IDENTITY 를 내릴지</b> — 절감은 12~22% 로 크지 않다</li>
+            <li>대용량 컬럼을 <b>캡처 대상에 넣을 것인지</b> — 넣는 순간 비용이 세 자릿수 배로 바뀐다</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note note--risk" style="margin-top:16px">
+        <p class="note__t">한 문장으로</p>
+        <b>V5 는 "FULL 로 바꾸면 해결된다"에서 끝나는 항목이 아니었습니다.</b>
+        해결되는 것은 맞지만, 그 청구서는 V2(디스크)로 갑니다.
+        그리고 지금 스키마에서는 <b>청구서만 내고 있고 혜택은 받고 있지 않습니다</b> — 걸리는 컬럼이 없기 때문입니다.
+      </div>
+    </section>
+
+    <!-- ---------- 1. 범위 ---------- -->
+    <section class="sec" id="s1">
+      <h2><span class="n">01</span>이번 회차 범위</h2>
+      <p class="lead">시나리오 문서의 V5 에서 <b>「확인 전략」 아래 채워지지 않은 두 항목</b>만 다뤘습니다<sup class="ref" data-ref="2">2</sup>.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:34%">시나리오 문서의 지적</th><th style="width:33%">이전 상태</th><th>이번 회차</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>관심 필드가 걸리는지 판별하는 방법을 정해둬야 실행이 됨</td>
+              <td>재현과 측정은 끝. 다만 "우리 테이블이 걸리는가"에 답하는 절차가 없어 결론이 실행되지 않음</td>
+              <td><b>2단계 절차 확정</b> — 선별 질의(<span class="mono">toast-candidates.sql</span>) + 이벤트로 확정. 검증이 같은 파일을 읽어 돌린다</td>
+            </tr>
+            <tr>
+              <td>FULL 로 바꿨을 때 대가가 얼마인지는 아직 안 재봄</td>
+              <td>"해소는 되지만 비용은 안 묻고 있음". DEFAULT 대비 비교 없음</td>
+              <td><b>같은 부하로 DEFAULT/FULL 을 나란히 측정</b> — 좁은 표·넓은 표 × INSERT/UPDATE/DELETE 12개 구간</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--info">
+        <p class="note__t">측정 방법</p>
+        구간마다 <span class="mono">CHECKPOINT</span> 를 걸어 full page image 조건을 맞춘 뒤,
+        <span class="mono">pg_current_wal_lsn()</span> 차분으로 총량을, <span class="mono">pg_stat_wal</span> 로 레코드 수와 FPI 수를 함께 남겼습니다.
+        WAL 은 클러스터 공용이라 유휴 잡음이 섞이므로 같은 대기 시간의 <b>유휴 바닥값</b>을 먼저 쟀고, 이번 회차에는 <b>0 B</b> 였습니다.
+        측정 대상 표는 autovacuum 을 꺼서 청소 작업이 비용으로 잡히지 않게 했습니다.
+      </div>
+    </section>
+
+    <!-- ---------- 2. 이미 된 것 ---------- -->
+    <section class="sec" id="s2">
+      <h2><span class="n">02</span>이미 통과해 있던 것 — 못 읽고, 바꾸면 읽힌다</h2>
+      <p class="lead">PostgreSQL 은 큰 값을 행 밖(TOAST)에 두고, UPDATE 에서 그 컬럼이 바뀌지 않았으면 WAL 에 새 값을 싣지 않습니다.
+        Debezium 은 그 자리를 자리표시자로 채웁니다 — 이것이 이 항목의 판정 기준입니다<sup class="ref" data-ref="1">1</sup>.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:26%">설정</th><th style="width:24%">after.big_payload</th><th style="width:24%">before</th><th>현재 값 복원</th></tr></thead>
+          <tbody>
+            <tr><td>REPLICA IDENTITY DEFAULT</td>
+              <td><span class="mono">__debezium_unavailable_value</span></td>
+              <td>없음</td>
+              <td><span class="chip chip--risk">불가</span></td></tr>
+            <tr><td>REPLICA IDENTITY FULL</td>
+              <td>200,000 bytes 온전히</td>
+              <td>200,000 bytes 온전히</td>
+              <td><span class="chip chip--ok">가능</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--ok" style="margin-top:14px">
+        <p class="note__t">INSERT 는 원래 문제가 아니다</p>
+        INSERT 이벤트에는 대용량 필드가 항상 온전히 실립니다(200,000 bytes 확인). 문제는 <b>UPDATE 에서 그 컬럼을 건드리지 않았을 때</b>뿐입니다.
+        이 구분이 뒤에 나오는 비용 수치의 모양을 그대로 설명합니다.
+      </div>
+    </section>
+
+    <!-- ---------- 3. 판별 절차 ---------- -->
+    <section class="sec" id="s3">
+      <h2><span class="n">03</span>판별 방법 확정 — 2단계 절차</h2>
+      <p class="lead">"우리 관심 필드가 걸리는가"에 답할 수 없으면 앞 절의 결론은 실행되지 않습니다.
+        <b>정적 선별(SQL) 뒤 동적 확정(이벤트)</b> 두 단계로 정했습니다.</p>
+
+      <div class="dgm" data-edit="on" style="height:360px">
+        <script type="application/json" class="dgm-data">
+{
+  "groups": [
+    {"id":"g1","label":"1단계 · 정적 선별 (스키마만 보고)","x":20,"y":10,"w":420,"h":320},
+    {"id":"g2","label":"2단계 · 동적 확정 (이벤트를 보고)","x":470,"y":10,"w":410,"h":320}
+  ],
+  "nodes": [
+    {"id":"a1","label":"reltoastrelid <> 0 ?","sub":"TOAST 저장소가 붙은 표만","x":50,"y":55,"w":250,"h":58},
+    {"id":"a2","label":"attstorage <> 'p'","sub":"PLAIN 은 행 밖으로 안 나간다","x":50,"y":140,"w":250,"h":58},
+    {"id":"a3","label":"max(pg_column_size) >= 2032","sub":"압축 후 실제 저장 크기","x":50,"y":225,"w":250,"h":58,"tone":"primary"},
+    {"id":"b1","label":"후보 컬럼을 건드리지 않는 UPDATE 한 건","sub":"그 표에 실제로 흘려 본다","x":500,"y":70,"w":250,"h":62,"tone":"accent"},
+    {"id":"b2","label":"자리표시자가 오는가","sub":"__debezium_unavailable_value","x":500,"y":170,"w":250,"h":66,"shape":"diamond"},
+    {"id":"b3","label":"확정 — FULL 이 필요하다","sub":"그 표만 FULL 로","x":500,"y":270,"w":250,"h":48,"tone":"risk"}
+  ],
+  "edges": [
+    {"from":"a1","to":"a2"},
+    {"from":"a2","to":"a3"},
+    {"from":"a3","to":"b1","label":"후보 있음","tone":"primary"},
+    {"from":"b1","to":"b2","tone":"accent"},
+    {"from":"b2","to":"b3","label":"예","tone":"risk"}
+  ]
+}
+        </script>
+      </div>
+
+      <div class="note note--warn">
+        <p class="note__t">1단계만으로 확정하지 않는 이유</p>
+        토스터는 컬럼이 아니라 <b>행</b> 전체가 임계를 넘을 때 동작하고, 그때 가장 큰 속성부터 밖으로 내보냅니다.
+        따라서 임계보다 작은 컬럼도 행이 넓으면 밖으로 나갈 수 있습니다. 1단계는 <b>보수적 선별</b>이고, 확정은 이벤트가 합니다.
+      </div>
+
+      <div class="code">
+        <div class="code__bar"><span>1단계 — scripts/toast-candidates.sql (일부)</span><button class="code__copy" type="button">복사</button></div>
+<pre>SELECT t.table_name, t.column_name, t.data_type, <span class="cm">/* ... */</span>
+       COALESCE(m.max_size, 0)         AS max_stored_bytes,
+       <span class="hl">COALESCE(m.max_size, 0) &gt;= 2032</span> AS toast_candidate  <span class="cm">-- TOAST_TUPLE_THRESHOLD</span>
+FROM toastable t
+CROSS JOIN LATERAL (
+    SELECT (xpath('/row/c/text()',
+             query_to_xml(format('SELECT max(pg_column_size(%I))::bigint AS c FROM %I.%I',
+                                 t.column_name, t.schema_name, t.table_name),
+                          false, true, '')))[1]::text::bigint AS max_size
+) m
+ORDER BY toast_candidate DESC, max_stored_bytes DESC;</pre>
+      </div>
+
+      <div class="note note--info">
+        <p class="note__t">검증이 이 파일을 그대로 읽어 돌린다</p>
+        테스트가 같은 질의를 따로 들고 있으면 운영자가 손으로 돌리는 것과 갈라집니다.
+        <span class="mono">V5ReplicaIdentityCostTest</span> 는 <span class="mono">scripts/toast-candidates.sql</span> 을 읽어 실행하고,
+        그 결과가 실제 이벤트 동작을 예측하는지까지 확인합니다 — <b>후보로 집힌 컬럼만 자리표시자로 오고, 집히지 않은 컬럼은 정상 판독</b>됩니다.
+      </div>
+
+      <p class="small muted">전 행 스캔이라 큰 테이블에서는 비쌉니다. 상시 모니터링이 아니라 <b>스키마가 바뀔 때 돌리는 점검용</b>으로 씁니다.</p>
+    </section>
+
+    <!-- ---------- 4. 전수 조사 ---------- -->
+    <section class="sec" id="s4">
+      <h2><span class="n">04</span>지금 스키마는 걸리는가</h2>
+      <p class="lead">publication 에 든 5개 표의 toastable 컬럼 <b>13개</b>를 전부 재봤습니다. <b>후보는 0개</b>입니다.</p>
+
+      <div class="kpi">
+        <div class="kpi__item"><div class="kpi__v">5</div><div class="kpi__l">캡처 대상 표</div></div>
+        <div class="kpi__item"><div class="kpi__v">13</div><div class="kpi__l">그중 toastable 컬럼</div></div>
+        <div class="kpi__item"><div class="kpi__v">0</div><div class="kpi__l">TOAST 후보 컬럼</div></div>
+        <div class="kpi__item"><div class="kpi__v">17 B</div><div class="kpi__l">가장 큰 컬럼 (member.email)</div></div>
+      </div>
+
+      <div class="note note--warn" style="margin-top:14px">
+        <p class="note__t">여기서 나온 첫 번째 결론</p>
+        네 표가 모두 REPLICA IDENTITY FULL 인데, <b>FULL 을 요구한 V5 가 문제 삼는 컬럼이 이 스키마에는 없습니다.</b>
+        임계 2,032 bytes 에 견주면 가장 큰 컬럼이 <b>17 bytes</b> — 두 자릿수 배가 아니라 두 자릿수 <b>분의 일</b>입니다.
+        그렇다면 FULL 을 유지하는 근거는 V5 가 아닌 다른 데 있어야 합니다. 그 답이 06 절입니다.
+      </div>
+      <div class="note note--info">
+        <p class="note__t">Prometheus 실측 · 2026-09-03<sup class="ref" data-ref="5">5</sup></p>
+        표별 설정이 상시 지표로 나와 있어 이 절의 결론을 대시보드에서 그대로 확인할 수 있습니다.
+        <span class="mono">cdc_replica_identity_full_image</span> — 캡처 대상
+        <b>car · computer · grade · member 넷 다 <span class="mono">identity="full"</span></b>,
+        파이프라인 자신의 <span class="mono">cdc_heartbeat</span> 만 <span class="mono">default</span>.
+        <span class="mono">cdc_toast_has_toast</span> — 네 표 모두 <b>1</b>.
+        <br><br>
+        <b>두 지표를 같이 읽어야 오해가 없습니다.</b> "TOAST 저장소가 붙어 있다(=1)"와 "TOAST 후보 컬럼이 있다"는 다릅니다 —
+        toastable 컬럼이 하나라도 있으면 저장소는 붙으므로 네 표 모두 1 이지만, 실제 후보는 0개입니다.
+        후보 판정은 지표가 아니라 <span class="mono">toast-candidates.sql</span> 이 합니다(전 행 스캔이라 상시 지표로 낼 수 없습니다).
+      </div>
+
+    </section>
+
+    <!-- ---------- 5. 대가 ---------- -->
+    <section class="sec" id="s5">
+      <h2><span class="n">05</span>FULL 의 대가</h2>
+      <p class="lead">같은 부하를 DEFAULT 와 FULL 에서 각각 돌려 WAL 증가량을 쟀습니다.
+        <b>대용량 컬럼이 있느냐로 결과가 두 세계로 갈립니다.</b></p>
+
+      <h3>대용량 컬럼이 없는 표 <span class="chip chip--neutral">5,000행 · 좁은 행</span></h3>
+      <div class="bars">
+        <p class="bars__cap">막대는 변경 1건당 WAL 이고 여섯 개가 같은 축(0~400 bytes)입니다.</p>
+        <div class="bar"><div class="bar__lb">INSERT · DEFAULT</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--ok" style="width:41.5%"></div></div>
+          <div class="bar__v">166 B<small>기준</small></div></div>
+        <div class="bar"><div class="bar__lb">INSERT · FULL</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--ok" style="width:41.5%"></div></div>
+          <div class="bar__v">166 B<small>1.00배</small></div></div>
+        <div class="bar"><div class="bar__lb">UPDATE · DEFAULT</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--mute" style="width:85.5%"></div></div>
+          <div class="bar__v">342 B<small>기준</small></div></div>
+        <div class="bar"><div class="bar__lb">UPDATE · FULL</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--warn" style="width:95.5%"></div></div>
+          <div class="bar__v">382 B<small>1.12배</small></div></div>
+        <div class="bar"><div class="bar__lb">DELETE · DEFAULT</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--mute" style="width:36.3%"></div></div>
+          <div class="bar__v">145 B<small>기준</small></div></div>
+        <div class="bar"><div class="bar__lb">DELETE · FULL</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--warn" style="width:44.3%"></div></div>
+          <div class="bar__v">177 B<small>1.22배</small></div></div>
+      </div>
+
+      <h3>대용량 컬럼이 있는 표 <span class="chip chip--neutral">100행 · 200 KB 컬럼</span></h3>
+      <div class="bars">
+        <p class="bars__cap">축이 다릅니다(0~420,000 bytes). 위 그림과 같은 축에 그리면 좁은 표 막대가 보이지 않습니다.</p>
+        <div class="bar"><div class="bar__lb">UPDATE · DEFAULT</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--ok" style="width:0.4%"></div></div>
+          <div class="bar__v">306 B<small>기준</small></div></div>
+        <div class="bar"><div class="bar__lb">UPDATE · FULL</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--risk" style="width:47.8%"></div></div>
+          <div class="bar__v">200,925 B<small>656배</small></div></div>
+        <div class="bar"><div class="bar__lb">DELETE · DEFAULT</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--mute" style="width:50.3%"></div></div>
+          <div class="bar__v">211,266 B<small>기준</small></div></div>
+        <div class="bar"><div class="bar__lb">DELETE · FULL</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--risk" style="width:98.1%"></div></div>
+          <div class="bar__v">411,870 B<small>1.95배</small></div></div>
+        <div class="bar"><div class="bar__lb">INSERT · 양쪽 동일</div>
+          <div class="bar__track"><div class="bar__fill bar__fill--mute" style="width:51.0%"></div></div>
+          <div class="bar__v">214,310 B<small>1.00배</small></div></div>
+      </div>
+
+      <div class="tbl-wrap" style="margin-top:16px">
+        <table class="tbl">
+          <thead><tr>
+            <th style="width:20%">표 / 연산</th><th class="num" style="width:18%">DEFAULT</th>
+            <th class="num" style="width:18%">FULL</th><th class="num" style="width:12%">증가율</th><th>읽는 법</th>
+          </tr></thead>
+          <tbody>
+            <tr><td>좁은 표 · INSERT</td><td class="num">166 B</td><td class="num">166 B</td><td class="num">1.00 배</td>
+              <td>새 행에는 "변경 전 행"이 없다 — 설정과 무관하다</td></tr>
+            <tr><td>좁은 표 · UPDATE</td><td class="num">342 B</td><td class="num">382 B</td><td class="num">1.12 배</td>
+              <td>변경 전 행 하나가 더 붙는다. 행이 좁으니 증가분도 좁다</td></tr>
+            <tr><td>좁은 표 · DELETE</td><td class="num">145 B</td><td class="num">177 B</td><td class="num">1.22 배</td>
+              <td>DEFAULT 는 PK 만, FULL 은 행 전체를 남긴다</td></tr>
+            <tr><td>넓은 표 · INSERT</td><td class="num">214,310 B</td><td class="num">214,310 B</td><td class="num">1.00 배</td>
+              <td>값 자체가 크니 어느 설정이든 그만큼 든다</td></tr>
+            <tr><td><b>넓은 표 · UPDATE</b></td><td class="num">306 B</td><td class="num"><b>200,925 B</b></td><td class="num"><b>656 배</b></td>
+              <td><b>건드리지도 않은 200 KB 를 TOAST 에서 꺼내 WAL 에 넣는다</b></td></tr>
+            <tr><td>넓은 표 · DELETE</td><td class="num">211,266 B</td><td class="num">411,870 B</td><td class="num">1.95 배</td>
+              <td>DEFAULT 도 이미 비싸다 — TOAST 페이지 정리가 FPI 로 잡힌다(2,509개)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--risk" style="margin-top:14px">
+        <p class="note__t">656배가 나오는 이유</p>
+        DEFAULT 에서 그 컬럼을 건드리지 않은 UPDATE 는 <b>TOAST 포인터를 그대로 재사용</b>하므로 WAL 에 값이 실리지 않습니다.
+        그래서 이벤트에서도 빠지는 것이고(=V5 의 증상), 대신 <b>306 bytes</b> 로 끝납니다.
+        FULL 은 변경 전 행을 남기기 위해 그 값을 <b>TOAST 에서 꺼내(detoast)</b> 통째로 WAL 에 넣습니다.
+        즉 <b>V5 의 증상과 V5 의 비용은 같은 동전의 양면</b>입니다 — 값을 안 실었기 때문에 못 읽었고, 읽히게 하려면 실어야 합니다.
+      </div>
+
+      <div class="note note--info">
+        <p class="note__t">수치에 섞인 것</p>
+        좁은 표 UPDATE 의 총량 1.6~1.8 MiB 중 full page image 가 57개(약 456 KiB) 포함돼 있습니다.
+        FPI 는 두 설정에 <b>같은 수</b>로 들어가므로 증가율 판정에는 영향이 없고, 절대값을 다른 환경과 비교할 때만 감안하면 됩니다.
+        유휴 바닥값은 이번 회차 <b>0 B</b> 였습니다.
+      </div>
+    </section>
+
+    <!-- ---------- 6. 테이블별 판단 ---------- -->
+    <section class="sec" id="s6">
+      <h2><span class="n">06</span>테이블별 판단 — 내리면 무엇을 잃는가</h2>
+      <p class="lead">후보 컬럼이 없다는 것만으로 FULL 을 내릴 수는 없습니다.
+        before 이미지를 <b>다른 기능이 쓰고 있을</b> 수 있기 때문입니다. 코드를 읽어 짐작하는 대신 파이프라인에 흘려서 확인했습니다.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:16%">표</th><th style="width:20%">TOAST 후보</th><th style="width:26%">before 를 쓰는 곳</th><th style="width:18%">DEFAULT 실측</th><th>판단</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="mono">car</span></td>
+              <td><span class="chip chip--ok">없음</span></td>
+              <td>감사 로그 — 필드 단위 변경 식별 (V1)</td>
+              <td><span class="chip chip--risk">identifiable = false</span></td>
+              <td><b>FULL 유지</b> — V5 가 아니라 V1 이 요구한다</td>
+            </tr>
+            <tr>
+              <td><span class="mono">computer</span></td>
+              <td><span class="chip chip--ok">없음</span></td>
+              <td>소프트 삭제의 PK 만 (DEFAULT 도 PK 는 싣는다)</td>
+              <td><span class="chip chip--ok">INSERT·UPDATE·소프트 삭제 모두 정상</span></td>
+              <td>DEFAULT 로 내려도 지금 기능은 유지된다</td>
+            </tr>
+            <tr>
+              <td><span class="mono">grade</span> · <span class="mono">member</span></td>
+              <td><span class="chip chip--ok">없음</span></td>
+              <td>computer 와 같은 형태</td>
+              <td>미측정 (computer 와 동일 구현)</td>
+              <td>computer 와 같은 판단이 적용된다</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn" style="margin-top:14px">
+        <p class="note__t">이번 회차에서 나온 가장 중요한 한 가지</p>
+        <b>car 의 FULL 을 붙잡고 있는 것은 V5 가 아니라 V1 입니다.</b>
+        car 를 DEFAULT 로 내리자 감사 로그가 <span class="mono">identifiable = false</span> 로 남았습니다 —
+        "안 바뀌었다"가 아니라 <b>"판정을 못 했다"</b>입니다. FULL 로 되돌리자 같은 UPDATE 가
+        <span class="mono">changed_fields = price,updated_at</span> 로 남았습니다.
+        <br><br>
+        즉 REPLICA IDENTITY 는 V5 단독 결정이 아니라 <b>V1(감사) · V5(TOAST) · V2(디스크) 세 항목의 교집합</b>에서 정해집니다.
+      </div>
+
+      <div class="adr">
+        <p class="adr__t">ADR · 전 테이블 FULL 을 유지하되, 후보가 생기는 순간 재검토한다</p>
+        <dl>
+          <dt>배경</dt><dd>지금 캡처 대상에는 TOAST 후보 컬럼이 없고, 좁은 표에서 FULL 의 대가는 UPDATE 1.12배 · DELETE 1.22배로 크지 않다. 반면 감사 대상 테이블은 before 이미지가 필요해 내릴 수 없다.</dd>
+          <dt>결정</dt><dd>현 스키마에서는 <b>전 테이블 FULL 을 유지</b>한다. 절감폭(12~22%)이 테이블별로 설정을 갈라 관리하는 복잡도를 넘지 않는다.</dd>
+          <dt>대가</dt><dd>감사 대상이 아닌 세 표에 대해 12~22% 의 WAL 을 더 쓴다. V2 의 다운 허용시간이 그만큼 짧아진다.</dd>
+          <dt>재검토 조건</dt><dd><b>(1)</b> 캡처 대상에 TOAST 후보 컬럼이 생겼을 때 — 그 표의 FULL 은 UPDATE 당 656배가 된다. <b>(2)</b> 감사 대상 테이블 목록이 바뀌었을 때. <b>(3)</b> V2 의 <span class="mono">max_slot_wal_keep_size</span> 상한을 확정해 WAL 여유가 제약이 됐을 때.</dd>
+          <dt>실행 장치</dt><dd>스키마 변경 절차에 <span class="mono">scripts/toast-candidates.sql</span> 실행을 넣는다. 조건 (1)을 사람이 기억으로 감시하면 놓친다.</dd>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ---------- 7. V2 교정 ---------- -->
+    <section class="sec" id="s7">
+      <h2><span class="n">07</span>부수 발견 — V2 의 165 bytes/변경 해석 교정</h2>
+      <p class="lead">시나리오 문서는 V2 의 <b>165 bytes/변경</b> 에 "REPLICA IDENTITY FULL 기준인 점 주의"라는 단서를 달고,
+        <b>V5 요구가 V2 디스크 압력을 키우고 있는 구조</b>라고 적었습니다. 이번 측정은 그 절반을 교정합니다.</p>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:34%">문서의 서술</th><th style="width:33%">측정 결과</th><th>교정</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>165 bytes/변경 은 REPLICA IDENTITY FULL 기준인 점 주의</td>
+              <td>INSERT 부하에서 DEFAULT 166 B / FULL 166 B — <b>차이 없음</b></td>
+              <td>V2 의 수치는 <b>INSERT 1,000건</b>으로 잰 값이라 REPLICA IDENTITY 와 무관하다. "FULL 기준이라 부풀려져 있다"는 단서는 <b>불필요</b>하다</td>
+            </tr>
+            <tr>
+              <td>V5 요구가 V2 디스크 압력을 키우고 있는 구조</td>
+              <td>좁은 표 UPDATE 1.12배 / DELETE 1.22배, 넓은 표 UPDATE 656배</td>
+              <td><b>맞다. 다만 조건부다</b> — UPDATE/DELETE 부하에서만, 그리고 대용량 컬럼이 있을 때 폭발한다</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--info" style="margin-top:14px">
+        <p class="note__t">그래서 V2 의 다운 허용시간 산출은 부하 구성에 달려 있다</p>
+        같은 건수라도 <b>INSERT 위주</b>면 REPLICA IDENTITY 가 영향을 주지 않고,
+        <b>UPDATE/DELETE 위주</b>면 FULL 이 12~22% 를 더 씁니다.
+        V2 가 다운 허용시간을 산출할 때 쓰는 "변경 1건당 WAL" 은 <b>연산 구성별로 다른 값</b>이어야 합니다 —
+        단일 상수로 두면 UPDATE 가 많은 시간대에 허용시간을 과대평가하게 됩니다.
+      </div>
+    </section>
+
+    <!-- ---------- 8. 남은 판단 ---------- -->
+    <section class="sec" id="s8">
+      <h2><span class="n">08</span>남은 판단과 조치</h2>
+      <p class="lead">검증과 측정은 끝났습니다. 남은 것은 <b>절차와 업무 판단</b>입니다. 항목을 클릭하면 체크 상태가 브라우저에 저장됩니다.</p>
+
+      <h3>V5 안에서 남은 판단 <span class="chip chk-count">0 / 0</span></h3>
+      <ul class="chk">
+        <li><input type="checkbox" id="v5a"><span><span class="t">선별 질의를 스키마 변경 절차에 넣기 (필수 · 실행 장치)</span><span class="d">후보 컬럼이 생기는 순간 그 표의 FULL 은 UPDATE 당 656배가 된다. 사람이 기억으로 감시하면 놓친다</span></span></li>
+        <li><input type="checkbox" id="v5b"><span><span class="t">실제 대상 테이블에 선별 질의 1회 실행</span><span class="d">지금 결과는 PoC 스키마 기준이다. 실제 업무 테이블에는 대용량 컬럼이 있을 수 있다</span></span></li>
+        <li><input type="checkbox" id="v5c"><span><span class="t">감사 대상이 아닌 표의 REPLICA IDENTITY 를 내릴지 결정</span><span class="d">절감 12~22%. 설정을 표별로 가르는 관리 복잡도와 견줄 것 (06 절 ADR 은 유지 쪽을 권한다)</span></span></li>
+        <li><input type="checkbox" id="v5d"><span><span class="t">대용량 컬럼을 캡처 대상에 넣을지 결정</span><span class="d">넣으면 FULL 은 사실상 불가능하고, DEFAULT 면 그 컬럼은 이벤트로 동기화할 수 없어 원본 재조회가 필요하다</span></span></li>
+        <li><input type="checkbox" id="v5e"><span><span class="t">V2 의 "변경 1건당 WAL" 을 연산별로 나눌지 (V2 와 공동)</span><span class="d">단일 상수는 UPDATE 가 많은 시간대에 다운 허용시간을 과대평가한다</span></span></li>
+      </ul>
+
+      <h3>이번 회차에서 코드·설정에 들어간 것</h3>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:36%">항목</th><th style="width:30%">위치</th><th>내용</th></tr></thead>
+          <tbody>
+            <tr><td>1단계 선별 질의</td><td><span class="mono">scripts/toast-candidates.sql</span></td>
+              <td>운영자가 손으로 돌리는 것과 검증이 돌리는 것이 같은 파일이다</td></tr>
+            <tr><td>판별 절차와 비용 측정</td><td><span class="mono">V5ReplicaIdentityCostTest.java</span></td>
+              <td>선별 규칙 검증 · 이벤트로 확정 · WAL 비용 12구간 · 테이블별 판단</td></tr>
+            <tr><td>공통 도우미 정리</td><td><span class="mono">VerificationSupport.java</span></td>
+              <td><span class="mono">await()</span> 와 서비스 기동 확인을 기반 클래스로 올려 V4-b 와 공유</td></tr>
+            <tr><td>선별 질의 경로 전달</td><td><span class="mono">build.gradle.kts</span></td>
+              <td><span class="mono">cdc.verify.toast.sql</span> 추가</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>V5 항목별 결론</h3>
+      <div class="verd">
+        <div class="verd__i">
+          <p class="verd__t">판별 방법</p>
+          <p class="verd__d"><b>확정.</b> 정적 선별 + 동적 확정 2단계, 질의는 스크립트로 저장소에 들어갔습니다.</p>
+        </div>
+        <div class="verd__i">
+          <p class="verd__t">현 스키마 판정</p>
+          <p class="verd__d"><b>후보 없음.</b> 13개 toastable 컬럼 중 최대 17 bytes 입니다.</p>
+        </div>
+        <div class="verd__i verd__i--warn">
+          <p class="verd__t">FULL 의 대가</p>
+          <p class="verd__d">좁은 표 <b>1.12~1.22배</b>, 대용량 컬럼이 있으면 <b>656배</b>. 조건부로 감당 가능합니다.</p>
+        </div>
+        <div class="verd__i verd__i--warn">
+          <p class="verd__t">테이블별 결정</p>
+          <p class="verd__d">car 는 <b>V1 때문에</b> 못 내립니다. 나머지는 내릴 수 있으나 절감폭이 작습니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 9. 재현 ---------- -->
+    <section class="sec" id="s9">
+      <h2><span class="n">09</span>재현 방법</h2>
+
+      <div class="code">
+        <div class="code__bar"><span>1단계 — 후보 컬럼 선별 (운영에서도 이대로 돌린다)</span><button class="code__copy" type="button">복사</button></div>
+<pre>docker exec -i emb-cdc-source-pg psql -U postgres -d sourcedb \
+  -f - &lt; src/embedded-cdc/scripts/toast-candidates.sql
+
+<span class="cm"># toast_candidate = t 인 컬럼이 있으면 그 표는 2단계로 넘어간다</span></pre>
+      </div>
+
+      <div class="code">
+        <div class="code__bar"><span>V5 전체 검증 (2단계 확정 + 비용 측정 포함)</span><button class="code__copy" type="button">복사</button></div>
+<pre>cd src/embedded-cdc
+docker compose up -d --build
+./scripts/verify.sh 'dev.embeddedcdc.verification.V5*'
+
+<span class="cm"># 산출물</span>
+<span class="cm">#   계측 리포트 : dev/cdc-service/build/verification/results.md</span>
+<span class="cm">#   테스트 리포트: dev/cdc-service/build/reports/tests/test/index.html</span></pre>
+      </div>
+
+      <div class="note note--warn">
+        <p class="note__t">이 시나리오가 건드리는 것</p>
+        비용 측정은 <span class="mono">verify_wal_narrow</span> · <span class="mono">verify_wal_wide</span> 전용 표에서 돌고 끝나면 지웁니다.
+        테이블별 판단(06 절)만은 <b>운영 표의 REPLICA IDENTITY 를 잠시 DEFAULT 로 내렸다가 되돌립니다</b> —
+        되돌리는 것이 시나리오의 일부이며 <span class="mono">finally</span> 로 보장합니다.
+        측정 중 약 100 MiB 의 WAL 이 생기므로 디스크 여유를 확인하고 돌리십시오.
+      </div>
+    </section>
+
+    <!-- ---------- 10. 참고 ---------- -->
+    <section class="sec" id="s10">
+      <h2><span class="n">10</span>참고 자료</h2>
+      <ol class="refs">
+        <li id="ref-1"><span class="refs__n">1</span><span><span class="refs__src">V1~V6 계측치 (verify 스크립트 산출물, 25/25 통과)</span>
+          <span class="refs__meta">code · src/embedded-cdc/dev/cdc-service/build/verification/results.md (2026-09-03 실행)</span></span></li>
+        <li id="ref-2"><span class="refs__n">2</span><span><span class="refs__src">[PoC] CDC 기술 검토 - 시나리오 (V5 항목, V2 의 165 bytes/변경 주석)</span>
+          <span class="refs__meta">doc · advancedre-[PoC] CDC 기술 검토 - 시나리오-010926-225135.pdf</span></span></li>
+        <li id="ref-3"><span class="refs__n">3</span><span><span class="refs__src">선별 질의와 비용 측정 구현</span>
+          <span class="refs__meta">code · src/embedded-cdc/scripts/toast-candidates.sql, dev/cdc-service/src/test/java/dev/embeddedcdc/verification/V5ReplicaIdentityCostTest.java</span></span></li>
+        <li id="ref-4"><span class="refs__n">4</span><span><span class="refs__src">before 이미지를 쓰는 곳</span>
+          <span class="refs__meta">code · domain/model/FieldDiff.java, infrastructure/persistence/JpaChangeAuditStore.java, application/handler/ComputerSyncHandler.java</span></span></li>
+        <li id="ref-5"><span class="refs__n">5</span><span><span class="refs__src">운영 지표 실측</span>
+          <span class="refs__meta">data · Prometheus http://localhost:56090 — cdc_replica_identity_full_image, cdc_toast_has_toast (2026-09-03 조회)</span></span></li>
+      </ol>
+    </section>
+  </main>
+</div>
+<script>
+/* ============================================================
+   HW Doc Kit - diagram engine (의존성 없음, 단일 파일 내장용)
+   drawio 느낌의 조작: 드래그 이동 / 연결 / 라벨 인라인 편집 /
+   팬·줌 / 톤 변경 / 삭제 / Ctrl+Z / JSON 내보내기(붙여넣기로 영구 반영)
+
+   마크업 (자세한 내용은 references/diagram.md):
+     div.dgm[data-edit=on] 안에
+     script[type=application/json][class=dgm-data] 로 노드·엣지 JSON 을 넣습니다.
+   ============================================================ */
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var GRID = 10;
+  var TONES = ['neutral', 'primary', 'accent', 'muted', 'ok', 'warn', 'risk', 'info'];
+
+  function s(n, a) {
+    var e = document.createElementNS(NS, n);
+    for (var k in (a || {})) e.setAttribute(k, a[k]);
+    return e;
+  }
+  function h(t, c, txt) {
+    var e = document.createElement(t);
+    if (c) e.className = c;
+    if (txt != null) e.textContent = txt;
+    return e;
+  }
+  function btn(label, title) {
+    var b = h('button', 'dgm__btn', label);
+    b.type = 'button';
+    if (title) b.title = title;
+    return b;
+  }
+  function snap(v) { return Math.round(v / GRID) * GRID; }
+
+  function boxShape(n) {
+    var sh = n.shape || 'rect', w = n.w, ht = n.h;
+    if (sh === 'diamond')
+      return s('path', { 'class': 'box', d: 'M' + w / 2 + ',0 L' + w + ',' + ht / 2 + ' L' + w / 2 + ',' + ht + ' L0,' + ht / 2 + ' Z' });
+    if (sh === 'store') {
+      var r = Math.min(14, ht / 4);
+      var d = 'M0,' + r +
+        ' C0,' + (r * .45) + ' ' + (w * .22) + ',0 ' + (w / 2) + ',0' +
+        ' C' + (w * .78) + ',0 ' + w + ',' + (r * .45) + ' ' + w + ',' + r +
+        ' L' + w + ',' + (ht - r) +
+        ' C' + w + ',' + (ht - r * .45) + ' ' + (w * .78) + ',' + ht + ' ' + (w / 2) + ',' + ht +
+        ' C' + (w * .22) + ',' + ht + ' 0,' + (ht - r * .45) + ' 0,' + (ht - r) + ' Z';
+      return s('path', { 'class': 'box', d: d });
+    }
+    if (sh === 'note') {
+      var f = 14;
+      return s('path', { 'class': 'box', d: 'M0,0 L' + (w - f) + ',0 L' + w + ',' + f + ' L' + w + ',' + ht + ' L0,' + ht + ' Z' });
+    }
+    var rx = sh === 'pill' ? ht / 2 : (sh === 'round' ? 12 : 4);
+    return s('rect', { 'class': 'box', x: 0, y: 0, width: w, height: ht, rx: rx });
+  }
+
+  /* 노드 두 개 사이의 직교(엘보) 경로 */
+  function route(a, b) {
+    var ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    var dx = bc.x - ac.x, dy = bc.y - ac.y, p1, p2, dir;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      dir = 'h';
+      p1 = { x: dx > 0 ? a.x + a.w : a.x, y: ac.y };
+      p2 = { x: dx > 0 ? b.x : b.x + b.w, y: bc.y };
+    } else {
+      dir = 'v';
+      p1 = { x: ac.x, y: dy > 0 ? a.y + a.h : a.y };
+      p2 = { x: bc.x, y: dy > 0 ? b.y : b.y + b.h };
+    }
+    var d, mid;
+    if (dir === 'h') {
+      var mx = (p1.x + p2.x) / 2;
+      d = 'M' + p1.x + ',' + p1.y + ' L' + mx + ',' + p1.y + ' L' + mx + ',' + p2.y + ' L' + p2.x + ',' + p2.y;
+      mid = { x: mx, y: (p1.y + p2.y) / 2 };
+    } else {
+      var my = (p1.y + p2.y) / 2;
+      d = 'M' + p1.x + ',' + p1.y + ' L' + p1.x + ',' + my + ' L' + p2.x + ',' + my + ' L' + p2.x + ',' + p2.y;
+      mid = { x: (p1.x + p2.x) / 2, y: my };
+    }
+    return { d: d, mid: mid };
+  }
+
+  function Diagram(root) {
+    this.root = root;
+    this.editable = root.getAttribute('data-edit') !== 'off';
+    this.data = this.read();
+    this.view = { tx: 0, ty: 0, k: 1 };
+    this.sel = null;          /* {type:'node'|'edge'|'group', id} */
+    this.linkMode = false;
+    this.linkFrom = null;
+    this.undo = [];
+    this.build();
+    this.render();
+    this.fit();
+  }
+
+  Diagram.prototype.read = function () {
+    var tag = this.root.querySelector('script.dgm-data');
+    var d = { nodes: [], edges: [], groups: [] };
+    if (tag) { try { d = JSON.parse(tag.textContent); } catch (e) { console.warn('[dgm] JSON 파싱 실패', e); } }
+    d.nodes = d.nodes || []; d.edges = d.edges || []; d.groups = d.groups || [];
+    d.nodes.forEach(function (n) {
+      n.w = n.w || 170; n.h = n.h || 62;
+      n.shape = n.shape || 'rect'; n.tone = n.tone || 'neutral';
+      n.x = n.x || 0; n.y = n.y || 0;
+    });
+    return d;
+  };
+
+  Diagram.prototype.build = function () {
+    var self = this;
+    var bar = h('div', 'dgm__bar no-print');
+    var mk = function (label, title, fn) { var b = btn(label, title); b.addEventListener('click', fn); bar.appendChild(b); return b; };
+
+    mk('박스', '새 박스 추가', function () { self.addNode(); });
+    this.bLink = mk('연결', '두 박스를 차례로 클릭해 화살표 연결', function () { self.toggleLink(); });
+    mk('색', '선택 항목의 톤 변경', function () { self.cycleTone(); });
+    mk('모양', '선택 박스의 모양 변경', function () { self.cycleShape(); });
+    mk('삭제', '선택 항목 삭제 (Delete)', function () { self.remove(); });
+    bar.appendChild(h('span', 'sp'));
+    mk('−', '축소', function () { self.zoom(1 / 1.2); });
+    mk('+', '확대', function () { self.zoom(1.2); });
+    mk('맞춤', '화면에 맞추기', function () { self.fit(); });
+    this.bMax = mk('넓게', '화면 가득 펼치기 (Esc 로 닫기)', function () { self.toggleMax(); });
+    mk('JSON', '수정 결과를 JSON으로 복사해 원본 파일에 붙여넣기', function () { self.openJson(); });
+    bar.appendChild(h('span', 'dgm__hint', '드래그 이동 · 더블클릭 라벨수정 · 휠 줌 · 빈 곳 드래그 팬'));
+
+    var svg = s('svg', { 'class': 'dgm__svg' });
+    var defs = s('defs');
+    [['ar-default', 'var(--ink3)'], ['ar-primary', 'var(--hw)'], ['ar-risk', 'var(--risk)'], ['ar-ok', 'var(--ok)']]
+      .forEach(function (m) {
+        var mk2 = s('marker', {
+          id: m[0] + '-' + Math.random().toString(36).slice(2, 7),
+          viewBox: '0 0 10 10', refX: 9, refY: 5,
+          markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse'
+        });
+        var p = s('path', { d: 'M0,1 L10,5 L0,9 z' });
+        p.setAttribute('style', 'fill:' + m[1]);
+        mk2.appendChild(p); defs.appendChild(mk2);
+        self['mk_' + m[0].slice(3)] = mk2.getAttribute('id');
+      });
+    svg.appendChild(defs);
+
+    this.gRoot = s('g');
+    this.gGroups = s('g'); this.gEdges = s('g'); this.gNodes = s('g');
+    this.gRoot.appendChild(this.gGroups);
+    this.gRoot.appendChild(this.gEdges);
+    this.gRoot.appendChild(this.gNodes);
+    svg.appendChild(this.gRoot);
+
+    this.svg = svg;
+    this.root.insertBefore(svg, this.root.firstChild);
+    if (this.editable) this.root.insertBefore(bar, svg);
+
+    /* JSON 모달 */
+    var modal = h('div', 'dgm__modal no-print');
+    var pane = h('div', 'pane');
+    var head = h('div', 'head'); head.appendChild(h('b', null, '다이어그램 JSON'));
+    head.appendChild(h('span', 'sp'));
+    var closeB = btn('닫기'); head.appendChild(closeB);
+    var ta = h('textarea'); ta.spellcheck = false;
+    var foot = h('div', 'foot');
+    var copyB = btn('전체 복사'); var applyB = btn('붙여넣은 JSON 적용');
+    foot.appendChild(h('span', 'dgm__hint', '원본 HTML의 dgm-data 블록에 붙여넣으면 수정이 영구 반영됩니다'));
+    foot.appendChild(h('span', 'sp')); foot.appendChild(applyB); foot.appendChild(copyB);
+    pane.appendChild(head); pane.appendChild(ta); pane.appendChild(foot);
+    modal.appendChild(pane); this.root.appendChild(modal);
+    this.modal = modal; this.ta = ta;
+    closeB.addEventListener('click', function () { modal.classList.remove('is-open'); });
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.remove('is-open'); });
+    copyB.addEventListener('click', function () {
+      ta.select(); ta.setSelectionRange(0, ta.value.length);
+      try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); }
+      copyB.textContent = '복사됨'; setTimeout(function () { copyB.textContent = '전체 복사'; }, 1200);
+    });
+    applyB.addEventListener('click', function () {
+      try {
+        var d = JSON.parse(ta.value);
+        self.push(); self.data = d; self.data.nodes = d.nodes || []; self.data.edges = d.edges || []; self.data.groups = d.groups || [];
+        self.render(); self.fit(); modal.classList.remove('is-open');
+      } catch (e) { alert('JSON 형식이 올바르지 않습니다: ' + e.message); }
+    });
+
+    this.bind();
+  };
+
+  /* ---------- 렌더 ---------- */
+  Diagram.prototype.render = function () {
+    var self = this;
+    this.gGroups.textContent = ''; this.gEdges.textContent = ''; this.gNodes.textContent = '';
+    this.index = {};
+    this.data.nodes.forEach(function (n) { self.index[n.id] = n; });
+
+    this.data.groups.forEach(function (g) {
+      var el = s('g', { 'class': 'dgm-grp', 'data-id': g.id, transform: 'translate(' + g.x + ',' + g.y + ')' });
+      el.appendChild(s('rect', { 'class': 'box', x: 0, y: 0, width: g.w, height: g.h, rx: 10 }));
+      var t = s('text', { 'class': 'gl', x: 12, y: 20 }); t.textContent = g.label || '';
+      el.appendChild(t);
+      self.gGroups.appendChild(el);
+    });
+
+    this.data.edges.forEach(function (e, i) {
+      var a = self.index[e.from], b = self.index[e.to];
+      if (!a || !b) return;
+      var r = route(a, b);
+      var g = s('g', { 'class': 'dgm-edge', 'data-i': i });
+      if (e.tone) g.setAttribute('data-tone', e.tone);
+      if (e.style) g.setAttribute('data-style', e.style);
+      var wire = s('path', { 'class': 'wire', d: r.d });
+      var mid = e.tone === 'primary' ? self.mk_primary : e.tone === 'risk' ? self.mk_risk : e.tone === 'ok' ? self.mk_ok : self.mk_default;
+      if (e.arrow !== false) wire.setAttribute('marker-end', 'url(#' + mid + ')');
+      g.appendChild(s('path', { 'class': 'hit', d: r.d }));
+      g.appendChild(wire);
+      if (e.label) {
+        var txt = String(e.label), wpx = 0;
+        for (var ci = 0; ci < txt.length; ci++) wpx += txt.charCodeAt(ci) > 0x2E80 ? 12.5 : 7;
+        var w = Math.max(34, Math.ceil(wpx) + 22);
+        var fo = s('foreignObject', { x: r.mid.x - w / 2, y: r.mid.y - 11, width: w, height: 22 });
+        var div = h('div', 'elbl'); div.appendChild(h('span', null, e.label));
+        fo.appendChild(div); g.appendChild(fo);
+      }
+      self.gEdges.appendChild(g);
+    });
+
+    this.data.nodes.forEach(function (n) {
+      var g = s('g', { 'class': 'dgm-node', 'data-id': n.id, 'data-tone': n.tone, transform: 'translate(' + n.x + ',' + n.y + ')' });
+      g.appendChild(boxShape(n));
+      var pad = n.shape === 'diamond' ? Math.round(n.w * .18) : 0;
+      var fo = s('foreignObject', { x: pad, y: 0, width: n.w - pad * 2, height: n.h });
+      var lbl = h('div', 'lbl');
+      lbl.appendChild(h('span', 't', n.label || ''));
+      if (n.sub) lbl.appendChild(h('span', 'sub', n.sub));
+      fo.appendChild(lbl); g.appendChild(fo);
+      self.gNodes.appendChild(g);
+    });
+
+    this.paint();
+  };
+
+  Diagram.prototype.paint = function () {
+    var self = this;
+    this.gRoot.setAttribute('transform', 'translate(' + this.view.tx + ',' + this.view.ty + ') scale(' + this.view.k + ')');
+    Array.prototype.forEach.call(this.root.querySelectorAll('.is-sel'), function (e) { e.classList.remove('is-sel'); });
+    if (!this.sel) return;
+    var q = this.sel.type === 'edge' ? '.dgm-edge[data-i="' + this.sel.id + '"]'
+      : this.sel.type === 'group' ? '.dgm-grp[data-id="' + this.sel.id + '"]'
+        : '.dgm-node[data-id="' + this.sel.id + '"]';
+    var el = this.root.querySelector(q);
+    if (el) el.classList.add('is-sel');
+  };
+
+  /* ---------- 좌표 ---------- */
+  Diagram.prototype.world = function (ev) {
+    var r = this.svg.getBoundingClientRect();
+    return { x: (ev.clientX - r.left - this.view.tx) / this.view.k, y: (ev.clientY - r.top - this.view.ty) / this.view.k };
+  };
+
+  /* 화면 가득 펼치기. 다른 다이어그램이 펼쳐져 있으면 먼저 닫는다. */
+  Diagram.prototype.toggleMax = function (force) {
+    var self = this;
+    var on = (force == null) ? !this.root.classList.contains('is-max') : !!force;
+    if (on) {
+      var cur = document.querySelector('.dgm.is-max');
+      if (cur && cur !== this.root && cur.__dgm) cur.__dgm.toggleMax(false);
+    }
+    this.root.classList.toggle('is-max', on);
+    document.documentElement.classList.toggle('dgm-locked', on);
+    if (this.bMax) {
+      this.bMax.classList.toggle('is-on', on);
+      this.bMax.textContent = on ? '닫기' : '넓게';
+      this.bMax.title = on ? '원래 크기로 (Esc)' : '화면 가득 펼치기 (Esc 로 닫기)';
+    }
+    (window.requestAnimationFrame || setTimeout)(function () { self.fit(); });
+  };
+
+  Diagram.prototype.fit = function () {
+    var items = this.data.nodes.concat(this.data.groups);
+    var r = this.svg.getBoundingClientRect();
+    var W = r.width || 800, H = r.height || 420;
+    if (!items.length) { this.view = { tx: 20, ty: 20, k: 1 }; return this.paint(); }
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    items.forEach(function (n) {
+      x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+      x1 = Math.max(x1, n.x + n.w); y1 = Math.max(y1, n.y + n.h);
+    });
+    var pad = 24, bw = (x1 - x0) + pad * 2, bh = (y1 - y0) + pad * 2;
+    var k = Math.min(W / bw, H / bh, 1.6);
+    this.view.k = k;
+    this.view.tx = (W - bw * k) / 2 - (x0 - pad) * k;
+    this.view.ty = (H - bh * k) / 2 - (y0 - pad) * k;
+    this.paint();
+  };
+
+  Diagram.prototype.zoom = function (f, cx, cy) {
+    var r = this.svg.getBoundingClientRect();
+    cx = cx == null ? r.width / 2 : cx; cy = cy == null ? r.height / 2 : cy;
+    var k0 = this.view.k, k1 = Math.max(.25, Math.min(3, k0 * f));
+    this.view.tx = cx - (cx - this.view.tx) * (k1 / k0);
+    this.view.ty = cy - (cy - this.view.ty) * (k1 / k0);
+    this.view.k = k1; this.paint();
+  };
+
+  /* ---------- 편집 ---------- */
+  Diagram.prototype.push = function () {
+    this.undo.push(JSON.stringify(this.data));
+    if (this.undo.length > 40) this.undo.shift();
+  };
+  Diagram.prototype.popUndo = function () {
+    if (!this.undo.length) return;
+    this.data = JSON.parse(this.undo.pop());
+    this.sel = null; this.render();
+  };
+  Diagram.prototype.addNode = function () {
+    this.push();
+    var id = 'n' + Date.now().toString(36).slice(-5);
+    var r = this.svg.getBoundingClientRect();
+    var wx = snap((r.width / 2 - this.view.tx) / this.view.k - 85);
+    var wy = snap((r.height / 2 - this.view.ty) / this.view.k - 31);
+    this.data.nodes.push({ id: id, label: '새 단계', x: wx, y: wy, w: 170, h: 62, shape: 'rect', tone: 'neutral' });
+    this.sel = { type: 'node', id: id };
+    this.render();
+  };
+  Diagram.prototype.toggleLink = function () {
+    this.linkMode = !this.linkMode; this.linkFrom = null;
+    this.bLink.classList.toggle('is-on', this.linkMode);
+  };
+  Diagram.prototype.cycleTone = function () {
+    if (!this.sel) return;
+    this.push();
+    if (this.sel.type === 'node') {
+      var n = this.index[this.sel.id];
+      n.tone = TONES[(TONES.indexOf(n.tone) + 1) % TONES.length];
+    } else if (this.sel.type === 'edge') {
+      var order = [undefined, 'primary', 'ok', 'risk'];
+      var e = this.data.edges[this.sel.id];
+      e.tone = order[(order.indexOf(e.tone) + 1) % order.length];
+    }
+    this.render();
+  };
+  Diagram.prototype.cycleShape = function () {
+    if (!this.sel || this.sel.type !== 'node') return;
+    var SH = ['rect', 'round', 'pill', 'diamond', 'store', 'note'];
+    this.push();
+    var n = this.index[this.sel.id];
+    n.shape = SH[(SH.indexOf(n.shape) + 1) % SH.length];
+    this.render();
+  };
+  Diagram.prototype.remove = function () {
+    if (!this.sel) return;
+    this.push();
+    var self = this;
+    if (this.sel.type === 'node') {
+      this.data.nodes = this.data.nodes.filter(function (n) { return n.id !== self.sel.id; });
+      this.data.edges = this.data.edges.filter(function (e) { return e.from !== self.sel.id && e.to !== self.sel.id; });
+    } else if (this.sel.type === 'edge') {
+      this.data.edges.splice(this.sel.id, 1);
+    } else {
+      this.data.groups = this.data.groups.filter(function (g) { return g.id !== self.sel.id; });
+    }
+    this.sel = null; this.render();
+  };
+  Diagram.prototype.openJson = function () {
+    this.ta.value = JSON.stringify(this.data, null, 2);
+    this.modal.classList.add('is-open');
+  };
+
+  /* ---------- 이벤트 ---------- */
+  Diagram.prototype.bind = function () {
+    var self = this, drag = null, pan = null;
+
+    this.svg.addEventListener('pointerdown', function (ev) {
+      if (ev.target.closest('[contenteditable="true"]')) return;
+      var nodeEl = ev.target.closest('.dgm-node');
+      var edgeEl = ev.target.closest('.dgm-edge');
+      var grpEl = ev.target.closest('.dgm-grp');
+
+      if (self.linkMode && nodeEl) {
+        var id = nodeEl.getAttribute('data-id');
+        if (!self.linkFrom) { self.linkFrom = id; self.sel = { type: 'node', id: id }; self.paint(); }
+        else if (self.linkFrom !== id) {
+          self.push();
+          self.data.edges.push({ from: self.linkFrom, to: id, label: '' });
+          self.linkFrom = null; self.toggleLink(); self.render();
+        }
+        return;
+      }
+      if (nodeEl && self.editable) {
+        self.sel = { type: 'node', id: nodeEl.getAttribute('data-id') };
+        var n = self.index[self.sel.id];
+        var w = self.world(ev);
+        drag = { kind: 'node', obj: n, dx: w.x - n.x, dy: w.y - n.y, moved: false };
+        self.push();
+      } else if (grpEl && self.editable) {
+        self.sel = { type: 'group', id: grpEl.getAttribute('data-id') };
+        var g = self.data.groups.filter(function (q) { return q.id === self.sel.id; })[0];
+        var w2 = self.world(ev);
+        drag = { kind: 'group', obj: g, dx: w2.x - g.x, dy: w2.y - g.y, moved: false };
+        self.push();
+      } else if (edgeEl) {
+        self.sel = { type: 'edge', id: +edgeEl.getAttribute('data-i') };
+      } else {
+        self.sel = null;
+        pan = { x: ev.clientX, y: ev.clientY, tx: self.view.tx, ty: self.view.ty };
+        self.svg.classList.add('is-panning');
+      }
+      self.svg.setPointerCapture(ev.pointerId);
+      self.paint();
+    });
+
+    this.svg.addEventListener('pointermove', function (ev) {
+      if (drag) {
+        var w = self.world(ev);
+        drag.obj.x = snap(w.x - drag.dx); drag.obj.y = snap(w.y - drag.dy);
+        drag.moved = true;
+        self.render();
+      } else if (pan) {
+        self.view.tx = pan.tx + (ev.clientX - pan.x);
+        self.view.ty = pan.ty + (ev.clientY - pan.y);
+        self.paint();
+      }
+    });
+
+    var end = function (ev) {
+      if (drag && !drag.moved) self.undo.pop();
+      drag = null; pan = null;
+      self.svg.classList.remove('is-panning');
+      try { self.svg.releasePointerCapture(ev.pointerId); } catch (e) { }
+    };
+    this.svg.addEventListener('pointerup', end);
+    this.svg.addEventListener('pointercancel', end);
+
+    this.svg.addEventListener('wheel', function (ev) {
+      ev.preventDefault();
+      var r = self.svg.getBoundingClientRect();
+      self.zoom(ev.deltaY < 0 ? 1.12 : 1 / 1.12, ev.clientX - r.left, ev.clientY - r.top);
+    }, { passive: false });
+
+    this.svg.addEventListener('dblclick', function (ev) {
+      if (!self.editable) return;
+      var nodeEl = ev.target.closest('.dgm-node');
+      if (nodeEl) return self.edit(nodeEl.querySelector('.lbl .t'), function (v) {
+        self.index[nodeEl.getAttribute('data-id')].label = v;
+      });
+      var edgeEl = ev.target.closest('.dgm-edge');
+      if (edgeEl) {
+        var i = +edgeEl.getAttribute('data-i');
+        var v = prompt('연결 라벨', self.data.edges[i].label || '');
+        if (v !== null) { self.push(); self.data.edges[i].label = v; self.render(); }
+      }
+    });
+
+    this.root.addEventListener('keydown', function (ev) {
+      if (ev.target.getAttribute && ev.target.getAttribute('contenteditable') === 'true') return;
+      if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); self.remove(); }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); self.popUndo(); }
+    });
+    this.root.tabIndex = 0;
+
+    var ro = window.ResizeObserver ? new ResizeObserver(function () { self.paint(); }) : null;
+    if (ro) ro.observe(this.svg);
+  };
+
+  Diagram.prototype.edit = function (el, done) {
+    if (!el) return;
+    var self = this;
+    this.push();
+    el.parentNode.setAttribute('contenteditable', 'true');
+    el.parentNode.focus();
+    var save = function () {
+      el.parentNode.removeAttribute('contenteditable');
+      done(el.textContent.trim());
+      self.render();
+    };
+    el.parentNode.addEventListener('blur', save, { once: true });
+    el.parentNode.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); el.parentNode.blur(); }
+      if (ev.key === 'Escape') { el.parentNode.removeAttribute('contenteditable'); self.popUndo(); }
+      ev.stopPropagation();
+    });
+    var rg = document.createRange(); rg.selectNodeContents(el);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+  };
+
+  function initAll(scope) {
+    var list = (scope || document).querySelectorAll('.dgm');
+    Array.prototype.forEach.call(list, function (el) {
+      if (el.__dgm) return;
+      el.__dgm = new Diagram(el);
+    });
+  }
+  /* Esc 는 펼쳐 놓은 다이어그램을 닫는다. 라벨 편집 중의 Esc 는
+     edit() 안에서 stopPropagation 되므로 여기까지 오지 않는다. */
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    var el = document.querySelector('.dgm.is-max');
+    if (el && el.__dgm) { ev.preventDefault(); el.__dgm.toggleMax(false); }
+  });
+
+  window.HWDiagram = { initAll: initAll, Diagram: Diagram };
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', function () { initAll(); });
+  else initAll();
+})();
+
+/* ============================================================
+   HW Doc Kit - 개발용 문서 런타임 (TOC 스크롤스파이 / 체크 상태 / 복사)
+   ============================================================ */
+(function () {
+  'use strict';
+  var KEY = 'hwdoc:' + (document.title || location.pathname);
+
+  /* --- TOC 자동 생성 (비어 있을 때만) --- */
+  var toc = document.querySelector('.toc');
+  if (toc && !toc.children.length) {
+    document.querySelectorAll('.sec').forEach(function (sec) {
+      if (!sec.id) return;
+      var h = sec.querySelector('h2');
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + sec.id;
+      a.textContent = h
+        ? Array.prototype.map.call(h.childNodes, function (x) { return x.textContent.trim(); })
+          .filter(Boolean).join(' ')
+        : sec.id;
+      li.appendChild(a); toc.appendChild(li);
+    });
+  }
+
+  /* --- 스크롤스파이 --- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  if (window.IntersectionObserver && secs.length) {
+    var io = new IntersectionObserver(function (ents) {
+      ents.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        links.forEach(function (a) { a.classList.toggle('is-cur', a.getAttribute('href') === '#' + e.target.id); });
+      });
+    }, { rootMargin: '-10% 0px -75% 0px', threshold: 0 });
+    secs.forEach(function (s) { io.observe(s); });
+  }
+
+  /* --- 체크리스트 상태 저장 --- */
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { }
+  document.querySelectorAll('.chk input[type="checkbox"]').forEach(function (cb, i) {
+    var id = cb.id || ('chk' + i); cb.id = id;
+    if (saved[id]) cb.checked = true;
+    var sync = function () {
+      cb.closest('li').classList.toggle('is-done', cb.checked);
+      saved[id] = cb.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { }
+      count();
+    };
+    cb.addEventListener('change', sync);
+    cb.closest('li').classList.toggle('is-done', cb.checked);
+  });
+  function count() {
+    document.querySelectorAll('.chk').forEach(function (ul) {
+      var all = ul.querySelectorAll('input[type="checkbox"]');
+      var done = ul.querySelectorAll('input[type="checkbox"]:checked');
+      var badge = ul.previousElementSibling && ul.previousElementSibling.querySelector('.chk-count');
+      if (badge) badge.textContent = done.length + ' / ' + all.length;
+    });
+  }
+  count();
+
+  /* --- 코드 복사 --- */
+  document.querySelectorAll('.code__copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var pre = b.closest('.code').querySelector('pre');
+      try { navigator.clipboard.writeText(pre.innerText); } catch (e) { }
+      var t = b.textContent; b.textContent = '복사됨';
+      setTimeout(function () { b.textContent = t; }, 1200);
+    });
+  });
+
+  /* --- 사이드 버튼 --- */
+  function bind(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
+  bind('bTheme', function () {
+    var r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+  bind('bPrint', function () { window.print(); });
+  bind('bReset', function () {
+    if (!confirm('체크 상태를 모두 초기화할까요?')) return;
+    try { localStorage.removeItem(KEY); } catch (e) { }
+    location.reload();
+  });
+})();
+</script>
+</body>
+</html>
