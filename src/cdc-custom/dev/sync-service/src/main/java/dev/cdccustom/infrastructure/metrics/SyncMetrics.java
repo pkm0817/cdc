@@ -1,6 +1,7 @@
 package dev.cdccustom.infrastructure.metrics;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
@@ -36,6 +37,7 @@ public class SyncMetrics {
     private final Counter rawEntries;
     private final Counter foldedRows;
     private final AtomicLong pending = new AtomicLong();
+    private final AtomicLong clockSkewMs = new AtomicLong();
 
     public SyncMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -46,6 +48,10 @@ public class SyncMetrics {
                 .description("접은 뒤 실제로 반영한 행 수")
                 .register(registry);
         registry.gauge("sync.outbox.pending", pending, AtomicLong::doubleValue);
+        // 이름을 CDC 두 스택과 맞춘다 — cdc_clock_skew_seconds. 지연 경보의 게이트가 보는 값이다.
+        Gauge.builder("cdc.clock.skew.seconds", clockSkewMs, v -> v.get() / 1000.0)
+                .description("source DB 시계와 이 프로세스 시계의 차 (왕복 보정)")
+                .register(registry);
     }
 
     /** 표·연산별 반영 건수. CDC 판과 이름·라벨이 같다. */
@@ -82,5 +88,15 @@ public class SyncMetrics {
 
     public void pending(long count) {
         pending.set(count);
+    }
+
+    /**
+     * source DB 와의 시계 편차. {@link SourceClockSkewProbe} 가 채운다.
+     *
+     * <p>못 잰 경우에는 호출되지 않는다 — 마지막으로 잰 값이 그대로 남는다. 0 으로 덮으면
+     * "편차 없음" 으로 읽혀 지연 경보의 게이트가 열린 채로 남기 때문이다.
+     */
+    public void clockSkew(long skewMs) {
+        clockSkewMs.set(skewMs);
     }
 }

@@ -32,6 +32,10 @@ sync:
   batch-size: ${SYNC_BATCH_SIZE:5000}
   # 밀린 것이 없을 때만 쉬는 시간. 밀려 있는 동안은 쉬지 않는다.
   poll-interval-ms: ${SYNC_POLL_INTERVAL_MS:200}
+  # source DB 와의 시계 편차 측정 주기. cdc_end_to_end_lag_seconds 는 outbox 기록 시각(DB 시계)과
+  # 반영 시각(앱 시계)의 차라, 두 시계가 어긋나면 그 편차가 지연으로 둔갑한다. 지연 경보
+  # (SyncLatencyBudgetExceeded)가 이 값을 게이트로 쓴다. CDC 두 스택과 같은 30초.
+  clock-skew-probe-interval-ms: ${SYNC_CLOCK_SKEW_PROBE_INTERVAL_MS:30000}
 
 management:
   endpoints:
