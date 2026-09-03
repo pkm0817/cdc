@@ -1,11 +1,12 @@
 {
-  "uid": "embedded-cdc-verify",
-  "title": "CDC 검증 리포트 (V1–V6)",
+  "uid": "embedded-cdc-go-verify",
+  "title": "CDC 검증 리포트 (V1–V6, Go)",
   "description": "PoC CDC 검증 항목 V1~V6 을 그대로 섹션으로 나눈 보고서용 대시보드. 계측 원본은 dev/cdc-service/build/verification/results.md",
   "tags": [
     "cdc",
     "embedded",
-    "debezium",
+    "go-pq-cdc",
+    "go",
     "verification",
     "report"
   ],
@@ -42,7 +43,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**V1~V6 검증 항목을 그대로 섹션으로 나눈 리포트용 대시보드다.** 각 섹션은 `통과 기준 → 현재 측정치 → 남은 결정` 순으로 배치했고, 섹션 끝의 메모 패널이 보고서에 그대로 옮길 문장이다.\n\n| 읽는 순서 | 이유 |\n|---|---|\n| ① 시계 편차부터 본다 | 편차가 0.5초(목표 지연의 10%)를 넘으면 그 구간의 **지연 수치를 못 쓴다**. 1차 실행에서 3,561ms 편차가 났고 재려던 지연은 526ms였다 |\n| ② 슬롯 상태 → 지연 → 정합성 | 슬롯이 끊긴 상태에서는 아래 수치가 전부 무의미하다 |\n| ③ 대사는 DLQ를 뺀 판정식으로 | `\\|source − target\\| − DLQ(PENDING) = 0`. 격리 건은 유실이 아니라 추적되는 미반영이다 |\n\n- 상시 계측으로 대체할 수 없는 항목(체크섬 대사, 필드 단위 변경 식별)은 패널 대신 메모로 두고 근거 SQL을 적어놨다. 없는 값을 있는 척하지 않기 위해서다.\n- 경보 임계값은 `prometheus/rules/cdc-alerts.yml` 에 있고, 상태는 Prometheus **Alerts** 탭에서 본다.\n- 계측 원본은 `dev/cdc-service/build/verification/results.md` (V1~V6 13건 통과), JUnit 리포트는 `build/reports/tests/test/index.html`."
+        "content": "**V1~V6 검증 항목을 그대로 섹션으로 나눈 리포트용 대시보드다.** 각 섹션은 `통과 기준 → 현재 측정치 → 남은 결정` 순으로 배치했고, 섹션 끝의 메모 패널이 보고서에 그대로 옮길 문장이다.\n\n| 읽는 순서 | 이유 |\n|---|---|\n| ① 시계 편차부터 본다 | 편차가 0.5초(목표 지연의 10%)를 넘으면 그 구간의 **지연 수치를 못 쓴다** |\n| ② 슬롯 상태 → 지연 → 정합성 | 슬롯이 끊긴 상태에서는 아래 수치가 전부 무의미하다 |\n| ③ 대사는 DLQ를 뺀 판정식으로 | `|source − target| − DLQ(PENDING) = 0`. 격리 건은 유실이 아니라 추적되는 미반영이다 |\n\n- **이 스택에서 V3(슬롯 유실)의 무게가 다르다.** go-pq-cdc 는 슬롯이 사라져도 조용히 새로 만들고 이어서 돈다. 탐지는 전적으로 `SlotContinuityGuard` 와 아래 슬롯 패널 몫이다.\n- 상시 계측으로 대체할 수 없는 항목(체크섬 대사)은 패널 대신 메모로 두고 근거를 적어놨다. 없는 값을 있는 척하지 않기 위해서다.\n- 경보 임계값은 `prometheus/rules/cdc-alerts.yml` 에 있고, 상태는 Prometheus **Alerts** 탭에서 본다.\n- 계측 원본은 `dev/cdc-service/build/verification/results.md` (`./scripts/verify.ps1` 로 재생성)."
       }
     },
     {
@@ -71,7 +72,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -131,7 +132,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -187,7 +188,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -247,7 +248,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -298,7 +299,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -358,7 +359,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -430,7 +431,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -509,7 +510,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -572,7 +573,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -656,7 +657,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**통과 기준 확정** — `N초`로 비워둔 목표 지연은 코드의 `LATENCY_BUDGET = 5초`로 확정한다.\n\n**측정치**\n- INSERT 531ms · UPDATE 507ms · DELETE 502ms — 모두 예산 내\n- 변경 필드 식별: UPDATE 이벤트에서 `[amount, status]` 두 개만 나옴. 안 건드린 필드는 변경으로 안 잡힘\n- 캡처 처리량 7,621 events/s (10,000/10,000 수신, LSN 단조 증가)\n\n**주의해서 적을 것**\n- 7,621 events/s 는 **캡처만의 수치다.** 테스트 하네스가 이벤트를 큐에 담기만 하고 target 적재(JDBC upsert)가 빠져 있다. 운영 처리량은 왼쪽 stat(`rate(cdc_events_total[1m])`)로 따로 재고 **두 수치를 같이 기록**한다.\n- 1차 실행 시계 편차 3,561ms > 재려던 지연 526ms(7배). 2차는 -14ms로 정상. **편차가 목표 지연의 10%를 넘으면 그 회차 지연값은 버린다**를 규칙으로 못박는다.\n\n**시계 편차는 이제 앱이 직접 잰다**\n`SourceClockSkewProbe` 가 30초마다 원천 `clock_timestamp()` 를 **왕복 보정**해(질의 직전·직후 로컬 시각의 중간값과 견줌) `cdc_clock_skew_seconds` 로 낸다. 보정하지 않으면 왕복의 절반이 편차로 계상돼 편차 없는 환경에서도 수 ms 가 계속 찍힌다. 경보 `CdcLatencyBudgetExceeded` 의 게이트와 `지연 판정 가능 여부` stat 이 보는 값이 이것이다.\n처음에 `process_start_time_seconds + process_uptime_seconds` 로 앱 wall clock 을 대리 계산하려던 시도는 **틀렸다** — JVM uptime 은 호스트 절전 구간을 세지 않아 컨테이너 9시간 가동에 uptime 4.96시간, 편차 -16,480초가 나왔다. 스크랩 기준(`cdc_clock_epoch_seconds − timestamp()`)은 **앱이 안 떠 있을 때의 대체 경로**로만 남긴다(경보 `CdcClockSkewByScrape`).\n실측 편차는 0~1ms 인데 **원천 DB 와 앱이 같은 호스트라서** 그렇다. 별도 장비로 나누면 다시 재야 한다.\n\n**게이트만 걸면 문제가 조용히 사라진다**\n편차가 0.5초를 넘는 구간의 지연값을 버리는 규칙만 걸어두면, 시계가 틀어졌을 때 지연 경보 자체가 안 뜨고 \"지연 없음\" 으로 읽힌다. 그래서 판정을 못 하는 상태를 `CdcLatencyUnverifiable` 경보와 `지연 판정 가능 여부` stat 으로 따로 세웠다.\n\n**창 크기가 판정을 바꾼다**\n`rate(cdc_events_total[1m])` 은 **버스트를 6분의 1로 희석한다.** 1만 건을 6.7초에 처리했는데 255/s 로 보였다. [1m] 은 추세 감시용이고 **버스트 판정에는 `[15s]`** 를 쓴다(스크랩 5초라 표본 3개). 위 stat 과 오른쪽 처리량 그래프가 두 창을 같이 보여준다.\n\n**\"통과\" 로 끝내지 않는다 — 예산 소진율**\n1만 건 버스트의 최대 지연은 **4.97초, 예산 5초의 99%** 였다. 평시 500ms 대(10%)와 같은 \"통과\" 지만 운영 여유가 전혀 다르다. `예산 소진율` stat 이 그 여유를 상시로 보여준다.\n\n\n**필드 단위 변경 식별을 메트릭으로 만들지 않는 이유**\n운영 코드에는 일부러 없다. `changedFields()` 는 검증 전용이고 핸들러는 `after` 를 통째로 upsert 한다(멱등성 때문에 그쪽이 단순함). 변경 필드명을 Prometheus 레이블로 쓰면 카디널리티가 터진다. 필요하면 **감사 로그 테이블**로 간다. 전제는 `REPLICA IDENTITY FULL` — DEFAULT면 before에 PK만 와서 비교 자체가 안 된다(V5와 엮임)."
+        "content": "**통과 기준** — 목표 지연은 Java 판과 같은 `5초` 예산으로 본다.\n\n**측정치 (results.md · V1)**\n- INSERT 왕복 5ms · UPDATE 2ms · DELETE 2ms — 모두 예산 안\n- 시계 편차 -29ms, 편차 보정 후 INSERT 송신 기준 2ms\n- 변경 필드 식별: UPDATE 이벤트에서 `[amount status]` 두 개만 나옴\n- 1만 건 배치: source 커밋 4,878ms, 캡처 완료 87ms, **114,942 events/s**, 수신 10,000/10,000, LSN 단조 증가\n\n**주의해서 적을 것**\n- 114,942 events/s 는 **캡처만의 수치다.** 검증 하네스가 이벤트를 받기만 하고 target 적재(pgx UPSERT)가 빠져 있다. 운영 처리량은 왼쪽 stat(`rate(cdc_events_total[1m])`)으로 따로 재고 **두 수치를 같이 기록**한다.\n- **지연의 기준 시각이 Debezium 판과 다르다.** Debezium 은 커밋 시각(`source.ts_ms`)을, go-pq-cdc 는 **WAL 송신 시각(MessageTime)** 을 준다. 그래서 같은 이름의 지표라도 Java 판 수치와 직접 비교할 때는 이 차이를 적어야 한다 — 커밋에서 송신까지의 시간이 여기서는 빠져 있다.\n- 편차가 목표 지연의 10%(0.5초)를 넘으면 그 회차 지연값은 버린다. 앱이 30초마다 재는 `cdc_clock_skew_seconds` 가 그 판정용이다.\n- 게이트만 걸면 시계가 틀어졌을 때 지연 경보가 조용히 사라져 \"지연 없음\" 으로 읽힌다. 판정 불가 상태 자체를 `CdcLatencyUnverifiable` 경보와 `지연 판정 가능 여부` stat 으로 따로 세웠다. 앱이 안 떠 있을 때는 스크랩 기준(`cdc_clock_epoch_seconds − timestamp()`)으로 자동으로 떨어진다.\n\n**창 크기가 판정을 바꾼다**\n`rate(cdc_events_total[1m])` 은 **버스트를 6분의 1로 희석한다.** 1만 건을 6.7초에 처리했는데 255/s 로 보였다. [1m] 은 추세 감시용이고 **버스트 판정에는 `[15s]`** 를 쓴다(스크랩 5초라 표본 3개). 위 stat 과 오른쪽 처리량 그래프가 두 창을 같이 보여준다.\n\n**\"통과\" 로 끝내지 않는다 — 예산 소진율**\n1만 건 버스트의 최대 지연은 **4.97초, 예산 5초의 99%** 였다. 평시 500ms 대(10%)와 같은 \"통과\" 지만 운영 여유가 전혀 다르다. `예산 소진율` stat 이 그 여유를 상시로 보여준다.\n"
       }
     },
     {
@@ -672,7 +673,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "emb-cdc-target-db"
+        "uid": "emb-cdc-go-target-db"
       },
       "targets": [
         {
@@ -682,7 +683,7 @@
           "rawSql": "SELECT to_char(source_ts, 'HH24:MI:SS') AS \"원천 커밋\",\n       source_table AS \"테이블\",\n       row_key AS \"행\",\n       changed_fields AS \"바뀐 필드\",\n       CASE WHEN identifiable THEN '판정됨' ELSE '판정 불가' END AS \"식별\",\n       before_values AS \"이전\",\n       after_values AS \"이후\"\n  FROM cdc_change_audit\n WHERE $__timeFilter(source_ts)\n ORDER BY id DESC\n LIMIT 100",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "emb-cdc-target-db"
+            "uid": "emb-cdc-go-target-db"
           }
         }
       ],
@@ -765,7 +766,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -818,7 +819,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "emb-cdc-target-db"
+        "uid": "emb-cdc-go-target-db"
       },
       "targets": [
         {
@@ -828,7 +829,7 @@
           "rawSql": "SELECT count(*) AS value\n  FROM cdc_change_audit\n WHERE identifiable = false\n   AND $__timeFilter(source_ts)",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "emb-cdc-target-db"
+            "uid": "emb-cdc-go-target-db"
           }
         }
       ],
@@ -892,7 +893,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -951,7 +952,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1003,7 +1004,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1055,7 +1056,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1114,7 +1115,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1197,7 +1198,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1252,7 +1253,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1353,7 +1354,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1432,7 +1433,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1495,7 +1496,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**측정치** — 다운 중 1000건 → 재기동 후 1000/1000, **유실 0**. 슬롯이 붙잡은 WAL 161.9 KiB, **165 bytes/변경**.\n\n**V2 의 실질 결론은 `max_slot_wal_keep_size` 를 어떻게 할지다.**\n\n| 선택 | 결과 |\n|---|---|\n| `-1` 유지 (현재) | 허용시간 = \"디스크 찰 때까지\". source DB 가 먼저 죽는다 |\n| 상한을 건다 | 허용시간이 숫자로 나오는 대신, 초과하는 순간 슬롯이 무효화 → **V3 상황으로 넘어간다** |\n\n**디스크 고갈이냐 재동기화냐 중 무엇을 택할지 정하고 문서에 남기는 것이 이 항목의 산출물이다.** 권고는 디스크 여유의 20~30%.\n\n**165 bytes/변경은 REPLICA IDENTITY FULL 기준이다.** V5 요구 때문에 전 테이블 FULL 로 걸어놨고, FULL 은 update/delete 마다 변경 전 행 전체를 WAL에 쓴다. **V5 요구가 V2 디스크 압력을 키우고 있는 구조**이므로, 같은 부하로 DEFAULT vs FULL WAL 증가율을 비교 측정해 숫자를 남긴다(위 '변경 1건당 WAL' 패널이 그 측정용이다).\n\n**재기동 시나리오** — 다운 시간을 2초 / 1분 / 10분으로 늘려가며 WAL 증가가 선형인지 확인한다. 허용시간 외삽의 근거가 된다.\n\n**슬롯 보유 WAL 과 pg_wal/ 실제 크기는 다른 값이다**\n지금까지 이 섹션은 디스크 영향을 `cdc_slot_lag_bytes` 하나로만 보고 있었다. 그 값은 \"컨슈머가 아직 confirm 하지 않은 구간\" 이고, 디스크를 실제로 채우는 것은 `pg_ls_waldir()` 합계다. exporter 는 `cdc_wal_size_bytes` 로 이미 수집하고 있었는데 화면에 세운 적이 없었다. 재측정 시 **55세그먼트 880MB** 였던 값이 이것이다. 두 선을 겹쳐 두면 다운 구간에서 붙잡힌 양이 먼저 오르고, 살아난 뒤 그쪽이 먼저 떨어진 다음 pg_wal/ 은 체크포인트가 돌아야 준다는 것이 보인다.\n\n**측정으로만 닫히는 것 — 화면이 대신 못 한다**\n| 항목 | 방법 | 판정 |\n|---|---|---|\n| WAL 증가의 선형성 | 다운 시간을 2초 / 1분 / 10분으로 늘려가며 3회 | 두 선의 기울기가 일정하면 허용시간 외삽 가능 |\n| DEFAULT vs FULL 비용 | 같은 부하를 identity 만 바꿔 2회 | `변경 1건당 WAL` 패널의 차이가 곧 V5 가 V2 에 지우는 비용 |\n\n두 번째는 한 화면에 동시에 못 띄운다. 설정을 바꿔 같은 부하를 다시 걸고 두 수치를 나란히 적는 것 외에 방법이 없다. 165 bytes/변경은 **FULL 기준** 값이라는 점을 보고서에 반드시 같이 적는다.\n"
+        "content": "**측정치 (results.md · V2)**\n- 다운 시간 2,429ms 동안 변경 1,000건 → 재기동 후 **1,000 / 1,000 수신, 유실 0**\n- 슬롯이 붙잡은 WAL **161.8 KiB**, **변경 1건당 165 bytes**\n- `max_slot_wal_keep_size = -1` — 상한이 없다\n\n**해석**\n- 재기동 시 슬롯의 `confirmed_flush_lsn` 부터 이어 읽어 유실이 없었다. 슬롯이 WAL 을 붙잡아 준 결과다.\n- 상한이 -1 인 한 **다운 허용시간 = 디스크 여유 ÷ WAL 증가율** 이 사실상의 한계다. 위 \"다운 허용시간\" 패널이 그 값을 상시로 계산한다.\n- 165 bytes/변경은 `REPLICA IDENTITY FULL` 기준이다. DEFAULT 로 바꾸면 이 값이 줄고 V5 판독 능력이 깎인다 — 두 요구가 정면으로 부딪히는 지점이다.\n\n**슬롯 보유 WAL 과 pg_wal/ 실제 크기는 다른 값이다**\n지금까지 이 섹션은 디스크 영향을 `cdc_slot_lag_bytes` 하나로만 보고 있었다. 그 값은 \"컨슈머가 아직 confirm 하지 않은 구간\" 이고, 디스크를 실제로 채우는 것은 `pg_ls_waldir()` 합계다. exporter 는 `cdc_wal_size_bytes` 로 이미 수집하고 있었는데 화면에 세운 적이 없었다. 재측정 시 **55세그먼트 880MB** 였던 값이 이것이다. 두 선을 겹쳐 두면 다운 구간에서 붙잡힌 양이 먼저 오르고, 살아난 뒤 그쪽이 먼저 떨어진 다음 pg_wal/ 은 체크포인트가 돌아야 준다는 것이 보인다.\n\n**측정으로만 닫히는 것 — 화면이 대신 못 한다**\n| 항목 | 방법 | 판정 |\n|---|---|---|\n| WAL 증가의 선형성 | 다운 시간을 2초 / 1분 / 10분으로 늘려가며 3회 | 두 선의 기울기가 일정하면 허용시간 외삽 가능 |\n| DEFAULT vs FULL 비용 | 같은 부하를 identity 만 바꿔 2회 | `변경 1건당 WAL` 패널의 차이가 곧 V5 가 V2 에 지우는 비용 |\n\n두 번째는 한 화면에 동시에 못 띄운다. 설정을 바꿔 같은 부하를 다시 걸고 두 수치를 나란히 적는 것 외에 방법이 없다. 165 bytes/변경은 **FULL 기준** 값이라는 점을 보고서에 반드시 같이 적는다.\n"
       }
     },
     {
@@ -1524,7 +1525,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1614,7 +1615,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1669,7 +1670,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1731,7 +1732,7 @@
       "id": 24,
       "type": "stat",
       "title": "프로세스 가동시간",
-      "description": "재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다.",
+      "description": "재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다. 컨테이너 기동 시각이 아니라 프로세스 기동 시각이라, 컨테이너는 그대로인데 이 값만 떨어지면 크래시 루프다.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -1740,12 +1741,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "process_uptime_seconds{job=\"cdc-service\"}"
+          "expr": "time() - process_start_time_seconds{job=\"cdc-service\"}",
+          "legendFormat": "uptime"
         }
       ],
       "options": {
@@ -1795,7 +1797,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1869,7 +1871,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -1932,7 +1934,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2016,7 +2018,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**측정치** — 슬롯 강제 삭제 후 끊긴 구간 100건 중 **0건 수신**. 엔진이 예외를 내고 종료했고 `SlotContinuityGuard` 도 탐지함. 재동기화 후 **101/101 복원**.\n\n**탐지는 되지만 관측에는 안 올라온다.** 가드가 저장 오프셋 LSN과 슬롯 `restart_lsn` 을 대조하고 `fail-on-capture-gap: true` 로 기동을 거부하는데, **결과가 로그와 예외뿐이라 Prometheus 로 안 나간다.** 재시작 루프에 들어가면 대시보드에서는 \"이벤트가 안 오네\" 정도로만 보인다. → **HALT / 기동실패 카운터를 `PipelineMetrics` 에 추가하고 경보에 연결할 것.** (그 전까지는 왼쪽 `up` / 재기동 횟수 / 캡처 갭 패널이 대체 신호다.)\n\n**슬롯 무효화가 삭제보다 잦은데 안 보고 있었다.** `wal_status` 로 확인된다 — reserved 정상 / extended 보관중 / **unreserved 경고** / **lost 유실확정**. exporter 쿼리에 `wal_status`, `safe_wal_size` 를 추가했고 경보도 걸었다.\n\n**\"이중화 전환 시 동일 상황이 생기는지 확인\"은 확인 항목이 아니라 이미 정해진 결과다.** PostgreSQL 16은 논리 복제 슬롯을 standby로 동기화하지 않는다 → **페일오버하면 슬롯은 무조건 사라진다.** 슬롯을 승계하는 `sync_replication_slots` 는 **PostgreSQL 17부터**다. 지금 이미지가 16이므로 **버전 선택이 곧 대응책**이다. 확인 항목을 **\"페일오버 후 재동기화에 걸리는 시간과 데이터량 측정\"** 으로 바꾼다.\n\n**재적재만으로는 정합이 안 맞는다.** 재동기화는 멱등 upsert라 중복 적재는 안전하지만, **원본에서 사라진 행은 재적재로 안 지워진다.** 절차에 \"target 에만 남은 행 찾아 처리\" 단계를 넣는다. 소프트 삭제 테이블은 `deleted` 플래그로 되지만 **하드 삭제 테이블(car)은 별도 대사가 필요하다.**"
+        "content": "**측정치 (results.md · V3)**\n- 슬롯 강제 삭제 → 끊긴 구간 100건 중 **0건 수신, 유실 100건**\n- **슬롯이 새로 만들어졌는가: true** — 라이브러리는 아무 것도 알리지 않고 새 슬롯으로 이어서 돌았다\n- 직전 처리 LSN `0/1BB8C18` vs 새 슬롯 restart_lsn `0/1BBCC30` → **가드가 탐지: true**\n- 재동기화 후 수신측 101 / 101\n\n**이 항목이 이 스택의 핵심이다.**\nJava 판에서 Debezium 은 \"오프셋은 있는데 슬롯이 없다\" 를 스스로 잡아 기동을 거부한다. 여기서는 그 장치가 없다 — `slot.createIfNotExists` 가 켜져 있으면 조용히 새로 만든다. **수신 측 `cdc_checkpoint` 와 슬롯 `restart_lsn` 을 대조하는 `SlotContinuityGuard` 가 유일한 탐지 수단이다.**\n\n**재동기화 절차**\n멱등 UPSERT 라 중복 적재는 안전하다. 다만 **원본에서 사라진 행은 재적재로 지워지지 않으므로 삭제 대사가 따로 필요하다.**\n\n**남은 결함 — 가드의 오탐**\n현재 가드는 `슬롯 restart_lsn > cdc_checkpoint` 를 갭으로 본다. 그런데 heartbeat 이벤트는 라이브러리가 리스너에 넘기지 않고 스스로 ack 하므로, 유휴 구간에는 슬롯만 전진하고 체크포인트는 그대로다. 그 상태로 재기동하면 **갭이 없어도 기동을 거부한다**(실제로 재기동 루프가 났다). 복구 스위치 `CDC_FAIL_ON_CAPTURE_GAP=false` 로 넘길 수 있지만, 판정식 자체를 \"마지막으로 확인한 슬롯 위치\" 기준으로 바꾸는 것이 맞는 수정이다."
       }
     },
     {
@@ -2032,7 +2034,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2102,7 +2104,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2157,7 +2159,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2223,7 +2225,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2280,7 +2282,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2335,7 +2337,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2390,7 +2392,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2445,7 +2447,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2503,7 +2505,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2576,7 +2578,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2645,7 +2647,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**측정치** — 중복 200건 유입, 1차 반영 200 / 2차 반영 0, **두 번 반영된 행 0**. 재현은 오프셋을 체크포인트로 되돌려 flush 전에 죽은 상황을 만들었다.\n\n**테이블마다 방어 기제가 달라서 하나만 보고 통과시키면 안 된다.**\n\n| 구분 | 동작 |\n|---|---|\n| `source_lsn` 가드 있음 (computer, grade, member) | upsert에 LSN 비교가 붙어 **중복도 순서 역전도** 막힌다 |\n| 가드 없음 (car) | 단순 upsert — 중복은 값이 같아 무해하지만, **늦게 온 오래된 이벤트가 최신 값을 덮어쓸 수 있다** |\n\n→ 실제 대상 테이블에 가드를 걸지 말지 정하고, **V4 를 테이블별로 돌린다.**\n\n**DLQ 재처리도 중복 유입 경로인데 지금 V4 가 안 보고 있다.** `cdc_dead_letter` 건을 `RETRY_REQUESTED` 로 표시하면 재처리기가 다시 적용하는데, 이때 이미 반영된 건이 다시 들어올 수 있다. **격리 → 원인 수정 → 재처리 사이에 정상 경로로 같은 행이 갱신된 시나리오**를 넣고 가드가 막는지 확인할 것.\n\n**권고** — `offset.flush.interval.ms: 10000` 유지. 줄이면 중복은 줄지만 I/O가 늘어난다."
+        "content": "**측정치 (results.md · V4)**\n- ack 하지 않은 채 정지 → 재기동 후 200건 재유입, **그중 중복(같은 LSN) 200건**\n- 1차 반영 200행 / 2차 반영 **0행** — **두 번 반영된 행 0**\n- 원본 200 / 수신측 200\n\n**해석**\n재현은 ack 전에 죽은 상황을 만든 것이다. 적용 → 커밋 → ack 순서라 ack 전에 죽으면 그 구간이 다시 온다(at-least-once). 그것을 downstream 이 아니라 여기서 흡수한다.\n**LSN 가드가 붙은 멱등 UPSERT** 라 중복 이벤트는 갱신 행 수 0 으로 차단된다. 가드가 없으면 중복 자체는 무해하지만 **늦게 도착한 오래된 이벤트가 최신 값을 덮어쓴다** — 아래 \"테이블별 방어 기제\" 표에서 `lsn_guard=0` 인 테이블이 그 위험에 노출돼 있다."
       }
     },
     {
@@ -2674,7 +2676,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2731,7 +2733,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2782,7 +2784,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2838,7 +2840,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2890,7 +2892,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -2961,7 +2963,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3030,7 +3032,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**측정치** — `REPLICA IDENTITY DEFAULT` 일 때 `after` 에 **`__debezium_unavailable_value`** 자리표시자가 와서 현재 값 판독 불가. **FULL 로 바꾼 뒤 before / after 양쪽 200,000 bytes 온전히 실려 복원 가능.** 판정 기준은 이 자리표시자의 등장 여부다.\n\n**\"관심 필드가 걸리는지\" 판별 방법을 정해둬야 실행이 된다.** TOAST 임계는 대략 **2KB(블록의 1/4)** 이고, 이보다 큰 값이 들어가는 컬럼이 후보다.\n\n1. **후보 좁히기(무료)** — 위 `컬럼별 평균 저장 폭` 패널(`pg_stats.avg_width`). ANALYZE 통계라 스캔 비용이 없다.\n2. **확정(스캔 1회)** — `SELECT max(pg_column_size(<컬럼>)) FROM <테이블>;`\n3. **참고** — `pg_class.reltoastrelid <> 0` 은 varlena 컬럼만 있으면 참이라 판별에 못 쓴다. **TOAST 저장소 크기**가 8KB를 크게 넘는지를 본다.\n\n*이 스크랩마다 `max(pg_column_size(...))` 를 돌리지 않는 이유: 컬럼마다 전체 스캔이 필요하다. 무료 지표로 후보를 좁히고 확정만 수동으로 한다.*\n\n**FULL 로 바꿨을 때의 대가는 아직 안 재봤다.** 지금 전략은 \"해소되는지\"만 묻고 **비용은 묻지 않고 있다.** FULL 은 update/delete 마다 변경 전 행 전체를 WAL에 쓴다. 검증 환경이 전 테이블 FULL 이므로 **V2 의 165 bytes/변경에 이미 그 비용이 들어가 있다.** → **DEFAULT 대비 WAL 증가율을 비교하고, 대용량 필드가 없는 테이블까지 FULL 로 둘지 테이블별로 판단한다.** (현재 시드 데이터에는 TOAST 대상 값이 없어 TOAST 크기가 전부 8KB로 비어 있다 — 비용 비교는 대용량 값을 넣고 재야 한다.)"
+        "content": "**측정치 (results.md · V5)**\n- INSERT 이벤트에는 대용량 필드가 온전히 실린다 (200,000 bytes)\n- `REPLICA IDENTITY DEFAULT` · UPDATE — **after 에 컬럼 자체가 없음(true)**, NULL 이 아니라 **키가 아예 없다**, before 도 없음 → **현재 값 판독 불가**\n- `REPLICA IDENTITY FULL` · UPDATE — after 판독 가능, before 판독 가능, 양쪽 200,000 bytes → **현재 값 복원 가능**\n\n**Debezium 판과 결정적으로 다른 점**\nDebezium 은 `__debezium_unavailable_value` 자리표시자를 넣어 \"못 받았다\" 를 알려 준다. **go-pq-cdc 는 컬럼 자체를 싣지 않는다.** 받은 쪽에서는 \"안 바뀐 것\" 과 \"못 받은 것\" 이 구분되지 않는다 — 값을 통째로 UPSERT 하는 구조에서는 조용한 데이터 손상이 된다.\n대신 **FULL 이면 라이브러리가 old 이미지 값으로 메워 준다.** 응용에서 before 를 뒤질 필요가 없다는 점은 Debezium 판보다 낫다.\n→ **이 스택에서 FULL 은 선택이 아니라 전제다.** 그 대가가 V2 의 165 bytes/변경이다."
       }
     },
     {
@@ -3059,7 +3061,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3114,7 +3116,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3169,7 +3171,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3224,7 +3226,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3276,7 +3278,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3345,7 +3347,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3403,7 +3405,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3494,7 +3496,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3556,7 +3558,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**측정치** — 정상 상태 300/300 체크섬 일치. **3건 삭제 시 불일치 검출.** 행을 지우지 않고 금액만 1 올렸을 때도 검출(건수는 같은데 체크섬이 다름). heartbeat: `interval.ms` 만 켰을 때 슬롯 전진 **0 bytes**, `action.query` 를 같이 걸었을 때 **33,440 bytes** 전진.\n\n**① 건수 대사는 자동화돼 있다.** `abs(cdc_source_rows − cdc_target_rows)` 패널이 이미 있고, exporter 쿼리가 카탈로그 기반이라 **publication 에 테이블을 추가하면 다음 스크랩부터 자동으로 대사 대상**이 된다(source 는 `pg_publication_tables`, target 은 카탈로그에서 찾고, `deleted` 컬럼이 있으면 `WHERE deleted = false` 로 센다).\n\n**② 건수가 같아도 값이 다를 수 있다** — V6 2단계가 정확히 그걸 실험으로 보여줬다. 다만 **체크섬 대사는 상시 계측으로 못 올린다.** `md5(string_agg(...))` 는 전체 스캔이라 5초 스크랩마다 돌릴 수 없고, target 스키마가 변환돼 있어(computer) 양쪽 체크섬을 직접 비교할 수 있는 테이블은 1:1인 것뿐이다. → **야간 배치 또는 최근 N시간 구간 한정**으로 verify 스크립트에서 돌리고, 그 결과를 보고서에 별도 기록한다.\n\n**③ DLQ 를 대사에 넣었다.** 격리된 이벤트는 유실이 아니라 추적되는 미반영이라 **대사 불일치의 정당한 사유**다. 판정식을 **`|source − target| − DLQ(PENDING) = 0`** 으로 바꾸고 패널·경보를 추가했다. 이전에는 불일치가 났을 때 진짜 유실인지 격리 때문인지 구분이 안 됐다.\n\n**④ 고아 참조 대사를 추가했다.** 수신 측에 FK 를 걸지 않으므로 DB 가 막아주지 않는다. 관계를 목록으로 적지 않고 `<부모>_id` 컬럼 규칙으로 카탈로그에서 찾는다(member.grade_id → grade).\n\n**⑤ heartbeat 은 결론이 났는데 코드에 안 들어가 있다.** `DebeziumEngineManager` 에 heartbeat 설정이 하나도 없다. `heartbeat.interval.ms: 10000` 과 `heartbeat.action.query` 를 **함께** 넣어야 한다 — heartbeat 쿼리가 publication 에 든 테이블에 쓰기를 만들어줘야 confirm 이 일어나기 때문이다. 위 '슬롯 전진' 패널이 이 설정의 검증 수단이다."
+        "content": "**측정치 (results.md · V6)**\n- 정상 상태 300 / 300, 체크섬 `0a826cc7…` **일치**\n- 수신측 3건 임의 삭제 → 건수차 3, **불일치 검출**\n- 행을 지우지 않고 값만 변조 → 건수는 같은데 **체크섬이 달라 검출**\n- heartbeat 없음: confirmed_flush_lsn `0/1C75BF0 → 0/1C75BF0`, **슬롯 전진 0 bytes** (붙잡은 WAL 83,248 → 116,040 bytes)\n- heartbeat 표 사용: `0/1C98C98 → 0/1CA0E98`, **슬롯 전진 33,280 bytes**\n\n**해석**\n- **건수 대사만으로는 부족하다.** 값 변조는 체크섬으로만 잡힌다. 체크섬 대사는 전체 스캔이라 스크랩에 못 올린다 — 야간 배치나 구간 한정으로 돌리고, 상시 화면은 건수 대사 + DLQ 보정으로 본다.\n- **heartbeat 는 필수다.** 관심 테이블에 변경이 없으면 슬롯이 전혀 전진하지 않고, 다른 테이블이 만든 WAL 까지 계속 붙잡는다. Java 판이 `heartbeat.interval.ms` 와 `heartbeat.action.query` 를 **둘 다** 걸어야 했던 것과 같은 문제이며, go-pq-cdc 는 **표 하나를 지정하면 그 둘을 한꺼번에** 해 준다.\n- 그 편의의 대가가 하나 있다. heartbeat 이벤트는 리스너를 타지 않고 라이브러리가 스스로 ack 하므로 **슬롯만 전진하고 `cdc_checkpoint` 는 그대로**다. 두 값의 차이를 유실로 읽으면 안 된다(V3 메모의 오탐이 그것이다)."
       }
     },
     {
@@ -3572,7 +3574,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3632,7 +3634,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3701,7 +3703,7 @@
     {
       "id": 67,
       "type": "row",
-      "title": "엔진 결함 판정 — Debezium 전환 논의 진입 기준",
+      "title": "엔진 결함 판정 — 라이브러리 교체 논의 진입 기준",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -3724,7 +3726,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3794,7 +3796,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -3841,7 +3843,7 @@
       "id": 70,
       "type": "stat",
       "title": "힙 증가 기울기 (6시간)",
-      "description": "24시간 부하에서 GC 이후에도 heap 이 단조 증가하는지가 메모리 누수 판정이다. 그 기울기를 6시간 창으로 상시 계산한다. 1 KiB/s ≈ 하루 86 MiB.",
+      "description": "장시간 부하에서 GC 이후에도 힙이 단조 증가하는지가 메모리 누수 판정이다. 그 기울기를 6시간 창으로 상시 계산한다. 1 KiB/s ≈ 하루 86 MiB.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -3850,12 +3852,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "deriv(sum(jvm_memory_used_bytes{job=\"cdc-service\", area=\"heap\"})[6h:1m])"
+          "expr": "deriv(go_memstats_heap_inuse_bytes{job=\"cdc-service\"}[6h:1m])",
+          "legendFormat": "기울기"
         }
       ],
       "options": {
@@ -3910,12 +3913,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "min_over_time(sum(jvm_memory_used_bytes{job=\"cdc-service\", area=\"heap\"})[1h:1m])"
+          "expr": "min_over_time(go_memstats_heap_inuse_bytes{job=\"cdc-service\"}[1h:1m])",
+          "legendFormat": "힙 바닥"
         }
       ],
       "options": {
@@ -3962,7 +3966,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
@@ -4036,8 +4040,8 @@
     {
       "id": 73,
       "type": "timeseries",
-      "title": "JVM 힙 · GC 정지",
-      "description": "힙 사용량과 그 바닥값, 그리고 초당 GC 정지 시간. 바닥값이 우상향하면서 GC 정지가 같이 늘면 누수 쪽이고, 힙은 출렁여도 바닥이 평평하면 정상 부하다.",
+      "title": "Go 힙 · GC 정지",
+      "description": "힙 사용량과 그 바닥값, 그리고 초당 GC 정지 시간. 바닥값이 우상향하면서 GC 정지가 같이 늘면 누수 쪽이고, 힙은 출렁여도 바닥이 평평하면 정상 부하다. 여기서 큐(CDC_BATCH_QUEUE_SIZE)와 배치 크기가 곧 힙 상한이다 — JVM 처럼 미리 잡아 두는 상한이 없다.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -4046,22 +4050,22 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "emb-cdc-prom"
+        "uid": "emb-cdc-go-prom"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(jvm_memory_used_bytes{job=\"cdc-service\", area=\"heap\"})",
-          "legendFormat": "힙 사용"
+          "expr": "go_memstats_heap_inuse_bytes{job=\"cdc-service\"}",
+          "legendFormat": "힙 사용(inuse)"
         },
         {
           "refId": "B",
-          "expr": "min_over_time(sum(jvm_memory_used_bytes{job=\"cdc-service\", area=\"heap\"})[1h:1m])",
+          "expr": "min_over_time(go_memstats_heap_inuse_bytes{job=\"cdc-service\"}[1h:1m])",
           "legendFormat": "1시간 힙 바닥"
         },
         {
           "refId": "C",
-          "expr": "rate(jvm_gc_pause_seconds_sum{job=\"cdc-service\"}[1m])",
+          "expr": "rate(go_gc_duration_seconds_sum{job=\"cdc-service\"}[1m])",
           "legendFormat": "초당 GC 정지 (s/s)"
         }
       ],
@@ -4130,7 +4134,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "원문에는 전환 조건이 **\"재현 시 판단\"** 이라고만 적혀 있었다. 그러면 장애 한 번에 전환 논의가 된다. 위 네 패널은 그 \"재현\"을 숫자로 고정한 것이다.\n\n| 판정 | 기준 | 이 화면에서 |\n|---|---|---|\n| **행업** | 엔진 스레드는 살아있는데 이벤트 0건이고 슬롯이 10분 이상 안 움직임 | `행업 판정` 이 1, `3요소` 에서 up 만 1 |\n| **오프셋 오염** | 재기동 시 저장 LSN 이 슬롯 `restart_lsn` 보다 뒤 | `오프셋 오염 여유` 가 음수 (V3 `캡처 갭 판정` 과 같은 식) |\n| **메모리 누수** | 24시간 부하에서 GC 이후에도 heap 단조 증가 | `힙 증가 기울기` > 0 이면서 `힙 바닥` 이 우상향 |\n\n**재현 요건은 세 판정과 별개다** — 같은 시나리오 **3회 이상** 재현 + **최신 패치 버전**에서도 재현 + **업스트림 이슈** 확인. 이 셋이 서야 전환 논의에 들어간다.\n\n그리고 전환 논의에 들어가더라도 **대안 두 개는 등가가 아니다.** 버전 컬럼 폴링은 DELETE 를 못 잡고(지워진 행은 조회에 안 나온다), 논리 복제 직접 소비는 슬롯·오프셋·스키마 변경 처리를 직접 만들어야 해서 V2~V4 에서 검증한 걸 다시 만드는 셈이다. → **첫 질문은 \"Debezium 이 불안정한가\"가 아니라 \"원본 테이블에 소프트 삭제를 강제할 수 있는가\"다.**"
+        "content": "전환/교체 조건을 \"재현 시 판단\" 으로만 적어 두면 장애 한 번에 논의가 열린다. 위 네 패널은 그 \"재현\" 을 숫자로 고정한 것이다.\n\n| 판정 | 기준 | 이 화면에서 |\n|---|---|---|\n| **행업** | 스트림은 살아있는데(up=1) 이벤트 0건이고 슬롯이 10분 이상 안 움직임 | `행업 판정` 이 1, `3요소` 에서 up 만 1 |\n| **오프셋 오염** | 재기동 시 저장 LSN 이 슬롯 `restart_lsn` 보다 뒤 | `오프셋 오염 여유` 가 음수 — **단, heartbeat 로 인한 정상 음수와 구분해야 한다**(V3 메모 참고) |\n| **메모리 누수** | 장시간 부하에서 GC 이후에도 힙 단조 증가 | `힙 증가 기울기` > 0 이면서 `힙 바닥` 이 우상향 |\n\n**재현 요건은 세 판정과 별개다** — 같은 시나리오 **3회 이상** 재현 + **최신 버전**에서도 재현 + **업스트림 이슈** 확인.\n\n그리고 이 스택에서 교체 논의의 첫 질문은 라이브러리 안정성이 아니다. **\"슬롯이 사라졌을 때 누가 알려 주는가\"** 다. go-pq-cdc 는 알려 주지 않는다는 것이 V3 의 결론이고, 그 자리를 우리 가드가 메우고 있다. 그 가드를 유지·보수할 수 있는가가 판단의 축이다."
       }
     },
     {
@@ -4158,7 +4162,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "| 항목 | 현재 | 권고 | 근거 |\n|---|---|---|---|\n| `max_slot_wal_keep_size` | **-1** | 디스크 여유의 20~30% | V2. 초과 시 슬롯 무효화지만 디스크 고갈보단 낫다 |\n| `heartbeat.interval.ms` | **미설정** | `10000` | V6 |\n| `heartbeat.action.query` | **미설정** | publication 테이블에 쓰기를 넣는 쿼리 | V6. 이게 있어야 슬롯이 전진한다 |\n| `REPLICA IDENTITY` | 전 테이블 FULL | 유지하되 **테이블별 재검토** | V5가 요구, V2 WAL을 키움 |\n| 오프셋 저장 | FileOffsetBackingStore + 볼륨 | 유지 + 수신측 체크포인트 병행 | V3. 볼륨 유실 시 \"처음부터\"인지 \"건너뜀\"인지 구분됨 |\n| `offset.flush.interval.ms` | `10000` | 유지 | V4. 줄이면 중복↓ I/O↑ |\n| 슬롯 lag 경보 | ~~없음~~ → **추가함** | warn 512MB / crit 2GB | V2. 165 bytes/변경 기준 환산 |\n| `wal_status` 감시 | ~~미감시~~ → **추가함** | unreserved 경고 / lost 즉시 | V3 |\n| `fail-on-capture-gap` | `true` | 유지 | V3. ~~탐지해도 경보로 안 올라감~~ → `cdc_capture_gap` 노출 + `CdcCaptureGap` 경보 **연결됨** |\n\n**Debezium 자체 결함 시 전환 판단 기준** (지금은 \"재현 시 판단\"이라고만 돼 있어 장애 한 번에 전환 논의가 된다)\n- **재현 요건**: 같은 시나리오 3회 이상 + 최신 패치 버전에서도 재현 + 업스트림 이슈 확인\n- **행업**: 엔진 스레드는 살아있는데 이벤트 0건이고 슬롯이 10분 이상 안 움직임 → **`엔진 결함 판정` row 에서 상시 측정**\n- **오프셋 오염**: 재기동 시 저장 LSN이 슬롯 `restart_lsn` 보다 뒤 → `SlotContinuityGuard` 로그가 근거\n- **메모리 누수**: 24시간 부하에서 GC 이후에도 heap 단조 증가\n\n**대안 두 개는 등가가 아니다.** 버전 컬럼 폴링은 **DELETE 를 못 잡는다**(지워진 행은 조회에 안 나온다) → 원본이 소프트 삭제를 쓴다는 전제가 필요. 논리 복제 직접 소비(pgjdbc replication API)는 슬롯·오프셋·스키마 변경 처리를 직접 만들어야 해서 V2~V4에서 검증한 걸 다시 만드는 셈. → **전환 판단의 첫 질문은 \"Debezium 이 불안정한가\"가 아니라 \"원본 테이블에 소프트 삭제를 강제할 수 있는가\"다.** 안 되면 선택지가 사실상 하나다."
+        "content": "| 항목 | 현재 | 권고 | 근거 |\n|---|---|---|---|\n| `max_slot_wal_keep_size` | **-1** | 디스크 여유의 20~30% | V2. 초과 시 슬롯 무효화지만 디스크 고갈보단 낫다 |\n| `CDC_HEARTBEAT_TABLE` | `cdc_heartbeat` | 유지 | V6. 비우면 유휴 구간에 슬롯이 전혀 전진하지 않는다 |\n| `REPLICA IDENTITY` | 전 테이블 FULL | **유지** | V5. 이 스택에서는 선택이 아니라 전제다(자리표시자가 없다) |\n| 진행 지점 저장 | 슬롯 + 수신측 `cdc_checkpoint` | 유지 | V3. 슬롯만으로는 유실을 탐지할 방법이 없다 |\n| `CDC_FAIL_ON_CAPTURE_GAP` | `true` | 유지하되 **판정식 수정 필요** | V3. heartbeat 전진 때문에 오탐이 난다 |\n| `CDC_BATCH_MAX_SIZE` / `MAX_WAIT` | `500` / `200ms` | 부하에 맞춰 조정 | 배치를 키우면 지연↓ 메모리↑ |\n| 슬롯 lag 경보 | **추가함** | warn 512MB / crit 2GB | V2. 165 bytes/변경 기준 환산 |\n| `wal_status` 감시 | **추가함** | unreserved 경고 / lost 즉시 | V3 |\n| 원천 쓰기 권한 | heartbeat + snapshot 메타데이터 | **불가피** | 원천을 못 건드리면 `CDC_SNAPSHOT_ENABLED=false` + heartbeat 끔, 그 대가는 유휴 WAL 누적 |\n\n**Java 판과 다른 결정 두 가지**\n1. 오프셋 파일이 없으므로 `offset.flush.interval.ms` 에 해당하는 손잡이가 없다. ack 주기는 배치 크기·대기시간이 정한다.\n2. heartbeat 설정이 표 하나로 끝난다. 대신 원천에 쓰기 권한이 필요하다."
       }
     },
     {
@@ -4173,7 +4177,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### 이번에 계측으로 들어간 것\n\n| 항목 | 어떻게 |\n|---|---|\n| `wal_status` / `safe_wal_size` (V3) | `cdc_slot_status_code`, `cdc_slot_safe_wal_size_bytes` + 경보 |\n| DLQ 패널 (V6) | `cdc_dlq_total_*`, `cdc_dlq_rows{status}` + 판정식 반영 |\n| WAL 증가율 · **다운 허용시간** (V2) | `cdc_wal_lsn_bytes_total` (COUNTER) ÷ `node_filesystem_avail_bytes` |\n| 캡처 갭 상시 판정 (V3) | `cdc_checkpoint_lsn − cdc_slot_restart_lsn_bytes` |\n| 시계 편차 (V1) | `cdc_clock_epoch_seconds` vs `process_uptime_seconds`, `timestamp()` 기준 |\n| 테이블별 방어 기제 (V4) | `cdc_guard_lsn_guard`, `cdc_guard_soft_delete` |\n| REPLICA IDENTITY · TOAST (V5) | `cdc_replica_identity_full_image`, `cdc_toast_bytes`, `cdc_column_avg_width_bytes` |\n| 고아 참조 대사 (V6) | `cdc_orphan_rows` — `<부모>_id` 규칙으로 자동 발견 |\n| 운영 파라미터 현재값 | `cdc_guc_value` |\n| **필드 단위 변경 식별** (V1) | `cdc_change_audit` 표 직접 조회 + `cdc_change_audit_rows_total` — 필드명은 레이블로 안 올린다(카디널리티) |\n| **capture gap 직접 신호** (V3) | `cdc_capture_gap` 게이지 + `CdcCaptureGap` 경보 |\n| **HALT / 기동실패 카운터** (V3) | `cdc_pipeline_halts_total{reason}` + `CdcPipelineHalted` 경보 |\n| **격리 발생 추이** (V6) | `cdc_dead_letters_total` 테이블별 — 불일치가 유실인지 격리인지 가른다 |\n| **heartbeat 나이** (V6) | `cdc_heartbeat_age_seconds` — up=1 이어도 자라면 silent failure |\n| **엔진 결함 판정 3종** | 행업 / 오프셋 오염 / 메모리 누수를 숫자로 고정 (전용 row) |\n| 경보 22종 | `prometheus/rules/cdc-alerts.yml` |\n\n*`node_exporter` 는 이미 스택에 있었다 — V2 의 \"도입 필요\" 항목은 이미 해소된 상태였고, 이번에 WAL 증가율과 묶어 허용시간 산출로 연결했다.*\n\n### 코드 수정이 필요해 아직 남은 것\n\n1. **`heartbeat.interval.ms` + `heartbeat.action.query`** → `DebeziumEngineManager` (V6). 결론은 났는데 설정에 없다. 화면에는 `heartbeat 나이` 패널이 준비돼 있어 설정을 걸면 바로 값이 뜬다.\n2. ~~capture-gap / HALT 카운터~~ → **해소됨.** `PipelineMetrics.captureGap()` / `pipelineHalted()` 로 직접 신호가 나오고 경보까지 붙었다.\n3. **체크섬 대사의 주기 실행** (V6). 전체 스캔이라 스크랩에 못 올린다 — 야간 배치 또는 구간 한정으로.\n4. **DEFAULT vs FULL WAL 비용 실측** (V5→V2). 측정 수단('변경 1건당 WAL' 패널)은 준비됐고 실행이 남았다.\n5. **테이블별 V4 재실행** — `car` 는 LSN 가드가 없어 순서 역전에 노출돼 있다.\n\n### 대시보드로는 못 채우는 것\n\n**재현 요건**(같은 시나리오 3회 이상 + 최신 패치 + 업스트림 이슈)은 사람이 판단할 영역이다. `엔진 결함 판정` row 는 \"한 번의 증상\"을 숫자로 고정할 뿐, 그것이 전환 사유가 되려면 재현 요건이 따로 서야 한다."
+        "content": "### 이번에 계측으로 들어간 것\n\n| 항목 | 어떻게 |\n|---|---|\n| `wal_status` / `safe_wal_size` (V3) | `cdc_slot_status_code`, `cdc_slot_safe_wal_size_bytes` + 경보 |\n| 슬롯 restart / confirmed LSN (V3·V6) | `cdc_slot_restart_lsn_bytes`, `cdc_slot_confirmed_lsn_bytes` |\n| DLQ 패널 (V6) | `cdc_dlq_total_*`, `cdc_dlq_rows{status}` + 판정식 반영 |\n| WAL 증가율 · **다운 허용시간** (V2) | `cdc_wal_lsn_bytes_total` (COUNTER) ÷ `node_filesystem_avail_bytes` |\n| 진행 지점 상시 관측 (V3) | `cdc_checkpoint_lsn`, `cdc_checkpoint_stale_seconds` |\n| 시계 편차 (V1) | 앱이 직접 재는 `cdc_clock_skew_seconds` + DB 스크랩 기반 `cdc_clock_epoch_seconds` |\n| 테이블별 방어 기제 (V4) | `cdc_guard_lsn_guard`, `cdc_guard_soft_delete` |\n| REPLICA IDENTITY · TOAST (V5) | `cdc_replica_identity_full_image`, `cdc_toast_bytes`, `cdc_column_avg_width_bytes` |\n| 고아 참조 대사 (V6) | `cdc_orphan_rows` — `<부모>_id` 규칙으로 자동 발견 |\n| 운영 파라미터 현재값 | `cdc_guc_value` |\n| heartbeat 나이 (V6) | `cdc_heartbeat_age_seconds` — up=1 이어도 자라면 silent failure |\n| **capture gap 직접 신호** (V3) | `cdc_capture_gap` 게이지 + `CdcCaptureGap` 경보 |\n| **HALT 카운터** (V3·V4) | `cdc_pipeline_halts_total{reason}` — reason 은 DLQ_RATIO / UNRECOVERABLE 둘뿐(카디널리티) |\n| **스냅샷 진행률** (Go 고유) | `cdc_snapshot_*` — 재적재가 몇 %인지, 멈췄는지 |\n| 경보 | `prometheus/rules/cdc-alerts.yml` |\n\n### 아직 남은 것\n\n1. **캡처 갭 판정식 수정** (V3). 현재는 `슬롯 restart_lsn > 체크포인트` 라 heartbeat 전진만으로도 오탐이 난다. \"마지막으로 확인한 슬롯 위치\" 를 남기고 그것과 견주는 쪽으로 바꿔야 한다.\n2. **체크섬 대사의 주기 실행** (V6). 전체 스캔이라 스크랩에 못 올린다 — 야간 배치 또는 구간 한정으로.\n3. **DEFAULT vs FULL WAL 비용 실측** (V5→V2). 측정 수단('변경 1건당 WAL' 패널)은 준비됐고 실행이 남았다.\n4. **테이블별 V4 재실행** — `car` 는 LSN 가드가 없어 순서 역전에 노출돼 있다.\n\n### 대시보드로는 못 채우는 것\n\n**재현 요건**(같은 시나리오 3회 이상 + 최신 버전 + 업스트림 이슈)은 사람이 판단할 영역이다. `엔진 결함 판정` row 는 \"한 번의 증상\" 을 숫자로 고정할 뿐이다."
       }
     }
   ]

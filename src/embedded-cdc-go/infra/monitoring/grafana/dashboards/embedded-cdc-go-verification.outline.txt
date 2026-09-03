@@ -1,6 +1,6 @@
-# CDC 검증 리포트 (V1–V6)
-uid=embedded-cdc-verify  schema=39  refresh=10s  time=now-1h~now
-tags=cdc,embedded,debezium,verification,report
+# CDC 검증 리포트 (V1–V6, Go)
+uid=embedded-cdc-go-verify  schema=39  refresh=10s  time=now-1h~now
+tags=cdc,embedded,go-pq-cdc,go,verification,report
 
   panel #1 text "이 대시보드 쓰는 법" @ x0 y0 24x8
     text: **V1~V6 검증 항목을 그대로 섹션으로 나눈 리포트용 대시보드다.** 각 섹션은 `통과 기준 → 현재 측정치 → 남은 결정` 순으로 배치했고, 섹션 끝의 메모 패널이 보고서에 
@@ -63,7 +63,7 @@ tags=cdc,embedded,debezium,verification,report
     D  max(cdc_clock_epoch_seconds{job="source-db"} - timestamp(cdc_clock_epoch_seconds{job="source-db"})) - max(cdc_clock_epoch_seconds{job="target-db"} - timestamp(cdc_clock_epoch_seconds{job="target-db"}))  legend="source DB − target DB"
     desc: 첫 줄이 실제 판정에 쓰는 값이다. 앱이 30초마다 원천 clock_timestamp() 를 왕복 보정해 잰다(질의 직전·직후 로컬 시각의 중간값과 견줌 — 보정하지 않으면 왕복의 절반이 편차로 계상된다). 나머지 세 줄은 앱이 안 떠 있을 때를 위한 스크랩 기준 대체 경로다. 양수면 
   panel #10 text "V1 메모 — 보고서에 쓸 문장" @ x12 y20 12x7
-    text: **통과 기준 확정** — `N초`로 비워둔 목표 지연은 코드의 `LATENCY_BUDGET = 5초`로 확정한다. **측정치** - INSERT 531ms · UPDATE 507
+    text: **통과 기준** — 목표 지연은 Java 판과 같은 `5초` 예산으로 본다. **측정치 (results.md · V1)** - INSERT 왕복 5ms · UPDATE 2ms ·
   panel #59 table "필드 단위 변경 식별 — 무엇이 무엇으로 바뀌었나" @ x0 y27 14x8
     overrides 4건
     A  SELECT to_char(source_ts, 'HH24:MI:SS') AS "원천 커밋", source_table AS "테이블", row_key AS "행", changed_fields AS "바뀐 필드", CASE WHEN identifiable THEN '판정됨' ELSE '판정 불가' END AS "식별", before_values AS "이전", after_values AS "이후" FROM cdc_change_audit WHERE $__timeFilter(source_ts) ORDER BY id DESC LIMIT 100
@@ -135,7 +135,7 @@ tags=cdc,embedded,debezium,verification,report
     A  cdc_guc_value{job="source-db"}  instant
     desc: max_slot_wal_keep_size 가 -1 이면 다운 허용시간이 '디스크 찰 때까지'다. 이 표가 보고서의 '운영 전환시 권고 설정값' 항목의 현재값 열이 된다.
   panel #19 text "V2 메모 — 보고서에 쓸 문장" @ x12 y49 12x8
-    text: **측정치** — 다운 중 1000건 → 재기동 후 1000/1000, **유실 0**. 슬롯이 붙잡은 WAL 161.9 KiB, **165 bytes/변경**. **V2 의 실질
+    text: **측정치 (results.md · V2)** - 다운 시간 2,429ms 동안 변경 1,000건 → 재기동 후 **1,000 / 1,000 수신, 유실 0** - 슬롯이 붙잡은 
 [row] V3 — 캡처 연결고리 끊김 · 통과 기준: 유실 자동 탐지 + 재동기화 절차 문서화
   panel #21 stat "슬롯 wal_status" @ x0 y58 6x5
     thresholds base:green 2:orange 3:red
@@ -157,8 +157,8 @@ tags=cdc,embedded,debezium,verification,report
     unit=s
     thresholds base:red 300:green
     calc lastNotNull
-    A  process_uptime_seconds{job="cdc-service"}
-    desc: 재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다.
+    A  time() - process_start_time_seconds{job="cdc-service"}  legend="uptime"
+    desc: 재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다. 컨테이너 기동 시각이 아니라 프로세스 기동 시각이라, 컨테이너는 그대로인데 이 값만 떨어지면 크래시 루프다.
   panel #25 timeseries "캡처 갭 판정 — 체크포인트 LSN − 슬롯 restart_lsn" @ x0 y63 12x8
     unit=bytes
     thresholds base:red 0:green
@@ -178,7 +178,7 @@ tags=cdc,embedded,debezium,verification,report
     D  cdc_slot_active  instant
     desc: lag / safe_wal_size / 상태 / active 를 한 줄로. safe_wal_size = -1 은 max_slot_wal_keep_size 가 -1 이라 산출 불가라는 뜻이다.
   panel #28 text "V3 메모 — 보고서에 쓸 문장" @ x12 y71 12x9
-    text: **측정치** — 슬롯 강제 삭제 후 끊긴 구간 100건 중 **0건 수신**. 엔진이 예외를 내고 종료했고 `SlotContinuityGuard` 도 탐지함. 재동기화 후 **1
+    text: **측정치 (results.md · V3)** - 슬롯 강제 삭제 → 끊긴 구간 100건 중 **0건 수신, 유실 100건** - **슬롯이 새로 만들어졌는가: true** — 라
   panel #62 stat "capture gap (직접 신호)" @ x0 y80 6x6
     decimals=0
     thresholds base:green 1:red
@@ -239,7 +239,7 @@ tags=cdc,embedded,debezium,verification,report
     B  cdc_guard_soft_delete  instant
     desc: V4 를 테이블 하나로 통과시키면 안 되는 이유를 그대로 표로 만든 것. lsn_guard=0 인 테이블은 순서 역전에 노출돼 있다.
   panel #37 text "V4 메모 — 보고서에 쓸 문장" @ x12 y100 12x8
-    text: **측정치** — 중복 200건 유입, 1차 반영 200 / 2차 반영 0, **두 번 반영된 행 0**. 재현은 오프셋을 체크포인트로 되돌려 flush 전에 죽은 상황을 만들었다
+    text: **측정치 (results.md · V4)** - ack 하지 않은 채 정지 → 재기동 후 200건 재유입, **그중 중복(같은 LSN) 200건** - 1차 반영 200행 / 2
 [row] V5 — 이벤트가 비어서 오는 경우 · 통과 기준: 관심 필드가 항상 판독 가능
   panel #39 stat "REPLICA IDENTITY FULL" @ x0 y109 6x5
     decimals=0
@@ -276,7 +276,7 @@ tags=cdc,embedded,debezium,verification,report
     A  cdc_column_avg_width_bytes{job="source-db"}  legend="{{table_name}}.{{column_name}}"
     desc: pg_stats.avg_width — ANALYZE 가 남긴 통계라 비용이 0 이다. 후보를 좁히는 용도이고, 확정은 SELECT max(pg_column_size(컬럼)) FROM 테이블 을 한 번 돌려서 한다. ANALYZE 를 한 번도 안 돈 테이블은 여기 안 나온다.
   panel #45 text "V5 메모 — 보고서에 쓸 문장" @ x0 y122 24x7
-    text: **측정치** — `REPLICA IDENTITY DEFAULT` 일 때 `after` 에 **`__debezium_unavailable_value`** 자리표시자가 와서 현재 값
+    text: **측정치 (results.md · V5)** - INSERT 이벤트에는 대용량 필드가 온전히 실린다 (200,000 bytes) - `REPLICA IDENTITY DEFAULT
 [row] V6 — 최종 안전성 · 통과 기준: 인위적 유실 주입 시 대사에서 검출
   panel #47 stat "최대 행 차이 |source − target|" @ x0 y130 6x5
     decimals=0
@@ -326,7 +326,7 @@ tags=cdc,embedded,debezium,verification,report
     C  cdc_orphan_rows  legend="고아 참조 {{child_table}}→{{parent_table}}"
     desc: 유휴 구간에서 confirmed_flush 가 멈춰 있으면 heartbeat 설정이 빠진 것이다. heartbeat 쿼리가 publication 에 든 테이블에 쓰기를 만들어줘야 confirm 이 일어난다.
   panel #55 text "V6 메모 — 보고서에 쓸 문장" @ x0 y151 24x9
-    text: **측정치** — 정상 상태 300/300 체크섬 일치. **3건 삭제 시 불일치 검출.** 행을 지우지 않고 금액만 1 올렸을 때도 검출(건수는 같은데 체크섬이 다름). hear
+    text: **측정치 (results.md · V6)** - 정상 상태 300 / 300, 체크섬 `0a826cc7…` **일치** - 수신측 3건 임의 삭제 → 건수차 3, **불일치 검출
   panel #65 stat "heartbeat 나이" @ x0 y160 6x7
     unit=s  decimals=0
     thresholds base:green 30:orange 90:red
@@ -339,7 +339,7 @@ tags=cdc,embedded,debezium,verification,report
     A  sum by (table) (rate(cdc_dead_letters_total[5m]))  legend="{{table}} 격리/s"
     B  sum(cdc_dlq_rows{status="PENDING"}) or vector(0)  legend="DLQ PENDING 잔량"
     desc: PDF 지적사항: 대사 불일치가 났을 때 진짜 유실인지 격리 때문인지 구분이 안 됐다. 격리된 이벤트는 유실이 아니라 추적되는 미반영이라 불일치의 정당한 사유다. 판정식(패널 "대사 판정")은 이미 |source − target| − DLQ(PENDING) 으로 보정돼 있고, 이 패널은
-[row] 엔진 결함 판정 — Debezium 전환 논의 진입 기준
+[row] 엔진 결함 판정 — 라이브러리 교체 논의 진입 기준
   panel #68 stat "행업 판정" @ x0 y168 6x5
     decimals=0
     thresholds base:green 1:red
@@ -356,13 +356,13 @@ tags=cdc,embedded,debezium,verification,report
     unit=Bps  decimals=0
     thresholds base:green 1024:orange 10240:red
     calc lastNotNull
-    A  deriv(sum(jvm_memory_used_bytes{job="cdc-service", area="heap"})[6h:1m])
-    desc: 24시간 부하에서 GC 이후에도 heap 이 단조 증가하는지가 메모리 누수 판정이다. 그 기울기를 6시간 창으로 상시 계산한다. 1 KiB/s ≈ 하루 86 MiB.
+    A  deriv(go_memstats_heap_inuse_bytes{job="cdc-service"}[6h:1m])  legend="기울기"
+    desc: 장시간 부하에서 GC 이후에도 힙이 단조 증가하는지가 메모리 누수 판정이다. 그 기울기를 6시간 창으로 상시 계산한다. 1 KiB/s ≈ 하루 86 MiB.
   panel #71 stat "GC 이후 힙 바닥 (1시간)" @ x18 y168 6x5
     unit=bytes  decimals=0
     thresholds base:green
     calc lastNotNull
-    A  min_over_time(sum(jvm_memory_used_bytes{job="cdc-service", area="heap"})[1h:1m])
+    A  min_over_time(go_memstats_heap_inuse_bytes{job="cdc-service"}[1h:1m])  legend="힙 바닥"
     desc: 1시간 최소 힙. 누수면 GC 를 해도 이 바닥값이 계단식으로 올라간다. 순간 힙 사용량은 부하에 따라 출렁이므로 바닥값을 봐야 한다.
   panel #72 timeseries "행업 판정 3요소 — up · 이벤트 유입 · 슬롯 전진" @ x0 y173 12x8
     decimals=2
@@ -371,15 +371,15 @@ tags=cdc,embedded,debezium,verification,report
     B  sum(rate(cdc_events_total[10m]))  legend="이벤트 유입 (events/s)"
     C  max(increase(cdc_slot_confirmed_lsn_bytes[10m]))  legend="10분간 슬롯 전진 (bytes)"
     desc: 셋을 겹쳐 봐야 유휴(이벤트도 0, 슬롯도 0, 그러나 원천에 변경이 없음)와 행업(원천에 변경이 있는데 0)이 갈린다. heartbeat 를 걸면 유휴 구간에서도 슬롯이 전진한다.
-  panel #73 timeseries "JVM 힙 · GC 정지" @ x12 y173 12x8
+  panel #73 timeseries "Go 힙 · GC 정지" @ x12 y173 12x8
     unit=bytes  decimals=3
     overrides 1건
-    A  sum(jvm_memory_used_bytes{job="cdc-service", area="heap"})  legend="힙 사용"
-    B  min_over_time(sum(jvm_memory_used_bytes{job="cdc-service", area="heap"})[1h:1m])  legend="1시간 힙 바닥"
-    C  rate(jvm_gc_pause_seconds_sum{job="cdc-service"}[1m])  legend="초당 GC 정지 (s/s)"
-    desc: 힙 사용량과 그 바닥값, 그리고 초당 GC 정지 시간. 바닥값이 우상향하면서 GC 정지가 같이 늘면 누수 쪽이고, 힙은 출렁여도 바닥이 평평하면 정상 부하다.
+    A  go_memstats_heap_inuse_bytes{job="cdc-service"}  legend="힙 사용(inuse)"
+    B  min_over_time(go_memstats_heap_inuse_bytes{job="cdc-service"}[1h:1m])  legend="1시간 힙 바닥"
+    C  rate(go_gc_duration_seconds_sum{job="cdc-service"}[1m])  legend="초당 GC 정지 (s/s)"
+    desc: 힙 사용량과 그 바닥값, 그리고 초당 GC 정지 시간. 바닥값이 우상향하면서 GC 정지가 같이 늘면 누수 쪽이고, 힙은 출렁여도 바닥이 평평하면 정상 부하다. 여기서 큐(CDC_BATCH_QUEUE_SIZE)와 배치 크기가 곧 힙 상한이다 — JVM 처럼 미리 잡아 두는 상한이 없다.
   panel #74 text "판정 기준 — 이 화면이 무엇을 대신하는가" @ x0 y181 24x7
-    text: 원문에는 전환 조건이 **"재현 시 판단"** 이라고만 적혀 있었다. 그러면 장애 한 번에 전환 논의가 된다. 위 네 패널은 그 "재현"을 숫자로 고정한 것이다. | 판정 | 기준
+    text: 전환/교체 조건을 "재현 시 판단" 으로만 적어 두면 장애 한 번에 논의가 열린다. 위 네 패널은 그 "재현" 을 숫자로 고정한 것이다. | 판정 | 기준 | 이 화면에서 | |-
 [row] 완료 조건 — 권고 설정값 · 남은 작업
   panel #57 text "운영 전환시 권고 설정값" @ x0 y189 12x11
     text: | 항목 | 현재 | 권고 | 근거 | |---|---|---|---| | `max_slot_wal_keep_size` | **-1** | 디스크 여유의 20~30% | V2. 초
