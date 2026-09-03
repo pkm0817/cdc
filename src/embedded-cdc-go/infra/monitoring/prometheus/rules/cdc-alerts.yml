@@ -1,13 +1,27 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# CDC 파이프라인 경보 규칙
+# CDC 파이프라인 경보 규칙 (Go 판)
+#
+# Java 판(embedded-cdc)의 규칙을 옮기되, 라이브러리 성질이 달라 판정이 달라지는
+# 세 곳을 고쳤다. 그 세 곳이 이 파일에서 읽을 가치가 있는 전부다.
+#
+#   1. 캡처 갭의 간접 판정(LSN 뺄셈)을 쓰지 않는다.
+#      go-pq-cdc 는 heartbeat 이벤트를 리스너에 넘기지 않고 스스로 ack 한다.
+#      그래서 유휴 구간에는 슬롯만 전진하고 cdc_checkpoint 는 그대로다 —
+#      "체크포인트 < 슬롯 restart" 가 정상 상태라 갭 판정에 쓸 수 없다.
+#      대신 슬롯 소실(CdcSlotMissing)과 wal_status(CdcSlotWalLost)로 잡는다.
+#   2. 슬롯 소실의 무게가 다르다. Debezium 은 "오프셋은 있는데 슬롯이 없다" 를
+#      스스로 잡지만, 여기서는 라이브러리가 조용히 새 슬롯을 만들고 이어서 돈다.
+#      슬롯 관련 경보가 유일한 탐지 경로다.
+#   3. 스냅샷 진행 상황이 원천 표에 남으므로 "재적재가 멈췄다" 를 경보로 잡을 수 있다.
+#      Java 판에는 없는 규칙이다.
 #
 # 임계값의 출처는 검증 결과다. 임의로 고른 숫자가 아니다.
-#   슬롯 lag 512MB/2GB : V2 의 165 bytes/변경 기준으로 약 320만 / 1300만 변경분
-#   지연 5초           : V1 의 LATENCY_BUDGET (코드에 박혀 있는 값)
+#   슬롯 lag 512MB/2GB : V2 의 변경당 WAL 기준 수백만 변경분
+#   지연 5초           : V1 의 LATENCY_BUDGET
 #   시계 편차 0.5초    : 목표 지연의 10%. 이보다 크면 그 회차 지연값을 못 쓴다
 #
-# 알림 전송 경로(Alertmanager)는 아직 붙이지 않았다. 지금은 Prometheus 의
-# Alerts 탭과 Grafana 에서 상태를 확인하는 용도다.
+# 알림 전송 경로(Alertmanager)는 붙이지 않았다. Prometheus 의 Alerts 탭과
+# PoC 대시보드의 "현재 발생 중인 경보" 패널에서 확인하는 용도다.
 # ─────────────────────────────────────────────────────────────────────────────
 groups:
   - name: cdc-pipeline
@@ -15,9 +29,8 @@ groups:
     rules:
 
       # ── V3 : 캡처 연결고리 ─────────────────────────────────────────────────
-      # 기동 거부(fail-on-capture-gap)도 여기에 걸린다. 프로세스가 안 뜨면
-      # /actuator/prometheus 스크랩이 실패해 up 이 0 이 되기 때문이다.
-      # 앱에 HALT/기동실패 카운터가 생기기 전까지는 이것이 유일한 신호다.
+      # 기동 거부(CDC_FAIL_ON_CAPTURE_GAP=true)도 여기에 걸린다. 프로세스가 안 뜨면
+      # /metrics 스크랩이 실패해 up 이 0 이 되기 때문이다.
       - alert: CdcServiceDown
         expr: up{job="cdc-service"} == 0
         for: 1m
@@ -27,6 +40,7 @@ groups:
           description: "SlotContinuityGuard 가 캡처 갭을 탐지해 기동을 거부한 경우도 여기에 잡힌다. 컨테이너 로그를 먼저 확인할 것."
 
       # 재시작 루프. 기동 거부가 반복되면 up 이 0/1 을 오가서 위 규칙만으로는 놓친다.
+      # 여기서 실제로 그 모습을 봤다 — 0.4초 간격으로 재기동하며 로그만 쌓였다.
       - alert: CdcServiceRestartLoop
         expr: changes(process_start_time_seconds{job="cdc-service"}[15m]) > 3
         for: 1m
@@ -35,33 +49,20 @@ groups:
           summary: "cdc-service 15분 내 4회 이상 재기동"
           description: "기동 직후 실패하는 상태다. 대시보드에서는 '이벤트가 안 오네' 정도로만 보이므로 이 경보가 필요하다."
 
-      # 앱이 직접 내는 신호다. 갭을 발견하면 엔진을 띄우지 않고 이 값을 1 로 둔다.
-      # 간접 추정(아래 CdcCaptureGapByLsn)보다 이쪽이 먼저다 — 원인을 이름으로 말해 준다.
+      # 앱이 직접 내는 신호다. 갭을 발견하면 이 값을 1 로 두고,
+      # CDC_FAIL_ON_CAPTURE_GAP=true 면 엔진을 띄우지 않는다.
+      #
+      # 주의 — 현재 가드는 "슬롯 restart_lsn > cdc_checkpoint" 를 갭으로 본다.
+      # heartbeat 가 슬롯만 밀기 때문에 유휴 구간을 지나면 갭이 없어도 1 이 된다.
+      # 이 경보가 떴을 때는 먼저 대사(행 수·체크섬)를 확인할 것 — 실제 유실이
+      # 아니라면 오탐이고, 복구 스위치로 한 번 띄워 넘긴 뒤 원인을 고쳐야 한다.
       - alert: CdcCaptureGap
         expr: cdc_capture_gap == 1
         for: 1m
         labels: { severity: critical, verification: V3 }
         annotations:
-          summary: "캡처 갭 — 엔진이 기동하지 않았다"
-          description: "끊긴 구간은 다시 받을 수 없다. 재동기화 절차로 넘어갈 것(원본에서 사라진 행 처리 단계 포함)."
-
-      # 앱이 아예 안 뜨는 상황에서는 cdc_capture_gap 자체가 안 나온다.
-      # DB 쪽 지표만으로 판정하는 경로를 하나 남겨 둔다 — 지우지 말 것.
-      - alert: CdcCaptureGapByLsn
-        expr: (max(cdc_checkpoint_lsn) - max(cdc_slot_restart_lsn_bytes)) < 0
-        for: 1m
-        labels: { severity: critical, verification: V3 }
-        annotations:
-          summary: "캡처 갭(간접) — 체크포인트 LSN 이 슬롯 restart_lsn 보다 뒤"
-          description: "앱 지표가 없을 때의 대체 판정이다. 앱이 살아 있다면 CdcCaptureGap 을 먼저 볼 것."
-
-      # 파이프라인이 스스로 멈춘 횟수. 오프셋을 전진시키지 않으므로 유실은 없다.
-      - alert: CdcPipelineHalted
-        expr: increase(cdc_pipeline_halts_total[10m]) > 0
-        labels: { severity: critical, verification: V4 }
-        annotations:
-          summary: "파이프라인 정지 — reason={{ $labels.reason }}"
-          description: "오프셋이 전진하지 않아 유실은 없다. 원인을 고치고 재기동해야 재개된다."
+          summary: "캡처 갭 판정 — 되받을 수 없는 구간이 있다고 보았다"
+          description: "먼저 행 수·체크섬 대사로 실제 유실인지 확인할 것. 유실이면 재동기화, 아니면 heartbeat 로 인한 오탐이다."
 
       - alert: CdcSlotMissing
         expr: absent(cdc_slot_active)
@@ -69,7 +70,7 @@ groups:
         labels: { severity: critical, verification: V3 }
         annotations:
           summary: "복제 슬롯이 존재하지 않음"
-          description: "슬롯이 삭제됐다. PostgreSQL 16 은 페일오버 시 슬롯을 승계하지 않으므로 이중화 전환 후에도 이 상태가 된다."
+          description: "이 스택에서는 라이브러리가 슬롯 소실을 탐지하지 못하고 새로 만들어 이어서 돈다. 이 경보가 사실상 유일한 탐지 경로다."
 
       - alert: CdcSlotInactive
         expr: cdc_slot_active == 0
@@ -95,6 +96,14 @@ groups:
           summary: "슬롯 {{ $labels.slot_name }} wal_status = lost — 필요한 WAL 이 이미 잘림"
           description: "V3 상황 확정. 재동기화 외에 복구 방법이 없다."
 
+      # 파이프라인이 스스로 멈춘 횟수. ack 를 보내지 않으므로 유실은 없다.
+      - alert: CdcPipelineHalted
+        expr: increase(cdc_pipeline_halts_total[10m]) > 0
+        labels: { severity: critical, verification: V4 }
+        annotations:
+          summary: "파이프라인 정지 — reason={{ $labels.reason }}"
+          description: "슬롯이 전진하지 않아 유실은 없다. 원인을 고치고 재기동해야 재개된다."
+
       # ── V2 : Provider Down · WAL 압력 ─────────────────────────────────────
       - alert: CdcSlotLagWarning
         expr: cdc_slot_lag_bytes > 536870912
@@ -102,7 +111,7 @@ groups:
         labels: { severity: warning, verification: V2 }
         annotations:
           summary: "슬롯 보유 WAL 512MB 초과 ({{ $value | humanize1024 }}B)"
-          description: "165 bytes/변경 기준 약 320만 건분. 컨슈머가 살아 있는지 먼저 확인할 것."
+          description: "컨슈머가 살아 있는지 먼저 확인할 것. 슬롯 active 와 heartbeat 나이를 함께 본다."
 
       - alert: CdcSlotLagCritical
         expr: cdc_slot_lag_bytes > 2147483648
@@ -116,10 +125,6 @@ groups:
       - alert: CdcWalDiskHeadroomLow
         # 나눗셈 양쪽을 모두 집계해 라벨을 벗긴다. 한쪽에만 라벨이 남으면 매칭이 안 돼
         # 결과가 통째로 비고, 경보는 조용히 영원히 안 뜬다.
-        # 마운트포인트를 데이터 디렉터리에 가까운 순서로 명시하고 마지막을 루트로 못박는다.
-        # 예전 폴백은 fstype 만 보고 max() 를 쳐서 "가장 큰 파일시스템" 을 집었는데, 데이터가
-        # 작은 장치에 있으면 허용시간을 과대평가한다. 실제로 이 환경에서 /var/lib 은 매칭되지
-        # 않아 늘 폴백으로 떨어지고 있었다.
         expr: >
           (max(node_filesystem_avail_bytes{fstype=~"ext4|xfs", mountpoint="/var/lib/postgresql/data"})
            or max(node_filesystem_avail_bytes{fstype=~"ext4|xfs", mountpoint="/var/lib"})
@@ -133,11 +138,11 @@ groups:
 
       # ── V1 : 지연 · 처리량 ────────────────────────────────────────────────
       # 예산을 넘겼다고 바로 경보하지 않는다. cdc_end_to_end_lag_seconds 는
-      # source 의 ts_ms(DB 시계)와 적재 시각(앱 시계)의 차이라, 두 시계가 어긋나면
-      # 그 편차가 지연으로 둔갑한다. V1 규칙대로 편차가 목표 지연의 10%(0.5초)를
-      # 넘는 구간의 지연값은 판정에 쓰지 않는다.
+      # 원천 커밋 시각(DB 시계)과 적재 시각(앱 시계)의 차라, 두 시계가 어긋나면
+      # 그 편차가 지연으로 둔갑한다. 편차가 목표 지연의 10%(0.5초)를 넘는 구간의
+      # 지연값은 판정에 쓰지 않는다.
       #
-      # and on() 은 레이블이 없는 편차 게이지를 테이블별 지연 시계열 전부에
+      # and on() 은 라벨이 없는 편차 게이지를 테이블별 지연 시계열 전부에
       # 맞물리기 위한 것이다. on(table) 로 쓰면 짝이 없어 아무것도 안 남는다.
       - alert: CdcLatencyBudgetExceeded
         expr: >
@@ -150,7 +155,7 @@ groups:
           description: "시계 편차는 이미 걸러진 상태다. 실제 지연이므로 원천 커밋 속도 대비 적용 속도를 볼 것."
 
       # 게이트만 걸어두면 시계가 틀어졌을 때 지연 경보가 조용히 사라져
-      # "지연 없음"으로 보인다. 판정을 못 하는 상태 자체를 따로 알린다.
+      # "지연 없음" 으로 보인다. 판정을 못 하는 상태 자체를 따로 알린다.
       - alert: CdcLatencyUnverifiable
         expr: >
           cdc_end_to_end_lag_seconds_max > 5
@@ -161,10 +166,8 @@ groups:
           summary: "지연 판정 불가 — 시계 편차가 허용치를 넘음 (table={{ $labels.table }})"
           description: "지연이 큰 것인지 시계가 틀린 것인지 구분할 수 없다. NTP 를 먼저 맞추고 다시 잰다."
 
-      # 지연 수치의 신뢰성 자체를 감시한다. 1차 실행에서 3,561ms 편차가 났던 항목.
-      # 앱이 직접 재는 값이다 — SourceClockSkewProbe 가 source DB 의 clock_timestamp() 를
-      # 왕복 보정해 자기 시계와 견준다. 지연 지표를 오염시키는 것이 정확히 이 한 쌍이므로
-      # 아래 스크랩 기반 대체 판정보다 이쪽이 먼저다.
+      # 앱이 직접 재는 값이다 — ClockSkewProbe 가 source DB 의 clock_timestamp() 를
+      # 왕복 보정해 자기 시계와 견준다.
       - alert: CdcClockSkew
         expr: abs(cdc_clock_skew_seconds) > 0.5
         for: 5m
@@ -175,11 +178,6 @@ groups:
 
       # 앱이 안 떠 있으면 위 지표가 아예 없다. DB 쪽 지표만으로 판정하는 경로를 남겨 둔다.
       - alert: CdcClockSkewByScrape
-        # DB 시계 − 스크랩 시각을 잰다. 앱 wall clock 을 내는 기본 메트릭이 없어서
-        # 앱 지표가 없을 때는 Prometheus 시계로 대신한다.
-        # process_start_time_seconds + process_uptime_seconds 로 대리 계산하면 틀린다 —
-        # JVM uptime 은 호스트 절전 구간을 안 세므로(컨테이너 9시간 가동에 uptime 4.96시간)
-        # 절전 시간이 그대로 가짜 편차로 잡힌다.
         expr: >
           abs(max(cdc_clock_epoch_seconds{job="source-db"}
                   - timestamp(cdc_clock_epoch_seconds{job="source-db"}))) > 0.5
@@ -223,16 +221,13 @@ groups:
 
       # ── V2 : 긴 트랜잭션이 슬롯을 붙잡는 경우 ──────────────────────────────
       # CdcSlotNotAdvancing 과 짝이지만 상황이 정반대다.
-      #   저쪽 : 슬롯도 안 움직이고 이벤트도 없다  -> 유휴인데 heartbeat 가 안 도는 것
+      #   저쪽 : 슬롯도 안 움직이고 이벤트도 없다     -> 유휴인데 heartbeat 가 안 도는 것
       #   이쪽 : 슬롯은 안 움직이는데 이벤트는 흐른다 -> 큰 트랜잭션이 아직 안 끝난 것
       #
-      # 논리 복제는 트랜잭션 경계에서만 flush 를 확인한다. 30만 행을 한 문장으로
-      # UPDATE 하면 그 30만 건이 전부 반영될 때까지 슬롯이 트랜잭션 시작점에 묶이고
-      # 그동안 WAL 이 쌓인다 (실측 864MB). 프로세스가 멀쩡히 살아 있어도 생기는
-      # 압력이라 "다운 시간 x WAL 증가율" 로 잡는 V2 계산에는 잡히지 않는다.
-      #
-      # 정상적인 대량 배치에서도 잠깐씩 걸린다. 15분을 넘기면 트랜잭션 크기를
-      # 줄이라는 신호로 본다 — 원천 배치를 쪼개는 것 외에 컨슈머 쪽 대응책이 없다.
+      # 논리 복제는 트랜잭션 경계에서만 flush 를 확인한다. 대량 행을 한 문장으로
+      # UPDATE 하면 그 전부가 반영될 때까지 슬롯이 트랜잭션 시작점에 묶이고
+      # 그동안 WAL 이 쌓인다. 프로세스가 멀쩡히 살아 있어도 생기는 압력이라
+      # "다운 시간 x WAL 증가율" 로 잡는 V2 계산에는 잡히지 않는다.
       - alert: CdcSlotPinnedByLongTransaction
         expr: >
           increase(cdc_slot_confirmed_lsn_bytes[15m]) == 0
@@ -243,8 +238,6 @@ groups:
           summary: "긴 트랜잭션이 슬롯을 15분 이상 붙잡고 있다"
           description: "이벤트는 처리되는데 슬롯이 전진하지 않는다. 그동안 WAL 은 계속 쌓인다. 원천 배치의 트랜잭션 크기를 줄일 것."
 
-      # 앱이 적용한 지점과 슬롯이 놓아준 지점의 격차. 위 경보가 걸리기 전에도
-      # 이 값으로 "얼마나 큰 트랜잭션이 진행 중인지" 를 크기로 볼 수 있다.
       - alert: CdcSlotBacklogLarge
         expr: (max(cdc_checkpoint_lsn) - max(cdc_slot_confirmed_lsn_bytes)) > 1073741824
         for: 10m
@@ -254,10 +247,10 @@ groups:
           description: "진행 중인 트랜잭션이 크다는 뜻이다. 원천 디스크 여유와 함께 볼 것."
 
       # ── V6 : heartbeat ────────────────────────────────────────────────────
-      # 관심 테이블에 변경이 없으면 슬롯이 전혀 전진하지 않는다. heartbeat.interval.ms 만으로는
-      # 부족하고 heartbeat.action.query 가 publication 테이블에 쓰기를 만들어야 confirm 이 일어난다.
-      # 둘 다 설정에 들어갔으므로(V6 반영) 이 경보는 이제 뜨지 않는 것이 정상이다.
-      # 다시 뜬다면 heartbeat 쿼리가 실패하고 있다는 뜻이다 — cdc_user 쓰기 권한을 먼저 볼 것.
+      # 관심 테이블에 변경이 없으면 슬롯이 전혀 전진하지 않는다. go-pq-cdc 는
+      # heartbeat 표 이름만 주면 스스로 쓰고 스스로 ack 한다(Java 판처럼 action.query 를
+      # 따로 걸 필요가 없다). 그래서 이 경보가 뜬다는 것은 heartbeat 쓰기가
+      # 실패하고 있다는 뜻이다 — cdc_user 의 cdc_heartbeat 쓰기 권한을 먼저 볼 것.
       - alert: CdcSlotNotAdvancing
         expr: >
           increase(cdc_slot_confirmed_lsn_bytes[30m]) == 0
@@ -266,4 +259,26 @@ groups:
         labels: { severity: warning, verification: V6 }
         annotations:
           summary: "유휴 구간에서 슬롯이 30분간 전진하지 않음"
-          description: "heartbeat 미설정 증상이다. interval + action.query 를 함께 걸어야 한다."
+          description: "heartbeat 가 돌지 않는다는 뜻이다. cdc_heartbeat 쓰기 권한과 CDC_HEARTBEAT_TABLE 설정을 확인할 것."
+
+      # heartbeat 나이. 위 규칙(30분)보다 훨씬 빨리 뜨는 1차 판별식이다.
+      # 프로세스가 살아 있어도(up==1) 원천에 붙어 있지 않으면 이 값만 자란다.
+      - alert: CdcHeartbeatStale
+        expr: cdc_heartbeat_age_seconds > 90
+        for: 2m
+        labels: { severity: critical, verification: V6 }
+        annotations:
+          summary: "heartbeat 가 {{ $value | humanizeDuration }} 동안 갱신되지 않음"
+          description: "silent failure 의 1차 신호다. up==1 이어도 원천에 붙어 있지 않은 상태일 수 있다."
+
+      # ── Go 판 고유 : 스냅샷 ───────────────────────────────────────────────
+      # go-pq-cdc 는 초기 적재 진행 상황을 원천의 cdc_snapshot_job 에 남긴다.
+      # 그 덕에 "재적재를 걸었는데 멈췄다" 를 밖에서 볼 수 있다 — Java 판에는
+      # 대응하는 지표가 없다(오프셋 파일 안에 감춰져 있다).
+      - alert: CdcSnapshotStalled
+        expr: cdc_snapshot_completed == 0 and cdc_snapshot_age_seconds > 900
+        for: 5m
+        labels: { severity: warning, verification: V3 }
+        annotations:
+          summary: "스냅샷이 15분 넘게 끝나지 않음 (slot={{ $labels.slot_name }})"
+          description: "청크 진행률 패널을 함께 볼 것. 진행률이 멈춰 있으면 청크를 잡은 인스턴스가 죽은 것이다."
