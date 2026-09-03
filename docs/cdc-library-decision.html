@@ -1,0 +1,1608 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CDC 캡처 라이브러리 선택 — Debezium(Java) 대 go-pq-cdc(Go)</title>
+<style>
+/* ============================================================
+   HW Doc Kit - design tokens & base primitives
+   금지: 이모지, 보라/바이올렛/인디고 계열, 무지개 그라데이션
+   기준색: 한화 오렌지 계열
+   ============================================================ */
+:root{
+  /* brand */
+  --hw:#F37321;          /* 기본 오렌지 */
+  --hw-dk:#D2590F;       /* 진한 오렌지 (호버/강조선) */
+  --hw-dp:#A8420A;       /* 가장 진한 오렌지 (제목 강조) */
+  --hw-lt:#FFB27A;       /* 밝은 오렌지 (보조 채움) */
+  --hw-pale:#FFF1E7;     /* 아주 옅은 오렌지 (배경 톤) */
+  --hw-tint:#FDE3D1;     /* 옅은 오렌지 (테두리/칩) */
+
+  /* ink & surface */
+  --ink:#141414; --ink2:#3F3F3F; --ink3:#6E6E6E; --ink4:#9A9A9A;
+  --bg:#FFFFFF; --bg2:#FAF8F6; --bg3:#F2EEEA;
+  --line:#E4E1DE; --line2:#CFCAC5;
+
+  /* semantic (보라 금지 - 보색은 청록/황토/벽돌색으로) */
+  --ok:#2E7D5B; --ok-bg:#E8F3EE;
+  --warn:#B8791A; --warn-bg:#FBF1DF;
+  --risk:#C0392B; --risk-bg:#FBEAE7;
+  --info:#2A6F97; --info-bg:#E7F0F6;
+
+  --radius:10px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(20,20,20,.06), 0 8px 24px rgba(20,20,20,.06);
+  --font:"Pretendard","Malgun Gothic","Apple SD Gothic Neo","Segoe UI",system-ui,sans-serif;
+  --mono:"D2Coding","Cascadia Mono","Consolas","JetBrains Mono",ui-monospace,monospace;
+}
+:root[data-theme="dark"]{
+  --hw:#FF8A3D; --hw-dk:#F37321; --hw-dp:#FFB27A; --hw-lt:#7A3E14; --hw-pale:#241812; --hw-tint:#4A2A15;
+  --ink:#F2EFEC; --ink2:#CFC9C3; --ink3:#9E9691; --ink4:#77706B;
+  --bg:#141312; --bg2:#1C1A18; --bg3:#252220;
+  --line:#332F2C; --line2:#464038;
+  --ok:#5CB58C; --ok-bg:#17251F; --warn:#D9A445; --warn-bg:#2A2317;
+  --risk:#E2705F; --risk-bg:#2A1917; --info:#6BA6CC; --info-bg:#161F26;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.35);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font); color:var(--ink); background:var(--bg2);
+  -webkit-font-smoothing:antialiased; line-height:1.55;
+  font-variant-numeric:tabular-nums;
+}
+h1,h2,h3,h4{margin:0; line-height:1.25; font-weight:700; letter-spacing:-.01em}
+p{margin:0 0 .6em}
+a{color:var(--hw-dk); text-underline-offset:2px}
+:root[data-theme="dark"] a{color:var(--hw)}
+code,kbd,pre,samp{font-family:var(--mono)}
+hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+
+/* ---------- 공통 프리미티브 ---------- */
+.kicker{
+  font-size:13px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--hw-dk);
+}
+.rule{height:3px;background:var(--hw);border-radius:2px;width:56px}
+.muted{color:var(--ink3)}
+.small{font-size:13px}
+.mono{font-family:var(--mono);font-size:.92em}
+
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;
+  background:var(--hw-pale);color:var(--hw-dp);border:1px solid var(--hw-tint);
+}
+.chip--ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
+.chip--warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn)}
+.chip--risk{background:var(--risk-bg);color:var(--risk);border-color:var(--risk)}
+.chip--info{background:var(--info-bg);color:var(--info);border-color:var(--info)}
+.chip--neutral{background:var(--bg3);color:var(--ink2);border-color:var(--line2)}
+
+.card{
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;
+}
+.card--accent{border-left:4px solid var(--hw)}
+.card__t{font-size:16px;font-weight:700;margin:0 0 6px}
+.card__d{font-size:14px;color:var(--ink2);margin:0}
+
+.kpi{display:flex;gap:14px;flex-wrap:wrap}
+.kpi__item{
+  flex:1 1 0;min-width:140px;background:var(--bg);border:1px solid var(--line);
+  border-top:3px solid var(--hw);border-radius:var(--radius);padding:14px 16px;
+}
+.kpi__v{font-size:30px;font-weight:800;letter-spacing:-.02em;color:var(--hw-dp)}
+:root[data-theme="dark"] .kpi__v{color:var(--hw)}
+.kpi__l{font-size:12px;color:var(--ink3);font-weight:600}
+
+.tbl{width:100%;border-collapse:collapse;font-size:14px;background:var(--bg)}
+.tbl th,.tbl td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+.tbl thead th{background:var(--hw-pale);color:var(--hw-dp);font-size:12.5px;
+  letter-spacing:.03em;text-transform:uppercase;border-color:var(--hw-tint)}
+.tbl tbody tr:nth-child(even){background:var(--bg2)}
+.tbl td.num{text-align:right;font-family:var(--mono)}
+.tbl-wrap{overflow-x:auto;border-radius:var(--radius-sm)}
+
+.note{
+  border:1px solid var(--line);border-left:4px solid var(--ink3);
+  background:var(--bg);border-radius:var(--radius-sm);padding:12px 16px;font-size:14px;
+}
+.note__t{font-weight:700;font-size:13px;margin:0 0 4px;letter-spacing:.02em}
+.note--info{border-left-color:var(--info);background:var(--info-bg)}
+.note--info .note__t{color:var(--info)}
+.note--ok{border-left-color:var(--ok);background:var(--ok-bg)}
+.note--ok .note__t{color:var(--ok)}
+.note--warn{border-left-color:var(--warn);background:var(--warn-bg)}
+.note--warn .note__t{color:var(--warn)}
+.note--risk{border-left-color:var(--risk);background:var(--risk-bg)}
+.note--risk .note__t{color:var(--risk)}
+
+/* 코드 블록 */
+.code{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--bg)}
+.code__bar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:6px 12px;background:var(--bg3);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:12px;color:var(--ink3)
+}
+.code__copy{
+  border:1px solid var(--line2);background:var(--bg);color:var(--ink2);
+  border-radius:5px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer
+}
+.code__copy:hover{border-color:var(--hw);color:var(--hw-dk)}
+.code pre{margin:0;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.6}
+.code .cm{color:var(--ink4)}
+.code .hl{color:var(--hw-dk);font-weight:700}
+
+/* 단계 흐름 */
+.steps{display:flex;gap:8px;flex-wrap:wrap}
+.step{
+  flex:1 1 0;min-width:150px;position:relative;background:var(--bg);
+  border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px
+}
+.step__n{
+  display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--hw);color:#fff;font-size:12px;font-weight:800;margin-bottom:6px
+}
+.step__t{font-weight:700;font-size:14px}
+.step__d{font-size:12.5px;color:var(--ink3)}
+
+/* UI 목업 프레임 */
+.ui{border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--bg);box-shadow:var(--shadow)}
+.ui__bar{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-bottom:1px solid var(--line)}
+.ui__dot{width:9px;height:9px;border-radius:50%;background:var(--line2)}
+.ui__addr{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;
+  padding:2px 8px;font-family:var(--mono);font-size:11.5px;color:var(--ink3)}
+.ui__body{padding:14px}
+.ui-row{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.ui-row:last-child{border-bottom:0}
+.ui-btn{background:var(--hw);color:#fff;border:0;border-radius:5px;padding:6px 14px;font-size:12.5px;font-weight:700}
+.ui-btn--ghost{background:transparent;color:var(--hw-dk);border:1px solid var(--hw)}
+.ui-field{flex:1;border:1px solid var(--line2);border-radius:5px;padding:6px 9px;font-size:12.5px;color:var(--ink3);background:var(--bg2)}
+
+/* 출처 표기 */
+.ref{
+  font-size:.62em;font-weight:800;vertical-align:super;color:var(--hw-dk);
+  background:var(--hw-pale);border:1px solid var(--hw-tint);border-radius:4px;
+  padding:0 4px;margin-left:2px;cursor:pointer;text-decoration:none
+}
+.refs{list-style:none;padding:0;margin:0;font-size:13px}
+.refs li{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.refs li:last-child{border-bottom:0}
+.refs .refs__n{color:var(--hw-dk);font-weight:800;font-family:var(--mono)}
+.refs .refs__src{color:var(--ink);font-weight:600}
+.refs .refs__meta{color:var(--ink3);font-size:12px;font-family:var(--mono);word-break:break-all}
+
+/* 그리드 */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.g-2-1{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* ---------- 다이어그램 캔버스 ---------- */
+.dgm{
+  position:relative;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--bg);overflow:hidden;display:flex;flex-direction:column
+}
+.dgm__bar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:6px 8px;border-bottom:1px solid var(--line);background:var(--bg3);flex:0 0 auto
+}
+.dgm__bar .sp{flex:1}
+.dgm__btn{
+  border:1px solid var(--line2);background:var(--bg);color:var(--ink2);
+  border-radius:5px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer;
+  font-family:var(--font)
+}
+.dgm__btn:hover{border-color:var(--hw);color:var(--hw-dk)}
+.dgm__btn.is-on{background:var(--hw);border-color:var(--hw);color:#fff}
+.dgm__hint{font-size:11.5px;color:var(--ink4)}
+.dgm__svg{display:block;width:100%;flex:1 1 auto;min-height:0;touch-action:none;cursor:grab;
+  background:radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0/20px 20px}
+.dgm__svg.is-panning{cursor:grabbing}
+.dgm[data-edit="off"] .dgm__bar{display:none}
+
+/* 화면 가득 펼치기 — 툴바의 "넓게" 버튼 / Esc 로 닫는다 */
+.dgm.is-max{
+  position:fixed;inset:14px;z-index:80;
+  width:auto !important;max-width:none !important;height:auto !important;
+  box-shadow:0 12px 48px rgba(20,20,20,.28);border-color:var(--line2)
+}
+html.dgm-locked,html.dgm-locked body{overflow:hidden}
+
+.dgm-node{cursor:move}
+.dgm-node .box{fill:var(--bg);stroke:var(--line2);stroke-width:1.5}
+.dgm-node .lbl{
+  font-family:var(--font);font-size:13.5px;font-weight:700;color:var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;text-align:center;padding:4px 8px;line-height:1.3;overflow:hidden
+}
+.dgm-node .lbl .sub{font-size:11px;font-weight:500;color:var(--ink3);margin-top:2px}
+.dgm-node .lbl[contenteditable="true"]{outline:2px solid var(--hw);background:var(--bg);border-radius:4px}
+.dgm-node.is-sel .box{stroke:var(--hw);stroke-width:2.5}
+.dgm-node[data-tone="primary"] .box{fill:var(--hw);stroke:var(--hw-dk)}
+.dgm-node[data-tone="primary"] .lbl{color:#fff}
+.dgm-node[data-tone="primary"] .lbl .sub{color:rgba(255,255,255,.85)}
+.dgm-node[data-tone="accent"] .box{fill:var(--hw-pale);stroke:var(--hw)}
+.dgm-node[data-tone="accent"] .lbl{color:var(--hw-dp)}
+.dgm-node[data-tone="muted"] .box{fill:var(--bg3);stroke:var(--line2)}
+.dgm-node[data-tone="muted"] .lbl{color:var(--ink3)}
+.dgm-node[data-tone="ok"] .box{fill:var(--ok-bg);stroke:var(--ok)}
+.dgm-node[data-tone="ok"] .lbl{color:var(--ok)}
+.dgm-node[data-tone="warn"] .box{fill:var(--warn-bg);stroke:var(--warn)}
+.dgm-node[data-tone="warn"] .lbl{color:var(--warn)}
+.dgm-node[data-tone="risk"] .box{fill:var(--risk-bg);stroke:var(--risk)}
+.dgm-node[data-tone="risk"] .lbl{color:var(--risk)}
+.dgm-node[data-tone="info"] .box{fill:var(--info-bg);stroke:var(--info)}
+.dgm-node[data-tone="info"] .lbl{color:var(--info)}
+
+.dgm-grp .box{fill:var(--bg2);stroke:var(--line2);stroke-dasharray:6 4;stroke-width:1.5}
+.dgm-grp .gl{font-family:var(--font);font-size:11.5px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;fill:var(--ink4)}
+.dgm-grp{cursor:move}
+
+.dgm-edge .wire{fill:none;stroke:var(--ink3);stroke-width:1.8}
+.dgm-edge .hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
+.dgm-edge.is-sel .wire{stroke:var(--hw);stroke-width:2.6}
+.dgm-edge[data-style="dash"] .wire{stroke-dasharray:6 4}
+.dgm-edge[data-tone="primary"] .wire{stroke:var(--hw)}
+.dgm-edge[data-tone="risk"] .wire{stroke:var(--risk)}
+.dgm-edge[data-tone="ok"] .wire{stroke:var(--ok)}
+.dgm-edge .elbl{
+  font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--ink2);
+  display:flex;align-items:center;justify-content:center;height:100%;text-align:center;
+}
+.dgm-edge .elbl span{background:var(--bg);padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+
+.dgm__modal{
+  position:absolute;inset:0;background:rgba(0,0,0,.45);display:none;
+  align-items:center;justify-content:center;padding:24px;z-index:9
+}
+.dgm__modal.is-open{display:flex}
+.dgm__modal .pane{background:var(--bg);border-radius:var(--radius);width:min(680px,100%);
+  max-height:100%;display:flex;flex-direction:column;border:1px solid var(--line2)}
+.dgm__modal textarea{
+  flex:1;min-height:240px;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  padding:12px;font-family:var(--mono);font-size:12px;resize:vertical;background:var(--bg2);color:var(--ink)
+}
+.dgm__modal .head,.dgm__modal .foot{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.dgm__modal .head b{font-size:14px}
+.dgm__modal .sp{flex:1}
+
+/* ── 차트 (scripts/make-chart.sh 산출물) ─────────────────────────────────── */
+.cht{ margin:16px 0 18px; padding:14px 14px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg2) }
+.cht__t{ margin:0 0 8px; font-size:13.5px; font-weight:700; color:var(--ink); letter-spacing:-.01em }
+.cht svg{ display:block; width:100%; height:auto; font-family:inherit }
+.cht rect, .cht circle{ cursor:default }
+.cht rect:hover, .cht circle:hover{ opacity:.75 }
+.cht__c{ margin:8px 0 0; font-size:12px; line-height:1.65; color:var(--ink3) }
+
+/* 인쇄 */
+@media print{
+  .cht{ page-break-inside:avoid; background:transparent }
+  body{background:#fff}
+  .no-print{display:none !important}
+  .dgm__bar{display:none !important}
+  .dgm__svg{background:none}
+  .dgm.is-max{position:static;inset:auto;box-shadow:none}
+}
+
+/* ============================================================
+   HW Doc Kit - 발표용(PPT형) 덱 레이아웃
+   슬라이드 논리 크기 1280x720 (16:9). JS가 --k 배율만 조정.
+   ============================================================ */
+:root{ --k:1; --stage-pad-x:64px; }
+
+.deck{
+  display:flex; flex-direction:column; align-items:center; gap:0;
+  padding:0; min-height:100vh; justify-content:center;
+}
+.slide{ width:calc(1280px * var(--k)); height:calc(720px * var(--k)); flex:0 0 auto; position:relative; }
+.deck:not(.is-overview) .slide{ display:none; }
+.deck:not(.is-overview) .slide.is-cur{ display:block; }
+
+.stage{
+  width:1280px; height:720px; transform:scale(var(--k)); transform-origin:top left;
+  background:var(--bg); position:relative; overflow:hidden;
+  box-shadow:var(--shadow); display:flex; flex-direction:column;
+  padding:44px var(--stage-pad-x) 62px;
+}
+.stage::before{ /* 상단 브랜드 스트립 */
+  content:''; position:absolute; left:0; top:0; width:100%; height:6px;
+  background:linear-gradient(90deg,var(--hw) 0%,var(--hw-dk) 62%,var(--hw-dp) 100%);
+}
+
+/* 슬라이드 헤더 */
+.s-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:24px;
+  border-bottom:2px solid var(--hw); padding-bottom:12px; margin-bottom:22px; flex:0 0 auto; }
+.s-head__l{ min-width:0 }
+.s-head h2{ font-size:31px; letter-spacing:-.02em; }
+.s-head .kicker{ display:block; margin-bottom:5px; font-size:12px }
+.s-head__r{ text-align:right; font-size:12.5px; color:var(--ink3); white-space:nowrap }
+
+.s-body{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:16px; }
+.s-body.is-scroll{ overflow:hidden }
+.s-lead{ font-size:16px; color:var(--ink2); max-width:96ch }
+
+/* 슬라이드 푸터 */
+.s-foot{
+  position:absolute; left:var(--stage-pad-x); right:var(--stage-pad-x); bottom:18px;
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  font-size:11.5px; color:var(--ink4); border-top:1px solid var(--line); padding-top:8px;
+}
+.s-foot .pg{ font-family:var(--mono); font-weight:700; color:var(--hw-dk) }
+
+/* 타이틀 슬라이드 */
+.slide--title .stage{ padding:0; display:grid; grid-template-columns:1.35fr 1fr; }
+.slide--title .stage::before{ display:none } /* 우측 오렌지 패널이 브랜드를 대신함 */
+.t-left{ padding:76px 64px; display:flex; flex-direction:column; justify-content:center; gap:16px }
+.t-left h1{ font-size:48px; line-height:1.15; letter-spacing:-.03em }
+.t-left .sub{ font-size:19px; color:var(--ink2) }
+.t-meta{ margin-top:18px; display:flex; flex-wrap:wrap; gap:8px }
+.t-right{ background:var(--hw); position:relative; overflow:hidden }
+.t-right::after{
+  content:''; position:absolute; inset:0;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.16) 0 42%, transparent 42%),
+    linear-gradient(315deg, rgba(0,0,0,.14) 0 34%, transparent 34%);
+}
+.t-right .mark{
+  position:absolute; left:44px; bottom:44px; color:#fff; z-index:1;
+  font-size:13px; font-weight:800; letter-spacing:.22em; text-transform:uppercase;
+}
+
+/* 섹션 구분 슬라이드 */
+.slide--section .stage{ justify-content:center; background:var(--bg3) }
+.slide--section .s-no{ font-family:var(--mono); font-size:64px; font-weight:800; color:var(--hw); line-height:1 }
+.slide--section h2{ font-size:40px; margin-top:10px }
+.slide--section .s-desc{ font-size:16px; color:var(--ink3); margin-top:10px; max-width:70ch }
+
+/* 발표자 노트 */
+.notes{ display:none }
+.deck.is-notes .slide.is-cur .notes{
+  display:block; position:fixed; left:0; right:0; bottom:46px; z-index:20;
+  max-height:32vh; overflow:auto; background:var(--bg); border-top:2px solid var(--hw);
+  padding:12px 18px; font-size:14px; color:var(--ink2); box-shadow:0 -8px 24px rgba(0,0,0,.12);
+}
+.notes b{ color:var(--hw-dk); display:block; margin-bottom:4px; font-size:12px; letter-spacing:.1em; text-transform:uppercase }
+
+/* 오버뷰(썸네일 격자) */
+.deck.is-overview{
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:18px; padding:24px; align-items:start; justify-content:start; min-height:auto;
+}
+.deck.is-overview .slide{ --k:.216; cursor:pointer; outline:1px solid var(--line); }
+.deck.is-overview .slide.is-cur{ outline:3px solid var(--hw) }
+.deck.is-overview .slide::after{
+  content:attr(data-n); position:absolute; right:6px; bottom:4px; font-size:11px;
+  font-family:var(--mono); font-weight:700; color:var(--ink4);
+}
+
+/* HUD */
+.hud{
+  position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; align-items:center; gap:8px;
+  padding:6px 12px; background:var(--bg); border-top:1px solid var(--line); font-size:12px;
+}
+.hud .sp{ flex:1 }
+.hud button{
+  border:1px solid var(--line2); background:var(--bg); color:var(--ink2);
+  border-radius:5px; padding:3px 10px; font-size:12px; font-weight:600; cursor:pointer; font-family:var(--font);
+}
+.hud button:hover{ border-color:var(--hw); color:var(--hw-dk) }
+.hud .cnt{ font-family:var(--mono); font-weight:700; color:var(--ink2) }
+.hud .ttl{ color:var(--ink4); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:40vw }
+.prog{ position:fixed; left:0; bottom:0; height:3px; background:var(--hw); z-index:31; transition:width .18s ease }
+
+@media print{
+  @page{ size:1280px 720px; margin:0 }
+  .hud,.prog,.notes{ display:none !important }
+  html,body{ background:#fff }
+  .deck,.deck.is-overview{ display:block; padding:0; gap:0 }
+  .deck .slide{ display:block !important; width:1280px; height:720px; page-break-after:always; outline:0 }
+  .deck .slide:last-child{ page-break-after:auto }
+  .stage{ transform:none; box-shadow:none }
+}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <!-- ========== 01 표지 ========== -->
+  <section class="slide slide--title">
+    <div class="stage">
+      <div class="t-left">
+        <span class="kicker">PoC Decision</span>
+        <h1>CDC 캡처 라이브러리 선택<br>Debezium Embedded(Java) 대 go-pq-cdc(Go)</h1>
+        <p class="sub">같은 파이프라인 설계를 두 라이브러리로 구현해 V1~V6 검증과 부하 측정을 나란히 돌린 결과입니다.
+          결론은 <b>Java(Debezium Embedded) 로 진행</b>입니다. 성능은 같고, 유실을 스스로 알아채는 쪽이 Java 이기 때문입니다.</p>
+        <div class="t-meta">
+          <span class="chip chip--neutral">2026-09-03</span>
+          <span class="chip chip--neutral">내업공정실적 자동 수집 · DB to DB</span>
+          <span class="chip">v1.0 판단본</span>
+        </div>
+      </div>
+      <div class="t-right"><span class="mark">Internal Use Only</span></div>
+    </div>
+  </section>
+
+  <!-- ========== 02 목차 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">Agenda</span><h2>무엇을 근거로 무엇을 정하는가</h2></div>
+        <div class="s-head__r">발표 12분 · 논의 10분</div>
+      </div>
+      <div class="s-body">
+        <div class="g2" style="gap:14px 28px">
+          <div class="card card--accent"><p class="card__t">01. 결론</p><p class="card__d">어느 라이브러리로 가는지, 무엇이 판단을 갈랐는지 한 장으로</p></div>
+          <div class="card card--accent"><p class="card__t">02. 비교 대상</p><p class="card__d">두 라이브러리의 배경(버전 · 성숙도 · 권한)과 동작이 갈리는 여섯 지점</p></div>
+          <div class="card card--accent"><p class="card__t">03. 성능</p><p class="card__d">10만~100만행 배치 반영 시간, 오늘(09-03) 실측, 메모리 곡선</p></div>
+          <div class="card card--accent"><p class="card__t">04. 신뢰성</p><p class="card__d">V1~V6 검증 결과와 09-02 장애 사례가 보여준 차이</p></div>
+          <div class="card card--accent"><p class="card__t">05. 판단</p><p class="card__d">기준별 채점표, 결정, 재검토 조건, 다음 단계</p></div>
+          <div class="card card--accent"><p class="card__t">06. 출처</p><p class="card__d">모든 수치의 원자료 위치</p></div>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+    <aside class="notes"><b>발표자 노트</b>결론 장(다음 장)에서 질문이 몰린다. 성능 장은 "같다"는 것만 확인하고 빨리 넘긴다. 시간은 신뢰성 장에 쓴다.</aside>
+  </section>
+
+  <!-- ========== 03 결론 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">01. 결론</span><h2>Java(Debezium Embedded) 로 진행합니다</h2></div>
+        <div class="s-head__r">측정 2026-09-01 ~ 09-03</div>
+      </div>
+      <div class="s-body">
+        <p class="s-lead">처리량은 두 스택이 같습니다. 판단을 가른 것은 <b>유실을 라이브러리가 스스로 알아채는가</b> 와
+          <b>밀렸을 때 메모리가 어디까지 오르는가</b> 두 가지입니다.<sup class="ref" data-ref="5">5</sup><sup class="ref" data-ref="7">7</sup></p>
+        <div class="kpi">
+          <div class="kpi__item"><div class="kpi__v">3~7%</div><div class="kpi__l">처리량 차이 (10만~100만행, 순위가 배치마다 뒤집힘)</div></div>
+          <div class="kpi__item"><div class="kpi__v">2,138MB</div><div class="kpi__l">Go 메모리 최대 (Java 902MB, 100만행 배치)</div></div>
+          <div class="kpi__item"><div class="kpi__v">3회 중 3회</div><div class="kpi__l">Go 갭 가드 오탐 (진양성 0건)</div></div>
+          <div class="kpi__item"><div class="kpi__v">984회 · 70분</div><div class="kpi__l">Go 재시작 루프로 캡처 정지 (09-02)</div></div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th style="width:14%">관점</th><th style="width:33%">Java · Debezium Embedded</th><th style="width:33%">Go · go-pq-cdc</th><th>판정</th></tr></thead>
+            <tbody>
+              <tr><td>처리량 · 지연</td><td>4,918~6,000 행/초, 5초 예산 안</td><td>5,128~6,316 행/초, 5초 예산 안</td><td><span class="chip chip--neutral">동률 · 판단 근거 아님</span></td></tr>
+              <tr><td>안전성</td><td>슬롯 유실 시 <b>기동 거부</b>. 오프셋 파일 + 슬롯 두 곳에 진행 지점</td><td>슬롯 유실 시 <b>조용히 새 슬롯</b>. 탐지는 자체 가드에 전적으로 의존</td><td><span class="chip chip--ok">Java</span></td></tr>
+              <tr><td>자원</td><td>700~950MB 평평, CPU 약 1.0 core</td><td>유휴 40MB, 밀리면 2.1GB 까지 상한 없이 상승, CPU 약 0.8 core</td><td><span class="chip chip--warn">조건부 · 상한 필요</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+    <aside class="notes"><b>발표자 노트</b>"Go 가 빠르다" 는 1만행 이하에서만 맞는 말이다(1.5배). 10만행부터는 target UPSERT 가 상한이라 두 스택이 같은 벽에 부딪힌다. 이 장에서 "그럼 Go 는 왜 만들었나" 가 나오면 06 장 동작 차이로 답한다.</aside>
+  </section>
+
+  <!-- ========== 04 섹션 구분 ========== -->
+  <section class="slide slide--section">
+    <div class="stage">
+      <div class="s-no">02</div>
+      <h2>비교 대상</h2>
+      <p class="s-desc">같은 설계(육각형 구조 · 멱등 UPSERT · DLQ · 체크포인트)를 두 라이브러리로 구현했습니다. 다른 것은 캡처 라이브러리와 언어뿐입니다.</p>
+    </div>
+  </section>
+
+  <!-- ========== 05 라이브러리 배경 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">02. 비교 대상</span><h2>성숙도의 자릿수가 다릅니다</h2></div>
+        <div class="s-head__r">GitHub 확인 2026-09-03</div>
+      </div>
+      <div class="s-body">
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th style="width:18%">항목</th><th style="width:38%">Debezium Embedded (Java)</th><th style="width:38%">go-pq-cdc (Go)</th><th>근거</th></tr></thead>
+            <tbody>
+              <tr><td>버전 · 런타임</td><td class="mono">3.6.1.Final · Java 21 · Spring Boot</td><td class="mono">v1.11.14 · Go 1.25</td><td><sup class="ref" data-ref="1">1</sup><sup class="ref" data-ref="2">2</sup></td></tr>
+              <tr><td>라이선스</td><td>Apache-2.0</td><td>MIT</td><td><sup class="ref" data-ref="3">3</sup><sup class="ref" data-ref="4">4</sup></td></tr>
+              <tr><td>저장소 규모</td><td class="num">13,072 stars · 3,030 forks</td><td class="num">205 stars · 33 forks · 기여자 23명</td><td><sup class="ref" data-ref="3">3</sup><sup class="ref" data-ref="4">4</sup></td></tr>
+              <tr><td>활동</td><td>2026-09-03 push</td><td>2026-09-02 push · 최근 릴리스 2026-08-24 · 2024-04 시작</td><td><sup class="ref" data-ref="3">3</sup><sup class="ref" data-ref="4">4</sup></td></tr>
+              <tr><td>원천 DB 권한</td><td>REPLICATION + SELECT (읽기 전용)</td><td><b>쓰기 필요</b> — heartbeat 표, snapshot 메타 표 2개</td><td><sup class="ref" data-ref="12">12</sup></td></tr>
+              <tr><td>폐쇄망 빌드</td><td>Gradle 미러 필요</td><td>vendor/ 커밋으로 해결</td><td><sup class="ref" data-ref="12">12</sup></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note note--info"><p class="note__t">읽는 법</p>
+          go-pq-cdc 는 버려진 프로젝트가 아닙니다(최근 릴리스 2026-08-24). 다만 기여자 23명, 만들어진 지 2년 남짓이라
+          엔진 결함을 만났을 때 <b>업스트림에서 답을 얻을 확률</b>이 Debezium 과 자릿수로 다릅니다. 09-02 장애가 그 경우였습니다.</div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+  </section>
+
+  <!-- ========== 06 동작 차이 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">02. 비교 대상</span><h2>결과가 갈리는 지점은 여섯 곳입니다</h2></div>
+        <div class="s-head__r">전부 V1~V6 에 근거가 남아 있음</div>
+      </div>
+      <div class="s-body">
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th style="width:17%">지점</th><th style="width:34%">Debezium Embedded</th><th style="width:34%">go-pq-cdc</th><th>영향</th></tr></thead>
+            <tbody>
+              <tr><td>진행 지점 저장</td><td>오프셋 파일 + 슬롯</td><td>슬롯의 confirmed_flush_lsn 하나뿐</td><td><span class="chip chip--risk">V3</span></td></tr>
+              <tr><td>슬롯이 사라지면</td><td>기동을 거부한다 (스스로 탐지)</td><td>조용히 새 슬롯을 만들고 이어서 돈다</td><td><span class="chip chip--risk">V3</span></td></tr>
+              <tr><td>ack 시점</td><td>우리가 flush 를 제어 (offset.flush.interval)</td><td>라이브러리가 자체 주기로 ack — 적용 전에 슬롯이 전진할 수 있음</td><td><span class="chip chip--risk">V2 · V4</span></td></tr>
+              <tr><td>이벤트 전달 단위</td><td>배치 (RecordCommitter)</td><td>한 건씩 온다. 우리가 다시 배치로 묶음</td><td><span class="chip chip--neutral">구현 비용</span></td></tr>
+              <tr><td>TOAST 로 빠진 값</td><td>자리표시자가 온다</td><td>컬럼 자체가 안 온다. FULL 이면 old 이미지로 메워 줌</td><td><span class="chip chip--ok">V5 양쪽 통과</span></td></tr>
+              <tr><td>지연 지표 기준</td><td>커밋 시각 (source.ts_ms)</td><td>WAL 송신 시각 (MessageTime)</td><td><span class="chip chip--warn">대시보드 직접 비교 불가</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note note--warn"><p class="note__t">09-02 화면의 "지연 두 배 차이" 는 실제 차이가 아닙니다</p>
+          Java 6.67분 대 Go 2.50분으로 보였지만 기준 시각이 달라서 생긴 값입니다. 70만행 배치의 실제 반영 완료 시각은 10초 차이였습니다.<sup class="ref" data-ref="5">5</sup>
+          두 스택의 지연은 행 수가 같아지는 시각으로만 비교합니다.</div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+    <aside class="notes"><b>발표자 노트</b>ack 시점 줄이 가장 무겁다. 라이브러리가 우리 적용과 무관하게 ack 를 보내는 것이 09-02 장애 분석에서 실측됐다. 크래시 시점에 따라 되받을 수 없는 구간이 생길 수 있는데, 이 경우를 재현해 유실 여부를 확정한 실험은 아직 없다. "검증 안 된 위험" 으로 말한다.</aside>
+  </section>
+
+  <!-- ========== 07 구조 다이어그램 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">02. 비교 대상</span><h2>같은 파이프라인, 다른 캡처 엔진</h2></div>
+        <div class="s-head__r">오렌지가 판단 대상 · 점선이 실패 경로</div>
+      </div>
+      <div class="s-body">
+        <div class="dgm" data-edit="on" style="flex:1;min-height:0">
+          <script type="application/json" class="dgm-data">
+{
+  "groups": [
+    {"id":"g1","label":"원천 (Hot DB)","x":20,"y":20,"w":240,"h":360},
+    {"id":"g2","label":"cdc-service — 캡처 엔진만 다르다","x":300,"y":20,"w":480,"h":360},
+    {"id":"g3","label":"수신측 (Target DB)","x":860,"y":20,"w":240,"h":360}
+  ],
+  "nodes": [
+    {"id":"src","label":"Source PostgreSQL 16","sub":"WAL · pgoutput · 슬롯","x":40,"y":60,"w":200,"h":62,"tone":"muted","shape":"store"},
+    {"id":"hb","label":"heartbeat 표","sub":"Go 는 쓰기 권한 필요","x":40,"y":190,"w":200,"h":56,"tone":"warn"},
+    {"id":"eng","label":"캡처 엔진","sub":"Debezium Embedded / go-pq-cdc","x":320,"y":60,"w":200,"h":62,"tone":"primary"},
+    {"id":"guard","label":"SlotContinuityGuard","sub":"restart_lsn 대조","x":320,"y":190,"w":200,"h":62,"shape":"diamond"},
+    {"id":"apply","label":"배치 적용","sub":"멱등 UPSERT · LSN 가드","x":560,"y":60,"w":200,"h":62,"tone":"accent"},
+    {"id":"off","label":"오프셋 파일","sub":"Java 에만 있다","x":560,"y":190,"w":200,"h":62,"tone":"info"},
+    {"id":"tgt","label":"Target PostgreSQL 16","sub":"업무 표 · cdc_checkpoint","x":880,"y":60,"w":200,"h":62,"tone":"muted","shape":"store"},
+    {"id":"audit","label":"cdc_change_audit","sub":"필드 단위 변경 이력","x":880,"y":190,"w":200,"h":56},
+    {"id":"dlq","label":"cdc_dead_letter","sub":"격리된 미반영 건","x":880,"y":300,"w":200,"h":56,"tone":"risk"}
+  ],
+  "edges": [
+    {"from":"src","to":"eng","label":"WAL","tone":"primary"},
+    {"from":"hb","to":"src","label":"유휴 시 전진","style":"dash"},
+    {"from":"eng","to":"apply","label":"이벤트","tone":"primary"},
+    {"from":"guard","to":"eng","label":"갭 판정","tone":"risk","style":"dash"},
+    {"from":"off","to":"guard","label":"대조"},
+    {"from":"apply","to":"off","label":"flush 10s","style":"dash"},
+    {"from":"apply","to":"tgt","label":"ack","tone":"ok"},
+    {"from":"apply","to":"dlq","label":"건 단위 실패","tone":"risk","style":"dash"},
+    {"from":"tgt","to":"audit","label":"UPDATE 만"}
+  ]
+}
+</script>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+    <aside class="notes"><b>발표자 노트</b>Java 판에서 가드는 "오프셋 파일까지 날아간 경우" 를 위한 보조 수단이다. Go 판에서는 유실을 탐지하는 유일한 수단이다. 같은 코드가 두 스택에서 하는 역할이 다르다.</aside>
+  </section>
+
+  <!-- ========== 08 성능 — 배치 사다리 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">03. 성능</span><h2>100만행까지 반영 시간이 같습니다</h2></div>
+        <div class="s-head__r">2026-09-02 11:15~13:21 · 테이블 3개 × 배치</div>
+      </div>
+      <div class="s-body">
+        <div class="g-2-1" style="flex:1;min-height:0">
+          <div>      <figure class="cht">
+        <figcaption class="cht__t">배치 크기별 CDC 반영 시간 — INSERT (테이블당 행 수, 2026-09-02 11:15~13:21)</figcaption>
+        <svg viewBox="0 0 880 316" role="img" aria-label="배치 크기별 CDC 반영 시간 — INSERT (테이블당 행 수, 2026-09-02 11:15~13:21)">
+          <line x1="76" y1="246.0" x2="856" y2="246.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="250.0" text-anchor="end" font-size="11" fill="var(--ink4)">0</text>
+          <line x1="76" y1="191.5" x2="856" y2="191.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="195.5" text-anchor="end" font-size="11" fill="var(--ink4)">200</text>
+          <line x1="76" y1="137.0" x2="856" y2="137.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="141.0" text-anchor="end" font-size="11" fill="var(--ink4)">400</text>
+          <line x1="76" y1="82.5" x2="856" y2="82.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="86.5" text-anchor="end" font-size="11" fill="var(--ink4)">600</text>
+          <line x1="76" y1="28.0" x2="856" y2="28.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="32.0" text-anchor="end" font-size="11" fill="var(--ink4)">800</text>
+          <text x="14" y="18" font-size="11" fill="var(--ink3)">초</text>
+          <text x="115.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">10만</text>
+          <text x="193.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">20만</text>
+          <text x="271.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">30만</text>
+          <text x="349.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">40만</text>
+          <text x="427.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">50만</text>
+          <text x="505.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">60만</text>
+          <text x="583.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">70만</text>
+          <text x="661.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">80만</text>
+          <text x="739.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">90만</text>
+          <text x="817.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">100만</text>
+          <rect x="91.6" y="232.4" width="20.4" height="13.6" fill="var(--hw)" rx="1.5"><title>10만 · Java (Debezium) 50초</title></rect>
+          <text x="101.8" y="228.4" text-anchor="middle" font-size="9.5" fill="var(--ink2)">50</text>
+          <rect x="169.6" y="218.8" width="20.4" height="27.2" fill="var(--hw)" rx="1.5"><title>20만 · Java (Debezium) 100초</title></rect>
+          <text x="179.8" y="214.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">100</text>
+          <rect x="247.6" y="203.8" width="20.4" height="42.2" fill="var(--hw)" rx="1.5"><title>30만 · Java (Debezium) 155초</title></rect>
+          <text x="257.8" y="199.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">155</text>
+          <rect x="325.6" y="188.8" width="20.4" height="57.2" fill="var(--hw)" rx="1.5"><title>40만 · Java (Debezium) 210초</title></rect>
+          <text x="335.8" y="184.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">210</text>
+          <rect x="403.6" y="176.5" width="20.4" height="69.5" fill="var(--hw)" rx="1.5"><title>50만 · Java (Debezium) 255초</title></rect>
+          <text x="413.8" y="172.5" text-anchor="middle" font-size="9.5" fill="var(--ink2)">255</text>
+          <rect x="481.6" y="156.1" width="20.4" height="89.9" fill="var(--hw)" rx="1.5"><title>60만 · Java (Debezium) 330초</title></rect>
+          <text x="491.8" y="152.1" text-anchor="middle" font-size="9.5" fill="var(--ink2)">330</text>
+          <rect x="559.6" y="142.4" width="20.4" height="103.6" fill="var(--hw)" rx="1.5"><title>70만 · Java (Debezium) 380초</title></rect>
+          <text x="569.8" y="138.4" text-anchor="middle" font-size="9.5" fill="var(--ink2)">380</text>
+          <rect x="637.6" y="122.0" width="20.4" height="124.0" fill="var(--hw)" rx="1.5"><title>80만 · Java (Debezium) 455초</title></rect>
+          <text x="647.8" y="118.0" text-anchor="middle" font-size="9.5" fill="var(--ink2)">455</text>
+          <rect x="715.6" y="116.6" width="20.4" height="129.4" fill="var(--hw)" rx="1.5"><title>90만 · Java (Debezium) 475초</title></rect>
+          <text x="725.8" y="112.6" text-anchor="middle" font-size="9.5" fill="var(--ink2)">475</text>
+          <rect x="793.6" y="79.8" width="20.4" height="166.2" fill="var(--hw)" rx="1.5"><title>100만 · Java (Debezium) 610초</title></rect>
+          <text x="803.8" y="75.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">610</text>
+          <rect x="115.0" y="232.4" width="20.4" height="13.6" fill="var(--info)" rx="1.5"><title>10만 · Go (go-pq-cdc) 50초</title></rect>
+          <text x="125.2" y="228.4" text-anchor="middle" font-size="9.5" fill="var(--ink2)">50</text>
+          <rect x="193.0" y="220.1" width="20.4" height="25.9" fill="var(--info)" rx="1.5"><title>20만 · Go (go-pq-cdc) 95초</title></rect>
+          <text x="203.2" y="216.1" text-anchor="middle" font-size="9.5" fill="var(--ink2)">95</text>
+          <rect x="271.0" y="203.8" width="20.4" height="42.2" fill="var(--info)" rx="1.5"><title>30만 · Go (go-pq-cdc) 155초</title></rect>
+          <text x="281.2" y="199.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">155</text>
+          <rect x="349.0" y="191.5" width="20.4" height="54.5" fill="var(--info)" rx="1.5"><title>40만 · Go (go-pq-cdc) 200초</title></rect>
+          <text x="359.2" y="187.5" text-anchor="middle" font-size="9.5" fill="var(--ink2)">200</text>
+          <rect x="427.0" y="179.2" width="20.4" height="66.8" fill="var(--info)" rx="1.5"><title>50만 · Go (go-pq-cdc) 245초</title></rect>
+          <text x="437.2" y="175.2" text-anchor="middle" font-size="9.5" fill="var(--ink2)">245</text>
+          <rect x="505.0" y="161.5" width="20.4" height="84.5" fill="var(--info)" rx="1.5"><title>60만 · Go (go-pq-cdc) 310초</title></rect>
+          <text x="515.2" y="157.5" text-anchor="middle" font-size="9.5" fill="var(--ink2)">310</text>
+          <rect x="583.0" y="146.5" width="20.4" height="99.5" fill="var(--info)" rx="1.5"><title>70만 · Go (go-pq-cdc) 365초</title></rect>
+          <text x="593.2" y="142.5" text-anchor="middle" font-size="9.5" fill="var(--ink2)">365</text>
+          <rect x="661.0" y="127.5" width="20.4" height="118.5" fill="var(--info)" rx="1.5"><title>80만 · Go (go-pq-cdc) 435초</title></rect>
+          <text x="671.2" y="123.5" text-anchor="middle" font-size="9.5" fill="var(--ink2)">435</text>
+          <text x="739.0" y="240.0" text-anchor="middle" font-size="10" fill="var(--risk)">측정 무효</text>
+          <rect x="817.0" y="86.6" width="20.4" height="159.4" fill="var(--info)" rx="1.5"><title>100만 · Go (go-pq-cdc) 585초</title></rect>
+          <text x="827.2" y="82.6" text-anchor="middle" font-size="9.5" fill="var(--ink2)">585</text>
+          <line x1="76" y1="246" x2="856" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <line x1="76" y1="28" x2="76" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <rect x="709.6" y="6" width="22" height="4" rx="2" fill="var(--info)"/>
+          <text x="737.6" y="11" font-size="11.5" fill="var(--ink2)">Go (go-pq-cdc)</text>
+          <rect x="555.6" y="6" width="22" height="4" rx="2" fill="var(--hw)"/>
+          <text x="583.6" y="11" font-size="11.5" fill="var(--ink2)">Java (Debezium)</text>
+        </svg>
+        <p class="cht__c">90만행까지 두 막대가 같은 높이로 오르고, 100만행에서 Java 가 610초로 먼저 튄다. Go 의 90만행은 서비스 정지와 겹쳐 측정 무효다. 막대에 커서를 올리면 값이 뜬다.</p>
+      </figure>
+</div>
+          <div class="stack">
+            <div class="card"><p class="card__t">처리량 띠</p><p class="card__d">Java 4,918~6,000 · Go 5,128~6,316 행/초. 배치마다 순위가 뒤집힙니다.<sup class="ref" data-ref="5">5</sup></p></div>
+            <div class="card"><p class="card__t">상한은 target 쪽</p><p class="card__d">source INSERT 35~40초에 반영 585~610초. 두 스택 모두 UPSERT 속도에 묶여 있습니다.</p></div>
+            <div class="note note--warn"><p class="note__t">작은 배치는 다릅니다</p>1만행 이하에서는 Go 가 1.5배 빠릅니다(10.9초 대 7.0초). 고정 지연 약 2.2초를 빼면 캡처·배치 구성 비용의 차이입니다.<sup class="ref" data-ref="6">6</sup></div>
+          </div>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+  </section>
+
+  <!-- ========== 09 성능 — 오늘 실측 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">03. 성능</span><h2>오늘(09-03) 실측도 같은 결과입니다</h2></div>
+        <div class="s-head__r">Prometheus 행 수 계단 · 5초 해상도</div>
+      </div>
+      <div class="s-body">
+        <div class="g-2-1" style="flex:1;min-height:0">
+          <div>      <figure class="cht">
+        <figcaption class="cht__t">2026-09-03 실측 — car 1,000,000행 INSERT 반영 시간 (세 스택 같은 부하)</figcaption>
+        <svg viewBox="0 0 880 316" role="img" aria-label="2026-09-03 실측 — car 1,000,000행 INSERT 반영 시간 (세 스택 같은 부하)">
+          <line x1="76" y1="246.0" x2="856" y2="246.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="250.0" text-anchor="end" font-size="11" fill="var(--ink4)">0</text>
+          <line x1="76" y1="191.5" x2="856" y2="191.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="195.5" text-anchor="end" font-size="11" fill="var(--ink4)">60</text>
+          <line x1="76" y1="137.0" x2="856" y2="137.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="141.0" text-anchor="end" font-size="11" fill="var(--ink4)">120</text>
+          <line x1="76" y1="82.5" x2="856" y2="82.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="86.5" text-anchor="end" font-size="11" fill="var(--ink4)">180</text>
+          <line x1="76" y1="28.0" x2="856" y2="28.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="32.0" text-anchor="end" font-size="11" fill="var(--ink4)">240</text>
+          <text x="14" y="18" font-size="11" fill="var(--ink3)">초</text>
+          <text x="206.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">Java (Debezium)</text>
+          <text x="466.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">Go (go-pq-cdc)</text>
+          <text x="726.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">Java custom (outbox)</text>
+          <rect x="167.0" y="59.8" width="75.0" height="186.2" fill="var(--hw)" rx="1.5"><title>Java (Debezium) · 커밋부터 target 반영 완료까지 205초</title></rect>
+          <text x="204.5" y="55.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">205</text>
+          <rect x="427.0" y="64.3" width="75.0" height="181.7" fill="var(--hw)" rx="1.5"><title>Go (go-pq-cdc) · 커밋부터 target 반영 완료까지 200초</title></rect>
+          <text x="464.5" y="60.3" text-anchor="middle" font-size="9.5" fill="var(--ink2)">200</text>
+          <rect x="687.0" y="218.8" width="75.0" height="27.2" fill="var(--hw)" rx="1.5"><title>Java custom (outbox) · 커밋부터 target 반영 완료까지 30초</title></rect>
+          <text x="724.5" y="214.8" text-anchor="middle" font-size="9.5" fill="var(--ink2)">30</text>
+          <line x1="76" y1="246" x2="856" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <line x1="76" y1="28" x2="76" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <rect x="671.6" y="6" width="22" height="4" rx="2" fill="var(--hw)"/>
+          <text x="699.6" y="11" font-size="11.5" fill="var(--ink2)">커밋부터 target 반영 완료까지</text>
+        </svg>
+        <p class="cht__c">WAL 을 읽는 두 스택은 205초 대 200초로 같다. 값을 싣지 않고 PK 만 옮기는 outbox 방식만 자릿수가 다르다. 해상도는 5초다.</p>
+      </figure>
+</div>
+          <div class="stack">
+            <div class="tbl-wrap">
+              <table class="tbl">
+                <thead><tr><th>스택</th><th>INSERT 100만</th><th>행/초</th></tr></thead>
+                <tbody>
+                  <tr><td>Java</td><td class="num">205초</td><td class="num">4,878</td></tr>
+                  <tr><td>Go</td><td class="num">200초</td><td class="num">5,000</td></tr>
+                  <tr><td>Java custom (outbox)</td><td class="num">30초</td><td class="num">33,300</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="note note--info"><p class="note__t">세 번째 줄은 다른 축의 선택지입니다</p>outbox 방식은 WAL 을 읽지 않고 PK 만 옮기므로 7배 빠르지만, 중간 상태와 필드 단위 이력이 남지 않습니다. 이 문서의 질문(캡처 라이브러리)과는 별개로 따로 판단합니다.<sup class="ref" data-ref="8">8</sup></div>
+          </div>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+    <aside class="notes"><b>발표자 노트</b>오늘 Go 스택에는 computer 50만행 INSERT/UPDATE 가 추가로 들어갔고 감사 기록이 전 테이블(*)로 켜져 있었다. 조건이 완전히 같지 않았음을 먼저 말한다. INSERT 100만행은 그 전에 끝나서 비교가 성립한다.</aside>
+  </section>
+
+  <!-- ========== 10 자원 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">03. 성능</span><h2>속도는 같지만 메모리 곡선이 다릅니다</h2></div>
+        <div class="s-head__r">cdc-service 컨테이너 working set 최대</div>
+      </div>
+      <div class="s-body">
+        <div class="g-2-1" style="flex:1;min-height:0">
+          <div>      <figure class="cht">
+        <figcaption class="cht__t">cdc-service 컨테이너 메모리 최대치 (배치 구간별)</figcaption>
+        <svg viewBox="0 0 880 316" role="img" aria-label="cdc-service 컨테이너 메모리 최대치 (배치 구간별)">
+          <line x1="76" y1="246.0" x2="856" y2="246.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="250.0" text-anchor="end" font-size="11" fill="var(--ink4)">0</text>
+          <line x1="76" y1="191.5" x2="856" y2="191.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="195.5" text-anchor="end" font-size="11" fill="var(--ink4)">600</text>
+          <line x1="76" y1="137.0" x2="856" y2="137.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="141.0" text-anchor="end" font-size="11" fill="var(--ink4)">1,200</text>
+          <line x1="76" y1="82.5" x2="856" y2="82.5" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="86.5" text-anchor="end" font-size="11" fill="var(--ink4)">1,800</text>
+          <line x1="76" y1="28.0" x2="856" y2="28.0" stroke="var(--line)" stroke-width="1"/>
+          <text x="68" y="32.0" text-anchor="end" font-size="11" fill="var(--ink4)">2,400</text>
+          <text x="14" y="18" font-size="11" fill="var(--ink3)">MB</text>
+          <text x="76.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">1천</text>
+          <text x="146.9" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">1만</text>
+          <text x="217.8" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">10만</text>
+          <text x="288.7" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">20만</text>
+          <text x="359.6" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">30만</text>
+          <text x="430.5" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">40만</text>
+          <text x="501.5" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">50만</text>
+          <text x="572.4" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">60만</text>
+          <text x="643.3" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">70만</text>
+          <text x="714.2" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">80만</text>
+          <text x="785.1" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">90만</text>
+          <text x="856.0" y="268" text-anchor="middle" font-size="11" fill="var(--ink3)">100만</text>
+          <polyline points="76.0,199.5 146.9,181.8 217.8,174.2 288.7,166.2 359.6,166.4 430.5,163.8 501.5,166.2 572.4,165.1 643.3,163.9 714.2,160.0 785.1,164.0 856.0,164.1 " fill="none" stroke="var(--hw)" stroke-width="2.4"/>
+          <circle cx="76.0" cy="199.5" r="3.4" fill="var(--hw)"><title>1천 · Java (Debezium) 512MB</title></circle>
+          <circle cx="146.9" cy="181.8" r="3.4" fill="var(--hw)"><title>1만 · Java (Debezium) 707MB</title></circle>
+          <circle cx="217.8" cy="174.2" r="3.4" fill="var(--hw)"><title>10만 · Java (Debezium) 790MB</title></circle>
+          <circle cx="288.7" cy="166.2" r="3.4" fill="var(--hw)"><title>20만 · Java (Debezium) 878MB</title></circle>
+          <circle cx="359.6" cy="166.4" r="3.4" fill="var(--hw)"><title>30만 · Java (Debezium) 876MB</title></circle>
+          <circle cx="430.5" cy="163.8" r="3.4" fill="var(--hw)"><title>40만 · Java (Debezium) 905MB</title></circle>
+          <circle cx="501.5" cy="166.2" r="3.4" fill="var(--hw)"><title>50만 · Java (Debezium) 879MB</title></circle>
+          <circle cx="572.4" cy="165.1" r="3.4" fill="var(--hw)"><title>60만 · Java (Debezium) 891MB</title></circle>
+          <circle cx="643.3" cy="163.9" r="3.4" fill="var(--hw)"><title>70만 · Java (Debezium) 904MB</title></circle>
+          <circle cx="714.2" cy="160.0" r="3.4" fill="var(--hw)"><title>80만 · Java (Debezium) 947MB</title></circle>
+          <circle cx="785.1" cy="164.0" r="3.4" fill="var(--hw)"><title>90만 · Java (Debezium) 903MB</title></circle>
+          <circle cx="856.0" cy="164.1" r="3.4" fill="var(--hw)"><title>100만 · Java (Debezium) 902MB</title></circle>
+          <text x="856.0" y="155.1" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--hw)">902</text>
+          <polyline points="76.0,244.7 146.9,243.4 217.8,242.1 288.7,242.0 359.6,188.4 430.5,168.9 501.5,147.3 572.4,129.6 643.3,110.5 714.2,89.4 785.1,70.4 856.0,51.8 " fill="none" stroke="var(--info)" stroke-width="2.4"/>
+          <circle cx="76.0" cy="244.7" r="3.4" fill="var(--info)"><title>1천 · Go (go-pq-cdc) 14MB</title></circle>
+          <circle cx="146.9" cy="243.4" r="3.4" fill="var(--info)"><title>1만 · Go (go-pq-cdc) 29MB</title></circle>
+          <circle cx="217.8" cy="242.1" r="3.4" fill="var(--info)"><title>10만 · Go (go-pq-cdc) 43MB</title></circle>
+          <circle cx="288.7" cy="242.0" r="3.4" fill="var(--info)"><title>20만 · Go (go-pq-cdc) 44MB</title></circle>
+          <circle cx="359.6" cy="188.4" r="3.4" fill="var(--info)"><title>30만 · Go (go-pq-cdc) 634MB</title></circle>
+          <circle cx="430.5" cy="168.9" r="3.4" fill="var(--info)"><title>40만 · Go (go-pq-cdc) 849MB</title></circle>
+          <circle cx="501.5" cy="147.3" r="3.4" fill="var(--info)"><title>50만 · Go (go-pq-cdc) 1,087MB</title></circle>
+          <circle cx="572.4" cy="129.6" r="3.4" fill="var(--info)"><title>60만 · Go (go-pq-cdc) 1,282MB</title></circle>
+          <circle cx="643.3" cy="110.5" r="3.4" fill="var(--info)"><title>70만 · Go (go-pq-cdc) 1,492MB</title></circle>
+          <circle cx="714.2" cy="89.4" r="3.4" fill="var(--info)"><title>80만 · Go (go-pq-cdc) 1,724MB</title></circle>
+          <circle cx="785.1" cy="70.4" r="3.4" fill="var(--info)"><title>90만 · Go (go-pq-cdc) 1,933MB</title></circle>
+          <circle cx="856.0" cy="51.8" r="3.4" fill="var(--info)"><title>100만 · Go (go-pq-cdc) 2,138MB</title></circle>
+          <text x="856.0" y="42.8" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--info)">2,138</text>
+          <line x1="76" y1="246" x2="856" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <line x1="76" y1="28" x2="76" y2="246" stroke="var(--line2)" stroke-width="1.5"/>
+          <rect x="709.6" y="6" width="22" height="4" rx="2" fill="var(--info)"/>
+          <text x="737.6" y="11" font-size="11.5" fill="var(--ink2)">Go (go-pq-cdc)</text>
+          <rect x="555.6" y="6" width="22" height="4" rx="2" fill="var(--hw)"/>
+          <text x="583.6" y="11" font-size="11.5" fill="var(--ink2)">Java (Debezium)</text>
+        </svg>
+        <p class="cht__c">Java 는 900MB 부근에서 평평하고(JVM 힙 상한), Go 는 30만행부터 배치 크기를 따라 계속 올라 100만행에서 2,138MB 에 닿는다. 상한이 없다는 것이 Go 쪽 위험이다.</p>
+      </figure>
+</div>
+          <div class="stack">
+            <div class="card"><p class="card__t">Java</p><p class="card__d">JVM 힙 상한에 눌려 700~950MB 로 평평합니다. CPU 는 약 1.0 core 로 Go 보다 20% 높습니다.<sup class="ref" data-ref="5">5</sup></p></div>
+            <div class="card"><p class="card__t">Go</p><p class="card__d">유휴 14~44MB. 30만행부터 밀린 이벤트를 프로세스 안에 들고 있어 100만행에서 2,138MB. 오늘도 2,122MB 까지 올랐습니다.<sup class="ref" data-ref="9">9</sup></p></div>
+            <div class="note note--risk"><p class="note__t">상한 없는 상승</p>배압(backpressure)이 없어 배치가 더 커지면 호스트 메모리를 먼저 소진합니다. Go 를 택하려면 컨테이너 메모리 상한과 수신 큐 분리가 선행돼야 합니다.</div>
+          </div>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+  </section>
+
+  <!-- ========== 11 섹션 구분 ========== -->
+  <section class="slide slide--section">
+    <div class="stage">
+      <div class="s-no">04</div>
+      <h2>신뢰성</h2>
+      <p class="s-desc">V1~V6 검증은 두 스택 다 통과했습니다. 차이는 "통과했는가" 가 아니라 "무엇 덕분에 통과했는가" 에 있습니다.</p>
+    </div>
+  </section>
+
+  <!-- ========== 12 V1~V6 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">04. 신뢰성</span><h2>V3 만 통과 이유가 다릅니다</h2></div>
+        <div class="s-head__r">results.md · Java 09-02 · Go 09-01</div>
+      </div>
+      <div class="s-body">
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th style="width:8%">항목</th><th style="width:20%">통과 기준</th><th style="width:30%">Java · Debezium</th><th style="width:30%">Go · go-pq-cdc</th><th>판정</th></tr></thead>
+            <tbody>
+              <tr><td>V1</td><td>지연 5초 이내 + 필드 식별</td><td>왕복 INSERT 522 / UPDATE 519 / DELETE 502ms · [amount, status] · 1만 건 3,789 events/s(캡처)</td><td>지연 2~5ms(송신 기준, 기준 다름) · [amount status] · 1만 건 수신 10,000</td><td><span class="chip chip--ok">둘 다</span></td></tr>
+              <tr><td>V2</td><td>유실 0 + 허용시간 산출</td><td>다운 중 1,000건, 재기동 후 1,000/1,000 · 165 bytes/변경</td><td>다운 2.4초 · 1,000/1,000 · 165 bytes/변경</td><td><span class="chip chip--ok">둘 다</span></td></tr>
+              <tr><td>V3</td><td>유실 자동 탐지 + 재동기화</td><td><b>엔진이 예외 내고 기동 거부</b> + 가드도 탐지 · 재동기화 101/101</td><td><b>라이브러리는 새 슬롯 만들고 계속 진행</b> · 가드만 탐지 · 재동기화 101/101</td><td><span class="chip chip--warn">Go 는 가드 의존</span></td></tr>
+              <tr><td>V4</td><td>중복 유입에도 정합 유지</td><td>중복 200건 유입, 2차 반영 0</td><td>같은 LSN 200건, 2차 반영 0</td><td><span class="chip chip--ok">둘 다</span></td></tr>
+              <tr><td>V5</td><td>관심 필드 항상 판독</td><td>DEFAULT 는 자리표시자, FULL 은 200,000 bytes 복원</td><td>DEFAULT 는 컬럼 부재, FULL 은 200,000 bytes 복원</td><td><span class="chip chip--ok">둘 다</span></td></tr>
+              <tr><td>V6</td><td>주입 유실을 대사가 검출</td><td>300/300 체크섬 일치 · 3건 삭제·값 변조 검출 · heartbeat 33,440 bytes 전진</td><td>동일 · heartbeat 33,280 bytes 전진</td><td><span class="chip chip--ok">둘 다</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="s-lead" style="margin-top:10px">Java 의 results.md 는 09-02 재실행 때 V1 만 다시 기록됐습니다. V2~V6 수치는 확인 전략 문서에 옮겨 둔 이전 실행값입니다.<sup class="ref" data-ref="10">10</sup><sup class="ref" data-ref="11">11</sup></p>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+  </section>
+
+  <!-- ========== 13 운영 사례 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">04. 신뢰성</span><h2>운영 3일 동안 Go 쪽에서만 사고가 났습니다</h2></div>
+        <div class="s-head__r">09-02 장애 보고서 · 09-03 11:17 경보 상태</div>
+      </div>
+      <div class="s-body">
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th style="width:12%">스택</th><th style="width:30%">사건</th><th style="width:36%">원인 · 상태</th><th>의미</th></tr></thead>
+            <tbody>
+              <tr><td>Go</td><td>09-02 12:54~13:04 · 재시작 984회, 캡처 정지 70분, 68분 미인지</td><td>wal_sender_timeout 으로 walsender 끊김이 라이브러리 panic 을 부르고, 가드가 오탐해 재시작 루프로 이어짐. 유실 0건은 체크섬으로 사후 확인</td><td><span class="chip chip--risk">라이브러리 결함 + 가드 구조 문제</span></td></tr>
+              <tr><td>Go</td><td>가드 오탐 3회 중 3회</td><td>heartbeat 와 라이브러리 자체 ack 로 슬롯이 체크포인트를 앞지르는 것이 정상 상태라 판정식이 구조적으로 오탐. 판정식 교정(W1) 미완</td><td><span class="chip chip--risk">탐지 수단이 신뢰 불가</span></td></tr>
+              <tr><td>Go</td><td>09-03 현재 가드를 끈 채 기동 중</td><td class="mono">CDC_FAIL_ON_CAPTURE_GAP=false · cdc_capture_gap=1 · CdcCaptureGap 경보 발생 중<sup class="ref" data-ref="15">15</sup></td><td><span class="chip chip--warn">복구 스위치가 상시화</span></td></tr>
+              <tr><td>Go</td><td>09-03 CdcServiceRestartLoop 경보<sup class="ref" data-ref="13">13</sup></td><td>실제 재시작 0회(RestartCount=0). process_start_time_seconds 가 30초마다 약 2초씩 흘러 changes() 가 오르는 오경보<sup class="ref" data-ref="14">14</sup></td><td><span class="chip chip--warn">Go 런타임 지표 신뢰 문제</span></td></tr>
+              <tr><td>Java</td><td>09-03 10:40 재기동 시 "slot is active for PID 731"</td><td>이전 프로세스의 세션이 남아 있던 10초. Debezium 이 자체 재시도(1/6)로 10:40:34 정상 연결</td><td><span class="chip chip--ok">라이브러리가 흡수</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+    <aside class="notes"><b>발표자 노트</b>process_start_time 드리프트의 원인은 podman machine VM 의 부팅 시각(btime) 이 흔들리는 것으로 추정한다. Go 클라이언트는 /proc 에서 계산하고 Java 는 JVM 시작 시각을 고정으로 내기 때문에 Java 에서는 안 보인다. 확정은 안 됐다.</aside>
+  </section>
+
+  <!-- ========== 14 판단 매트릭스 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">05. 판단</span><h2>기준 여섯 개 중 넷이 Java 를 가리킵니다</h2></div>
+        <div class="s-head__r">가중치는 PoC 목표(유실 없는 캡처) 기준</div>
+      </div>
+      <div class="s-body">
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th style="width:18%">기준</th><th style="width:9%">가중</th><th style="width:30%">Java · Debezium</th><th style="width:30%">Go · go-pq-cdc</th><th>우세</th></tr></thead>
+            <tbody>
+              <tr><td>유실 탐지 · 복구</td><td>높음</td><td>엔진 자체 탐지 + 오프셋 파일 + 가드</td><td>가드 하나. 그 가드가 오탐 3/3</td><td><span class="chip chip--ok">Java</span></td></tr>
+              <tr><td>엔진 결함 대응력</td><td>높음</td><td>13k stars, Red Hat 주도, 이슈 축적</td><td>205 stars, 기여자 23명. panic 시 프로세스 종료</td><td><span class="chip chip--ok">Java</span></td></tr>
+              <tr><td>원천 DB 침습</td><td>높음</td><td>읽기 전용 계정</td><td>heartbeat 표 + snapshot 메타 표에 쓰기</td><td><span class="chip chip--ok">Java</span></td></tr>
+              <tr><td>팀 역량 · 운영 도구</td><td>중간</td><td>Spring Boot · Actuator · 기존 스택과 동일</td><td>Go 운영 경험 없음. 지표 파리티 작업이 별도 필요했음</td><td><span class="chip chip--ok">Java</span></td></tr>
+              <tr><td>처리량 · 지연</td><td>중간</td><td>동률</td><td>동률 (1만행 이하만 1.5배)</td><td><span class="chip chip--neutral">무승부</span></td></tr>
+              <tr><td>자원 비용</td><td>낮음</td><td>900MB 고정 · CPU 1.0</td><td>유휴 40MB · CPU 0.8, 밀리면 2.1GB 무상한</td><td><span class="chip chip--warn">Go (조건부)</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+  </section>
+
+  <!-- ========== 15 결정 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">05. 판단</span><h2>결정과 재검토 조건, 다음 단계</h2></div>
+        <div class="s-head__r">Go 스택은 폐기하지 않고 비교 기준으로 유지</div>
+      </div>
+      <div class="s-body">
+        <div class="g2" style="gap:14px 24px">
+          <div class="card card--accent"><p class="card__t">결정</p><p class="card__d">Provider 에 <b>Debezium Embedded 3.6.1</b> 을 내장한 Java 스택으로 진행합니다. PoC 전제(Debezium 내장)와도 일치합니다.<sup class="ref" data-ref="16">16</sup> 대가는 900MB 고정 메모리와 CPU 20% 입니다.</p></div>
+          <div class="card"><p class="card__t">Go 로 되돌아보는 조건 (셋 다 충족 시)</p><p class="card__d">1) 가드 판정식 교정 후 30일간 오탐 0건 · 2) panic 이 프로세스를 죽이지 않도록 recover 적용 후 walsender 강제 종료 주입 3회 생존 · 3) 컨테이너 메모리 상한 1GB 안에서 100만행 배치 반영</p></div>
+          <div class="card"><p class="card__t">자체 구현으로 넘어가는 조건</p><p class="card__d">Debezium 결함(행업 · 오프셋 오염 · 메모리 누수)이 같은 시나리오 3회 이상 + 최신 패치에서도 재현 + 업스트림 이슈 확인. 그 전엔 전환 논의를 열지 않습니다.<sup class="ref" data-ref="11">11</sup></p></div>
+          <div class="card"><p class="card__t">Java 스택에 선행할 운영 설정</p><p class="card__d"><span class="mono">max_slot_wal_keep_size</span> 디스크 여유의 20~30% · heartbeat interval 10s + action.query · 슬롯 lag 경보 warn 512MB / crit 2GB · wal_status unreserved 경고 · 감사 로그 보관 정책 확정 전 감사 표 끄기</p></div>
+        </div>
+        <div class="steps">
+          <div class="step"><span class="step__n">1</span><div class="step__t">이번 주</div><div class="step__d">Java 스택 권고 설정 반영, 감사 표(*) 원복</div></div>
+          <div class="step"><span class="step__n">2</span><div class="step__t">2주</div><div class="step__d">별도 장비 원천 DB 로 시계 편차 · 다운 허용시간 재측정</div></div>
+          <div class="step"><span class="step__n">3</span><div class="step__t">3주</div><div class="step__d">PG 17 이중화 환경에서 페일오버 재동기화 시간 측정</div></div>
+          <div class="step"><span class="step__n">4</span><div class="step__t">이후</div><div class="step__d">Go 스택은 조건 1~3 이 채워질 때만 재평가</div></div>
+        </div>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+  </section>
+
+  <!-- ========== 16 출처 ========== -->
+  <section class="slide">
+    <div class="stage">
+      <div class="s-head">
+        <div class="s-head__l"><span class="kicker">Reference</span><h2>출처</h2></div>
+        <div class="s-head__r">확인일 2026-09-03</div>
+      </div>
+      <div class="s-body" style="font-size:12.5px">
+        <ol class="refs" style="columns:2;column-gap:28px">
+          <li id="ref-1"><span class="refs__n">1</span><span><span class="refs__src">Debezium 버전</span><span class="refs__meta">code · src/embedded-cdc/dev/cdc-service/build.gradle.kts:20</span></span></li>
+          <li id="ref-2"><span class="refs__n">2</span><span><span class="refs__src">go-pq-cdc 버전</span><span class="refs__meta">code · src/embedded-cdc-go/dev/cdc-service/go.mod</span></span></li>
+          <li id="ref-3"><span class="refs__n">3</span><span><span class="refs__src">go-pq-cdc 저장소 지표</span><span class="refs__meta">web · https://api.github.com/repos/Trendyol/go-pq-cdc (확인 2026-09-03)</span></span></li>
+          <li id="ref-4"><span class="refs__n">4</span><span><span class="refs__src">Debezium 저장소 지표</span><span class="refs__meta">web · https://api.github.com/repos/debezium/debezium (확인 2026-09-03)</span></span></li>
+          <li id="ref-5"><span class="refs__n">5</span><span><span class="refs__src">배치 크기별 CDC 반영 시간 측정 결과</span><span class="refs__meta">doc · src/embedded-cdc/docs/cdc-batch-insert-benchmark.html, 2026-09-02 11:15~13:21</span></span></li>
+          <li id="ref-6"><span class="refs__n">6</span><span><span class="refs__src">INSERT · DELETE 배치별 CDC 반영 시간</span><span class="refs__meta">doc · src/embedded-cdc/docs/insert-delete-benchmark.html, 2026-09-02 17:02~17:18</span></span></li>
+          <li id="ref-7"><span class="refs__n">7</span><span><span class="refs__src">CDC 장애 복구 보고서</span><span class="refs__meta">doc · src/embedded-cdc-go/docs/incident-2026-09-02.html, 2026-09-02</span></span></li>
+          <li id="ref-8"><span class="refs__n">8</span><span><span class="refs__src">오늘 실측 행 수 계단</span><span class="refs__meta">data · Prometheus :56090 / :57090 / :58290 query_range cdc_source_rows · cdc_target_rows step 5s, 2026-09-03 10:25~11:15 KST</span></span></li>
+          <li id="ref-9"><span class="refs__n">9</span><span><span class="refs__src">오늘 컨테이너 자원</span><span class="refs__meta">data · Prometheus max_over_time(cdc:container_mem_bytes[5m]) name=emb-cdc-service · emb-cdc-go-service · cdc-custom-service, 2026-09-03 10:27~11:18</span></span></li>
+          <li id="ref-10"><span class="refs__n">10</span><span><span class="refs__src">V1~V6 계측치</span><span class="refs__meta">data · src/embedded-cdc/dev/cdc-service/build/verification/results.md (2026-09-02 16:17) · src/embedded-cdc-go/.../results.md (2026-09-01 17:09)</span></span></li>
+          <li id="ref-11"><span class="refs__n">11</span><span><span class="refs__src">PoC 검증 - 확인 전략</span><span class="refs__meta">doc · D:\docs\hanwha_init\도메인\01. 내업공정실적 자동 수집 시스템\DB to DB\PoC 검증 - 확인 전략.md, 2026-09-02 기준</span></span></li>
+          <li id="ref-12"><span class="refs__n">12</span><span><span class="refs__src">Debezium 판과 무엇이 다른가</span><span class="refs__meta">doc · src/embedded-cdc-go/README.md · src/cdc-custom/README.md</span></span></li>
+          <li id="ref-13"><span class="refs__n">13</span><span><span class="refs__src">현재 경보 상태</span><span class="refs__meta">data · Prometheus :57090 /api/v1/alerts, 2026-09-03 11:17 KST · podman inspect emb-cdc-go-service RestartCount=0</span></span></li>
+          <li id="ref-14"><span class="refs__n">14</span><span><span class="refs__src">재시작 루프 경보식</span><span class="refs__meta">code · src/embedded-cdc-go/infra/monitoring/prometheus/rules/cdc-alerts.yml:45</span></span></li>
+          <li id="ref-15"><span class="refs__n">15</span><span><span class="refs__src">Go 가드 끈 채 기동</span><span class="refs__meta">data · podman logs emb-cdc-go-service 2026-09-03T01:39:31Z · 컨테이너 env CDC_FAIL_ON_CAPTURE_GAP=false</span></span></li>
+          <li id="ref-16"><span class="refs__n">16</span><span><span class="refs__src">PoC 전제 (Debezium 내장)</span><span class="refs__meta">doc · D:\docs\hanwha_init\...\DB to DB\PoC - DB to DB.md</span></span></li>
+        </ol>
+      </div>
+      <div class="s-foot"><span>CDC 캡처 라이브러리 선택</span><span class="pg"></span></div>
+    </div>
+  </section>
+
+</div>
+
+<div class="prog" id="prog"></div>
+<div class="hud no-print">
+  <button id="bPrev" type="button">이전</button>
+  <button id="bNext" type="button">다음</button>
+  <span class="cnt" id="hudCnt">1 / 1</span>
+  <span class="sp"></span>
+  <span class="ttl">방향키 이동 · O 전체보기 · N 노트 · F 전체화면 · T 테마</span>
+  <span class="sp"></span>
+  <button id="bOver" type="button">전체보기</button>
+  <button id="bNote" type="button">노트</button>
+  <button id="bTheme" type="button">테마</button>
+  <button id="bPrint" type="button">PDF</button>
+</div>
+
+<script>
+/* ============================================================
+   HW Doc Kit - diagram engine (의존성 없음, 단일 파일 내장용)
+   drawio 느낌의 조작: 드래그 이동 / 연결 / 라벨 인라인 편집 /
+   팬·줌 / 톤 변경 / 삭제 / Ctrl+Z / JSON 내보내기(붙여넣기로 영구 반영)
+
+   마크업 (자세한 내용은 references/diagram.md):
+     div.dgm[data-edit=on] 안에
+     script[type=application/json][class=dgm-data] 로 노드·엣지 JSON 을 넣습니다.
+   ============================================================ */
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var GRID = 10;
+  var TONES = ['neutral', 'primary', 'accent', 'muted', 'ok', 'warn', 'risk', 'info'];
+
+  function s(n, a) {
+    var e = document.createElementNS(NS, n);
+    for (var k in (a || {})) e.setAttribute(k, a[k]);
+    return e;
+  }
+  function h(t, c, txt) {
+    var e = document.createElement(t);
+    if (c) e.className = c;
+    if (txt != null) e.textContent = txt;
+    return e;
+  }
+  function btn(label, title) {
+    var b = h('button', 'dgm__btn', label);
+    b.type = 'button';
+    if (title) b.title = title;
+    return b;
+  }
+  function snap(v) { return Math.round(v / GRID) * GRID; }
+
+  function boxShape(n) {
+    var sh = n.shape || 'rect', w = n.w, ht = n.h;
+    if (sh === 'diamond')
+      return s('path', { 'class': 'box', d: 'M' + w / 2 + ',0 L' + w + ',' + ht / 2 + ' L' + w / 2 + ',' + ht + ' L0,' + ht / 2 + ' Z' });
+    if (sh === 'store') {
+      var r = Math.min(14, ht / 4);
+      var d = 'M0,' + r +
+        ' C0,' + (r * .45) + ' ' + (w * .22) + ',0 ' + (w / 2) + ',0' +
+        ' C' + (w * .78) + ',0 ' + w + ',' + (r * .45) + ' ' + w + ',' + r +
+        ' L' + w + ',' + (ht - r) +
+        ' C' + w + ',' + (ht - r * .45) + ' ' + (w * .78) + ',' + ht + ' ' + (w / 2) + ',' + ht +
+        ' C' + (w * .22) + ',' + ht + ' 0,' + (ht - r * .45) + ' 0,' + (ht - r) + ' Z';
+      return s('path', { 'class': 'box', d: d });
+    }
+    if (sh === 'note') {
+      var f = 14;
+      return s('path', { 'class': 'box', d: 'M0,0 L' + (w - f) + ',0 L' + w + ',' + f + ' L' + w + ',' + ht + ' L0,' + ht + ' Z' });
+    }
+    var rx = sh === 'pill' ? ht / 2 : (sh === 'round' ? 12 : 4);
+    return s('rect', { 'class': 'box', x: 0, y: 0, width: w, height: ht, rx: rx });
+  }
+
+  /* 노드 두 개 사이의 직교(엘보) 경로 */
+  function route(a, b) {
+    var ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    var dx = bc.x - ac.x, dy = bc.y - ac.y, p1, p2, dir;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      dir = 'h';
+      p1 = { x: dx > 0 ? a.x + a.w : a.x, y: ac.y };
+      p2 = { x: dx > 0 ? b.x : b.x + b.w, y: bc.y };
+    } else {
+      dir = 'v';
+      p1 = { x: ac.x, y: dy > 0 ? a.y + a.h : a.y };
+      p2 = { x: bc.x, y: dy > 0 ? b.y : b.y + b.h };
+    }
+    var d, mid;
+    if (dir === 'h') {
+      var mx = (p1.x + p2.x) / 2;
+      d = 'M' + p1.x + ',' + p1.y + ' L' + mx + ',' + p1.y + ' L' + mx + ',' + p2.y + ' L' + p2.x + ',' + p2.y;
+      mid = { x: mx, y: (p1.y + p2.y) / 2 };
+    } else {
+      var my = (p1.y + p2.y) / 2;
+      d = 'M' + p1.x + ',' + p1.y + ' L' + p1.x + ',' + my + ' L' + p2.x + ',' + my + ' L' + p2.x + ',' + p2.y;
+      mid = { x: (p1.x + p2.x) / 2, y: my };
+    }
+    return { d: d, mid: mid };
+  }
+
+  function Diagram(root) {
+    this.root = root;
+    this.editable = root.getAttribute('data-edit') !== 'off';
+    this.data = this.read();
+    this.view = { tx: 0, ty: 0, k: 1 };
+    this.sel = null;          /* {type:'node'|'edge'|'group', id} */
+    this.linkMode = false;
+    this.linkFrom = null;
+    this.undo = [];
+    this.build();
+    this.render();
+    this.fit();
+  }
+
+  Diagram.prototype.read = function () {
+    var tag = this.root.querySelector('script.dgm-data');
+    var d = { nodes: [], edges: [], groups: [] };
+    if (tag) { try { d = JSON.parse(tag.textContent); } catch (e) { console.warn('[dgm] JSON 파싱 실패', e); } }
+    d.nodes = d.nodes || []; d.edges = d.edges || []; d.groups = d.groups || [];
+    d.nodes.forEach(function (n) {
+      n.w = n.w || 170; n.h = n.h || 62;
+      n.shape = n.shape || 'rect'; n.tone = n.tone || 'neutral';
+      n.x = n.x || 0; n.y = n.y || 0;
+    });
+    return d;
+  };
+
+  Diagram.prototype.build = function () {
+    var self = this;
+    var bar = h('div', 'dgm__bar no-print');
+    var mk = function (label, title, fn) { var b = btn(label, title); b.addEventListener('click', fn); bar.appendChild(b); return b; };
+
+    mk('박스', '새 박스 추가', function () { self.addNode(); });
+    this.bLink = mk('연결', '두 박스를 차례로 클릭해 화살표 연결', function () { self.toggleLink(); });
+    mk('색', '선택 항목의 톤 변경', function () { self.cycleTone(); });
+    mk('모양', '선택 박스의 모양 변경', function () { self.cycleShape(); });
+    mk('삭제', '선택 항목 삭제 (Delete)', function () { self.remove(); });
+    bar.appendChild(h('span', 'sp'));
+    mk('−', '축소', function () { self.zoom(1 / 1.2); });
+    mk('+', '확대', function () { self.zoom(1.2); });
+    mk('맞춤', '화면에 맞추기', function () { self.fit(); });
+    this.bMax = mk('넓게', '화면 가득 펼치기 (Esc 로 닫기)', function () { self.toggleMax(); });
+    mk('JSON', '수정 결과를 JSON으로 복사해 원본 파일에 붙여넣기', function () { self.openJson(); });
+    bar.appendChild(h('span', 'dgm__hint', '드래그 이동 · 더블클릭 라벨수정 · 휠 줌 · 빈 곳 드래그 팬'));
+
+    var svg = s('svg', { 'class': 'dgm__svg' });
+    var defs = s('defs');
+    [['ar-default', 'var(--ink3)'], ['ar-primary', 'var(--hw)'], ['ar-risk', 'var(--risk)'], ['ar-ok', 'var(--ok)']]
+      .forEach(function (m) {
+        var mk2 = s('marker', {
+          id: m[0] + '-' + Math.random().toString(36).slice(2, 7),
+          viewBox: '0 0 10 10', refX: 9, refY: 5,
+          markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse'
+        });
+        var p = s('path', { d: 'M0,1 L10,5 L0,9 z' });
+        p.setAttribute('style', 'fill:' + m[1]);
+        mk2.appendChild(p); defs.appendChild(mk2);
+        self['mk_' + m[0].slice(3)] = mk2.getAttribute('id');
+      });
+    svg.appendChild(defs);
+
+    this.gRoot = s('g');
+    this.gGroups = s('g'); this.gEdges = s('g'); this.gNodes = s('g');
+    this.gRoot.appendChild(this.gGroups);
+    this.gRoot.appendChild(this.gEdges);
+    this.gRoot.appendChild(this.gNodes);
+    svg.appendChild(this.gRoot);
+
+    this.svg = svg;
+    this.root.insertBefore(svg, this.root.firstChild);
+    if (this.editable) this.root.insertBefore(bar, svg);
+
+    /* JSON 모달 */
+    var modal = h('div', 'dgm__modal no-print');
+    var pane = h('div', 'pane');
+    var head = h('div', 'head'); head.appendChild(h('b', null, '다이어그램 JSON'));
+    head.appendChild(h('span', 'sp'));
+    var closeB = btn('닫기'); head.appendChild(closeB);
+    var ta = h('textarea'); ta.spellcheck = false;
+    var foot = h('div', 'foot');
+    var copyB = btn('전체 복사'); var applyB = btn('붙여넣은 JSON 적용');
+    foot.appendChild(h('span', 'dgm__hint', '원본 HTML의 dgm-data 블록에 붙여넣으면 수정이 영구 반영됩니다'));
+    foot.appendChild(h('span', 'sp')); foot.appendChild(applyB); foot.appendChild(copyB);
+    pane.appendChild(head); pane.appendChild(ta); pane.appendChild(foot);
+    modal.appendChild(pane); this.root.appendChild(modal);
+    this.modal = modal; this.ta = ta;
+    closeB.addEventListener('click', function () { modal.classList.remove('is-open'); });
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.remove('is-open'); });
+    copyB.addEventListener('click', function () {
+      ta.select(); ta.setSelectionRange(0, ta.value.length);
+      try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); }
+      copyB.textContent = '복사됨'; setTimeout(function () { copyB.textContent = '전체 복사'; }, 1200);
+    });
+    applyB.addEventListener('click', function () {
+      try {
+        var d = JSON.parse(ta.value);
+        self.push(); self.data = d; self.data.nodes = d.nodes || []; self.data.edges = d.edges || []; self.data.groups = d.groups || [];
+        self.render(); self.fit(); modal.classList.remove('is-open');
+      } catch (e) { alert('JSON 형식이 올바르지 않습니다: ' + e.message); }
+    });
+
+    this.bind();
+  };
+
+  /* ---------- 렌더 ---------- */
+  Diagram.prototype.render = function () {
+    var self = this;
+    this.gGroups.textContent = ''; this.gEdges.textContent = ''; this.gNodes.textContent = '';
+    this.index = {};
+    this.data.nodes.forEach(function (n) { self.index[n.id] = n; });
+
+    this.data.groups.forEach(function (g) {
+      var el = s('g', { 'class': 'dgm-grp', 'data-id': g.id, transform: 'translate(' + g.x + ',' + g.y + ')' });
+      el.appendChild(s('rect', { 'class': 'box', x: 0, y: 0, width: g.w, height: g.h, rx: 10 }));
+      var t = s('text', { 'class': 'gl', x: 12, y: 20 }); t.textContent = g.label || '';
+      el.appendChild(t);
+      self.gGroups.appendChild(el);
+    });
+
+    this.data.edges.forEach(function (e, i) {
+      var a = self.index[e.from], b = self.index[e.to];
+      if (!a || !b) return;
+      var r = route(a, b);
+      var g = s('g', { 'class': 'dgm-edge', 'data-i': i });
+      if (e.tone) g.setAttribute('data-tone', e.tone);
+      if (e.style) g.setAttribute('data-style', e.style);
+      var wire = s('path', { 'class': 'wire', d: r.d });
+      var mid = e.tone === 'primary' ? self.mk_primary : e.tone === 'risk' ? self.mk_risk : e.tone === 'ok' ? self.mk_ok : self.mk_default;
+      if (e.arrow !== false) wire.setAttribute('marker-end', 'url(#' + mid + ')');
+      g.appendChild(s('path', { 'class': 'hit', d: r.d }));
+      g.appendChild(wire);
+      if (e.label) {
+        var txt = String(e.label), wpx = 0;
+        for (var ci = 0; ci < txt.length; ci++) wpx += txt.charCodeAt(ci) > 0x2E80 ? 12.5 : 7;
+        var w = Math.max(34, Math.ceil(wpx) + 22);
+        var fo = s('foreignObject', { x: r.mid.x - w / 2, y: r.mid.y - 11, width: w, height: 22 });
+        var div = h('div', 'elbl'); div.appendChild(h('span', null, e.label));
+        fo.appendChild(div); g.appendChild(fo);
+      }
+      self.gEdges.appendChild(g);
+    });
+
+    this.data.nodes.forEach(function (n) {
+      var g = s('g', { 'class': 'dgm-node', 'data-id': n.id, 'data-tone': n.tone, transform: 'translate(' + n.x + ',' + n.y + ')' });
+      g.appendChild(boxShape(n));
+      var pad = n.shape === 'diamond' ? Math.round(n.w * .18) : 0;
+      var fo = s('foreignObject', { x: pad, y: 0, width: n.w - pad * 2, height: n.h });
+      var lbl = h('div', 'lbl');
+      lbl.appendChild(h('span', 't', n.label || ''));
+      if (n.sub) lbl.appendChild(h('span', 'sub', n.sub));
+      fo.appendChild(lbl); g.appendChild(fo);
+      self.gNodes.appendChild(g);
+    });
+
+    this.paint();
+  };
+
+  Diagram.prototype.paint = function () {
+    var self = this;
+    this.gRoot.setAttribute('transform', 'translate(' + this.view.tx + ',' + this.view.ty + ') scale(' + this.view.k + ')');
+    Array.prototype.forEach.call(this.root.querySelectorAll('.is-sel'), function (e) { e.classList.remove('is-sel'); });
+    if (!this.sel) return;
+    var q = this.sel.type === 'edge' ? '.dgm-edge[data-i="' + this.sel.id + '"]'
+      : this.sel.type === 'group' ? '.dgm-grp[data-id="' + this.sel.id + '"]'
+        : '.dgm-node[data-id="' + this.sel.id + '"]';
+    var el = this.root.querySelector(q);
+    if (el) el.classList.add('is-sel');
+  };
+
+  /* ---------- 좌표 ---------- */
+  Diagram.prototype.world = function (ev) {
+    var r = this.svg.getBoundingClientRect();
+    return { x: (ev.clientX - r.left - this.view.tx) / this.view.k, y: (ev.clientY - r.top - this.view.ty) / this.view.k };
+  };
+
+  /* 화면 가득 펼치기. 다른 다이어그램이 펼쳐져 있으면 먼저 닫는다. */
+  Diagram.prototype.toggleMax = function (force) {
+    var self = this;
+    var on = (force == null) ? !this.root.classList.contains('is-max') : !!force;
+    if (on) {
+      var cur = document.querySelector('.dgm.is-max');
+      if (cur && cur !== this.root && cur.__dgm) cur.__dgm.toggleMax(false);
+    }
+    this.root.classList.toggle('is-max', on);
+    document.documentElement.classList.toggle('dgm-locked', on);
+    if (this.bMax) {
+      this.bMax.classList.toggle('is-on', on);
+      this.bMax.textContent = on ? '닫기' : '넓게';
+      this.bMax.title = on ? '원래 크기로 (Esc)' : '화면 가득 펼치기 (Esc 로 닫기)';
+    }
+    (window.requestAnimationFrame || setTimeout)(function () { self.fit(); });
+  };
+
+  Diagram.prototype.fit = function () {
+    var items = this.data.nodes.concat(this.data.groups);
+    var r = this.svg.getBoundingClientRect();
+    var W = r.width || 800, H = r.height || 420;
+    if (!items.length) { this.view = { tx: 20, ty: 20, k: 1 }; return this.paint(); }
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    items.forEach(function (n) {
+      x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+      x1 = Math.max(x1, n.x + n.w); y1 = Math.max(y1, n.y + n.h);
+    });
+    var pad = 24, bw = (x1 - x0) + pad * 2, bh = (y1 - y0) + pad * 2;
+    var k = Math.min(W / bw, H / bh, 1.6);
+    this.view.k = k;
+    this.view.tx = (W - bw * k) / 2 - (x0 - pad) * k;
+    this.view.ty = (H - bh * k) / 2 - (y0 - pad) * k;
+    this.paint();
+  };
+
+  Diagram.prototype.zoom = function (f, cx, cy) {
+    var r = this.svg.getBoundingClientRect();
+    cx = cx == null ? r.width / 2 : cx; cy = cy == null ? r.height / 2 : cy;
+    var k0 = this.view.k, k1 = Math.max(.25, Math.min(3, k0 * f));
+    this.view.tx = cx - (cx - this.view.tx) * (k1 / k0);
+    this.view.ty = cy - (cy - this.view.ty) * (k1 / k0);
+    this.view.k = k1; this.paint();
+  };
+
+  /* ---------- 편집 ---------- */
+  Diagram.prototype.push = function () {
+    this.undo.push(JSON.stringify(this.data));
+    if (this.undo.length > 40) this.undo.shift();
+  };
+  Diagram.prototype.popUndo = function () {
+    if (!this.undo.length) return;
+    this.data = JSON.parse(this.undo.pop());
+    this.sel = null; this.render();
+  };
+  Diagram.prototype.addNode = function () {
+    this.push();
+    var id = 'n' + Date.now().toString(36).slice(-5);
+    var r = this.svg.getBoundingClientRect();
+    var wx = snap((r.width / 2 - this.view.tx) / this.view.k - 85);
+    var wy = snap((r.height / 2 - this.view.ty) / this.view.k - 31);
+    this.data.nodes.push({ id: id, label: '새 단계', x: wx, y: wy, w: 170, h: 62, shape: 'rect', tone: 'neutral' });
+    this.sel = { type: 'node', id: id };
+    this.render();
+  };
+  Diagram.prototype.toggleLink = function () {
+    this.linkMode = !this.linkMode; this.linkFrom = null;
+    this.bLink.classList.toggle('is-on', this.linkMode);
+  };
+  Diagram.prototype.cycleTone = function () {
+    if (!this.sel) return;
+    this.push();
+    if (this.sel.type === 'node') {
+      var n = this.index[this.sel.id];
+      n.tone = TONES[(TONES.indexOf(n.tone) + 1) % TONES.length];
+    } else if (this.sel.type === 'edge') {
+      var order = [undefined, 'primary', 'ok', 'risk'];
+      var e = this.data.edges[this.sel.id];
+      e.tone = order[(order.indexOf(e.tone) + 1) % order.length];
+    }
+    this.render();
+  };
+  Diagram.prototype.cycleShape = function () {
+    if (!this.sel || this.sel.type !== 'node') return;
+    var SH = ['rect', 'round', 'pill', 'diamond', 'store', 'note'];
+    this.push();
+    var n = this.index[this.sel.id];
+    n.shape = SH[(SH.indexOf(n.shape) + 1) % SH.length];
+    this.render();
+  };
+  Diagram.prototype.remove = function () {
+    if (!this.sel) return;
+    this.push();
+    var self = this;
+    if (this.sel.type === 'node') {
+      this.data.nodes = this.data.nodes.filter(function (n) { return n.id !== self.sel.id; });
+      this.data.edges = this.data.edges.filter(function (e) { return e.from !== self.sel.id && e.to !== self.sel.id; });
+    } else if (this.sel.type === 'edge') {
+      this.data.edges.splice(this.sel.id, 1);
+    } else {
+      this.data.groups = this.data.groups.filter(function (g) { return g.id !== self.sel.id; });
+    }
+    this.sel = null; this.render();
+  };
+  Diagram.prototype.openJson = function () {
+    this.ta.value = JSON.stringify(this.data, null, 2);
+    this.modal.classList.add('is-open');
+  };
+
+  /* ---------- 이벤트 ---------- */
+  Diagram.prototype.bind = function () {
+    var self = this, drag = null, pan = null;
+
+    this.svg.addEventListener('pointerdown', function (ev) {
+      if (ev.target.closest('[contenteditable="true"]')) return;
+      var nodeEl = ev.target.closest('.dgm-node');
+      var edgeEl = ev.target.closest('.dgm-edge');
+      var grpEl = ev.target.closest('.dgm-grp');
+
+      if (self.linkMode && nodeEl) {
+        var id = nodeEl.getAttribute('data-id');
+        if (!self.linkFrom) { self.linkFrom = id; self.sel = { type: 'node', id: id }; self.paint(); }
+        else if (self.linkFrom !== id) {
+          self.push();
+          self.data.edges.push({ from: self.linkFrom, to: id, label: '' });
+          self.linkFrom = null; self.toggleLink(); self.render();
+        }
+        return;
+      }
+      if (nodeEl && self.editable) {
+        self.sel = { type: 'node', id: nodeEl.getAttribute('data-id') };
+        var n = self.index[self.sel.id];
+        var w = self.world(ev);
+        drag = { kind: 'node', obj: n, dx: w.x - n.x, dy: w.y - n.y, moved: false };
+        self.push();
+      } else if (grpEl && self.editable) {
+        self.sel = { type: 'group', id: grpEl.getAttribute('data-id') };
+        var g = self.data.groups.filter(function (q) { return q.id === self.sel.id; })[0];
+        var w2 = self.world(ev);
+        drag = { kind: 'group', obj: g, dx: w2.x - g.x, dy: w2.y - g.y, moved: false };
+        self.push();
+      } else if (edgeEl) {
+        self.sel = { type: 'edge', id: +edgeEl.getAttribute('data-i') };
+      } else {
+        self.sel = null;
+        pan = { x: ev.clientX, y: ev.clientY, tx: self.view.tx, ty: self.view.ty };
+        self.svg.classList.add('is-panning');
+      }
+      self.svg.setPointerCapture(ev.pointerId);
+      self.paint();
+    });
+
+    this.svg.addEventListener('pointermove', function (ev) {
+      if (drag) {
+        var w = self.world(ev);
+        drag.obj.x = snap(w.x - drag.dx); drag.obj.y = snap(w.y - drag.dy);
+        drag.moved = true;
+        self.render();
+      } else if (pan) {
+        self.view.tx = pan.tx + (ev.clientX - pan.x);
+        self.view.ty = pan.ty + (ev.clientY - pan.y);
+        self.paint();
+      }
+    });
+
+    var end = function (ev) {
+      if (drag && !drag.moved) self.undo.pop();
+      drag = null; pan = null;
+      self.svg.classList.remove('is-panning');
+      try { self.svg.releasePointerCapture(ev.pointerId); } catch (e) { }
+    };
+    this.svg.addEventListener('pointerup', end);
+    this.svg.addEventListener('pointercancel', end);
+
+    this.svg.addEventListener('wheel', function (ev) {
+      ev.preventDefault();
+      var r = self.svg.getBoundingClientRect();
+      self.zoom(ev.deltaY < 0 ? 1.12 : 1 / 1.12, ev.clientX - r.left, ev.clientY - r.top);
+    }, { passive: false });
+
+    this.svg.addEventListener('dblclick', function (ev) {
+      if (!self.editable) return;
+      var nodeEl = ev.target.closest('.dgm-node');
+      if (nodeEl) return self.edit(nodeEl.querySelector('.lbl .t'), function (v) {
+        self.index[nodeEl.getAttribute('data-id')].label = v;
+      });
+      var edgeEl = ev.target.closest('.dgm-edge');
+      if (edgeEl) {
+        var i = +edgeEl.getAttribute('data-i');
+        var v = prompt('연결 라벨', self.data.edges[i].label || '');
+        if (v !== null) { self.push(); self.data.edges[i].label = v; self.render(); }
+      }
+    });
+
+    this.root.addEventListener('keydown', function (ev) {
+      if (ev.target.getAttribute && ev.target.getAttribute('contenteditable') === 'true') return;
+      if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); self.remove(); }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); self.popUndo(); }
+    });
+    this.root.tabIndex = 0;
+
+    var ro = window.ResizeObserver ? new ResizeObserver(function () { self.paint(); }) : null;
+    if (ro) ro.observe(this.svg);
+  };
+
+  Diagram.prototype.edit = function (el, done) {
+    if (!el) return;
+    var self = this;
+    this.push();
+    el.parentNode.setAttribute('contenteditable', 'true');
+    el.parentNode.focus();
+    var save = function () {
+      el.parentNode.removeAttribute('contenteditable');
+      done(el.textContent.trim());
+      self.render();
+    };
+    el.parentNode.addEventListener('blur', save, { once: true });
+    el.parentNode.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); el.parentNode.blur(); }
+      if (ev.key === 'Escape') { el.parentNode.removeAttribute('contenteditable'); self.popUndo(); }
+      ev.stopPropagation();
+    });
+    var rg = document.createRange(); rg.selectNodeContents(el);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+  };
+
+  function initAll(scope) {
+    var list = (scope || document).querySelectorAll('.dgm');
+    Array.prototype.forEach.call(list, function (el) {
+      if (el.__dgm) return;
+      el.__dgm = new Diagram(el);
+    });
+  }
+  /* Esc 는 펼쳐 놓은 다이어그램을 닫는다. 라벨 편집 중의 Esc 는
+     edit() 안에서 stopPropagation 되므로 여기까지 오지 않는다. */
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    var el = document.querySelector('.dgm.is-max');
+    if (el && el.__dgm) { ev.preventDefault(); el.__dgm.toggleMax(false); }
+  });
+
+  window.HWDiagram = { initAll: initAll, Diagram: Diagram };
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', function () { initAll(); });
+  else initAll();
+})();
+
+/* ============================================================
+   HW Doc Kit - 발표 덱 런타임 (네비게이션 / 배율 / 오버뷰 / 노트)
+   ============================================================ */
+(function () {
+  'use strict';
+  var deck = document.getElementById('deck');
+  if (!deck) return;
+  var slides = Array.prototype.slice.call(deck.querySelectorAll('.slide'));
+  var cur = 0;
+
+  slides.forEach(function (sl, i) {
+    sl.setAttribute('data-n', i + 1);
+    var foot = sl.querySelector('.s-foot .pg');
+    if (foot && !foot.textContent.trim()) foot.textContent = (i + 1) + ' / ' + slides.length;
+    sl.addEventListener('click', function () {
+      if (deck.classList.contains('is-overview')) { go(i); overview(false); }
+    });
+  });
+
+  function scale() {
+    var hud = 46, pad = deck.classList.contains('is-overview') ? 0 : 28;
+    var k = Math.min((window.innerWidth - pad * 2) / 1280, (window.innerHeight - hud - pad) / 720);
+    document.documentElement.style.setProperty('--k', Math.max(.15, k).toFixed(4));
+  }
+
+  function go(i) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach(function (s, j) { s.classList.toggle('is-cur', j === cur); });
+    var c = document.getElementById('hudCnt');
+    if (c) c.textContent = (cur + 1) + ' / ' + slides.length;
+    var p = document.getElementById('prog');
+    if (p) p.style.width = ((cur + 1) / slides.length * 100).toFixed(2) + '%';
+    if (location.hash !== '#' + (cur + 1)) history.replaceState(null, '', '#' + (cur + 1));
+    if (window.HWDiagram) window.HWDiagram.initAll(slides[cur]);
+    var d = slides[cur].querySelectorAll('.dgm');
+    Array.prototype.forEach.call(d, function (el) { if (el.__dgm) el.__dgm.fit(); });
+  }
+
+  function overview(on) {
+    deck.classList.toggle('is-overview', on == null ? !deck.classList.contains('is-overview') : on);
+    scale();
+    if (deck.classList.contains('is-overview')) window.HWDiagram && window.HWDiagram.initAll(deck);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { e.preventDefault(); go(cur + 1); }
+    else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); go(cur - 1); }
+    else if (k === 'Home') go(0);
+    else if (k === 'End') go(slides.length - 1);
+    else if (k === 'o' || k === 'O') overview();
+    else if (k === 'n' || k === 'N') deck.classList.toggle('is-notes');
+    else if (k === 't' || k === 'T') theme();
+    else if (k === 'f' || k === 'F') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    }
+  });
+
+  function theme() {
+    var r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  }
+
+  function bind(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
+  bind('bPrev', function () { go(cur - 1); });
+  bind('bNext', function () { go(cur + 1); });
+  bind('bOver', function () { overview(); });
+  bind('bNote', function () { deck.classList.toggle('is-notes'); });
+  bind('bTheme', theme);
+  bind('bPrint', function () { window.print(); });
+
+  window.addEventListener('resize', scale);
+  window.addEventListener('hashchange', function () {
+    var n = parseInt(location.hash.slice(1), 10);
+    if (n && n - 1 !== cur) go(n - 1);
+  });
+
+  /* 코드 복사 버튼 */
+  Array.prototype.forEach.call(document.querySelectorAll('.code__copy'), function (b) {
+    b.addEventListener('click', function () {
+      var pre = b.closest('.code').querySelector('pre');
+      try { navigator.clipboard.writeText(pre.innerText); } catch (e) { }
+      var t = b.textContent; b.textContent = '복사됨';
+      setTimeout(function () { b.textContent = t; }, 1200);
+    });
+  });
+
+  /* 각주 -> 출처 슬라이드 이동 */
+  Array.prototype.forEach.call(document.querySelectorAll('.ref[data-ref]'), function (r) {
+    r.addEventListener('click', function () {
+      var tgt = document.querySelector('#ref-' + r.getAttribute('data-ref'));
+      if (!tgt) return;
+      var sl = tgt.closest('.slide');
+      go(slides.indexOf(sl));
+      tgt.animate([{ background: 'var(--hw-pale)' }, { background: 'transparent' }], { duration: 1400 });
+    });
+  });
+
+  scale();
+  var start = parseInt(location.hash.slice(1), 10);
+  go(start ? start - 1 : 0);
+  window.addEventListener('beforeprint', function () { document.documentElement.style.setProperty('--k', 1); });
+  window.addEventListener('afterprint', scale);
+})();
+</script>
+</body>
+</html>
