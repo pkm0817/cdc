@@ -1,0 +1,186 @@
+# CDC Custom (outbox) Overview
+uid=cdc-custom  schema=39  refresh=5s  time=now-15m~now
+tags=cdc,cdc-custom,outbox
+
+  panel #1 stat "Source 행 수" @ x0 y0 6x5
+    decimals=0
+    calc lastNotNull
+    A  cdc_source_rows  legend="{{table_name}}"  instant
+    desc: source DB 테이블별 정확한 행 수. publication 에 든 테이블이 자동으로 잡힌다
+  panel #2 stat "Target 행 수 (활성)" @ x6 y0 6x5
+    decimals=0
+    calc lastNotNull
+    A  cdc_target_rows  legend="{{table_name}}"  instant
+    desc: 소프트 삭제된 행은 뺀 수. source 와 같은 기준이라 그대로 비교된다
+  panel #3 stat "정합성 차이 |source − target|" @ x12 y0 6x5
+    decimals=0
+    thresholds base:green 1:orange 100:red
+    calc lastNotNull
+    A  abs(cdc_source_rows - on(table_name) cdc_target_rows)  legend="{{table_name}}"  instant
+    desc: 0 이 아니면 아직 반영 중이거나 유실된 것이다
+  panel #4 stat "소프트 삭제 / Sink 오류" @ x18 y0 6x5
+    decimals=0
+    calc lastNotNull
+    A  cdc_target_deleted_rows  legend="삭제 {{table_name}}"  instant
+    B  sum(cdc_sink_errors_total) or vector(0)  legend="sink 오류"  instant
+    desc: DELETE 가 실제로 반영됐는지, 적재 중 실패가 있었는지
+  panel #5 timeseries "CDC 이벤트 처리량 (events/sec)" @ x0 y5 12x8
+    unit=ops
+    A  sum by (table, op) (rate(cdc_events_total[1m]))  legend="{{table}} {{op}}"
+    desc: 테이블·연산별 초당 처리 건수
+  panel #6 timeseries "End-to-End 지연 (변경 기록 → target 반영)" @ x12 y5 12x8
+    unit=s
+    A  cdc_end_to_end_lag_seconds_max  legend="최대"
+    B  rate(cdc_end_to_end_lag_seconds_sum[1m]) / rate(cdc_end_to_end_lag_seconds_count[1m])  legend="평균"
+    desc: 원천 커밋 시각과 적재 시각의 차이
+  panel #7 timeseries "행 수 추이 — source vs target" @ x0 y13 12x8
+    decimals=0
+    A  cdc_source_rows  legend="source {{table_name}}"
+    B  cdc_target_rows  legend="target {{table_name}}"
+    desc: 두 선이 벌어졌다 붙는 폭이 곧 복제 지연이다
+  panel #8 timeseries "Outbox 적체 — 미반영 줄 수 · 최장 대기" @ x12 y13 12x8
+    unit=none  decimals=0
+    overrides 1건
+    A  cdc_outbox_pending  legend="미반영 줄 수"
+    B  cdc_outbox_oldest_age_seconds  legend="최장 대기(초)"
+    desc: 이 방식에는 복제 슬롯이 없다. 컨슈머가 멈추면 WAL 이 아니라 outbox 표가 자란다. 줄 수보다 최장 대기 시간이 먼저 신호가 된다 — 줄이 적어도 오래 묵어 있으면 워커가 멈춘 것이다.
+[row] 연산별 — INSERT · UPDATE · DELETE
+  panel #11 stat "누적 INSERT" @ x0 y22 6x5
+    decimals=0
+    calc lastNotNull
+    A  sum(cdc_events_total{op="c"}) or vector(0)  legend="INSERT"  instant
+    B  sum(cdc_events_total{op="r"}) or vector(0)  legend="스냅샷 r"  instant
+    desc: 스냅샷 읽기(r)는 따로 센다. 재적재가 돌면 r 이 오른다
+  panel #12 stat "누적 UPDATE" @ x6 y22 6x5
+    decimals=0
+    calc lastNotNull
+    A  sum(cdc_events_total{op="u"}) or vector(0)  legend="UPDATE"  instant
+    desc: 행 수가 그대로라 다른 패널에는 안 잡히는 트래픽. 여기서만 보인다
+  panel #13 stat "누적 DELETE" @ x12 y22 6x5
+    decimals=0
+    calc lastNotNull
+    A  sum(cdc_events_total{op="d"}) or vector(0)  legend="DELETE"  instant
+    desc: TRUNCATE 는 여기에 잡히지 않는다 — 이 파이프라인은 truncate 이벤트를 버린다
+  panel #14 stat "테이블 수 / 초당 이벤트" @ x18 y22 6x5
+    decimals=0
+    calc lastNotNull
+    A  count(count by (table) (cdc_events_total))  legend="감시 테이블"  instant
+    B  sum(rate(cdc_events_total[1m]))  legend="events/sec"  instant
+    desc: 지금 흐르고 있는 총 처리량
+  panel #15 timeseries "연산별 처리량 (events/sec)" @ x0 y27 12x8
+    unit=ops
+    A  sum by (op) (rate(cdc_events_total[1m]))  legend="{{op}}"
+    desc: INSERT·UPDATE·DELETE 를 한 축에 놓고 본다. 대량 수정 구간은 여기서만 봉우리로 나타난다
+  panel #16 timeseries "연산별 누적 이벤트" @ x12 y27 12x8
+    decimals=0
+    A  sum by (op) (cdc_events_total)  legend="{{op}}"
+    desc: 계단이 올라간 구간이 곧 트래픽이 있었던 구간이다
+[row] 리소스 — WAL · 디스크
+  panel #21 stat "WAL 사용량" @ x0 y36 6x5
+    unit=bytes  decimals=1
+    calc lastNotNull
+    A  cdc_wal_size_bytes{job="source-db"}  legend="source"  instant
+    B  cdc_wal_size_bytes{job="target-db"}  legend="target"  instant
+    desc: pg_wal/ 디렉터리 실제 크기. 이 방식은 WAL 을 읽지 않지만 쓰기는 그대로 WAL 을 만든다 — 트리거의 outbox INSERT 까지 포함해서다.
+  panel #22 stat "DB 크기" @ x6 y36 6x5
+    unit=bytes  decimals=1
+    calc lastNotNull
+    A  cdc_db_size_bytes{job="source-db"}  legend="source"  instant
+    B  cdc_db_size_bytes{job="target-db"}  legend="target"  instant
+    desc: 행 수가 같아도 target 은 소프트 삭제 행을 계속 들고 있어 더 클 수 있다
+  panel #23 stat "디스크 여유" @ x12 y36 6x5
+    unit=bytes  decimals=1
+    thresholds base:red 2000000000:orange 5000000000:green
+    calc lastNotNull
+    A  max(node_filesystem_avail_bytes{fstype="ext4"})  legend="여유"  instant
+    desc: 도커 VM 파일시스템. 이 값이 0 이 되면 source DB 가 가장 먼저 죽는다
+  panel #24 stat "DB 커넥션" @ x18 y36 6x5
+    decimals=0
+    calc lastNotNull
+    A  cdc_db_connections{job="source-db"}  legend="source"  instant
+    B  cdc_db_connections{job="target-db"}  legend="target"  instant
+    desc: 적재 커넥션 풀 + 폴링 커넥션. 복제 연결은 없다. 급증하면 풀이 새는 것이다.
+  panel #25 timeseries "WAL 디렉터리 사용량 추이" @ x0 y41 12x8
+    unit=bytes
+    A  cdc_wal_size_bytes{job="source-db"}  legend="source WAL"
+    B  cdc_wal_size_bytes{job="target-db"}  legend="target WAL"
+    C  cdc_db_size_bytes{job="source-db"}  legend="source DB"
+    D  cdc_db_size_bytes{job="target-db"}  legend="target DB"
+    desc: source 는 트리거가 만드는 outbox 쓰기까지, target 은 벌크 UPSERT 를 담는다. CDC 두 스택과 나란히 놓으면 REPLICA IDENTITY FULL 이 없는 쪽이 얼마나 적게 쓰는지가 여기서 드러난다.
+  panel #26 timeseries "디스크 여유 추이" @ x12 y41 12x8
+    unit=bytes
+    A  max(node_filesystem_avail_bytes{fstype="ext4"})  legend="여유 공간"
+    B  max(node_filesystem_size_bytes{fstype="ext4"}) - max(node_filesystem_avail_bytes{fstype="ext4"})  legend="사용 중"
+    C  max(node_filesystem_size_bytes{fstype="ext4"})  legend="전체 용량"
+    desc: 대량 적재 구간에서 얼마나 깎이는지. 기울기가 유지되면 언제 고갈될지 읽을 수 있다
+[row] 리소스 — CPU · 메모리
+  panel #31 timeseries "컨테이너 메모리 (working set)" @ x0 y50 12x8
+    unit=bytes
+    A  cdc:container_mem_bytes{name=~"cdc-custom-(service|source-pg|target-pg)"}  legend="{{name}}"
+    desc: 앱과 두 DB 의 실사용 메모리. 캐시를 뺀 값이라 OOM 판단에 쓰는 수치다
+  panel #32 timeseries "컨테이너 CPU (코어)" @ x12 y50 12x8
+    decimals=2
+    A  cdc:container_cpu_cores{name=~"cdc-custom-(service|source-pg|target-pg)"}  legend="{{name}}"
+    desc: 1 이면 코어 하나를 다 쓴다는 뜻
+  panel #33 timeseries "앱 메모리 — JVM 힙 vs 컨테이너 RSS" @ x0 y58 12x8
+    unit=bytes
+    A  sum(jvm_memory_used_bytes{job="cdc-service",area="heap"})  legend="JVM heap used"
+    B  cdc:container_mem_bytes{name="cdc-custom-service"}  legend="컨테이너 working set"
+    desc: 런타임이 보는 힙과 컨테이너가 보는 메모리는 다르다. 둘의 간격이 곧 오프힙·버퍼다
+  panel #34 timeseries "DB 캐시 히트율 · 컨테이너 IO" @ x12 y58 12x8
+    decimals=3
+    A  sum by (job) (rate(pg_stat_database_blks_hit[1m])) / clamp_min(sum by (job) (rate(pg_stat_database_blks_hit[1m]) + rate(pg_stat_database_blks_read[1m])), 1)  legend="{{job}} 캐시 히트율"
+    B  sum(cdc:container_fs_writes_bytes{name=~"cdc-custom-(service|source-pg|target-pg)"})  legend="디스크 쓰기 B/s"
+    desc: 히트율이 떨어지면 디스크를 때리기 시작한 것이다
+[row] 구현 고유 지표
+  panel #41 timeseries "접기 비율 — outbox 줄 수 대비 실제 반영 행 수" @ x0 y67 12x8
+    unit=none  decimals=2
+    overrides 1건
+    A  increase(sync_outbox_entries_total[5m]) / clamp_min(increase(sync_folded_rows_total[5m]), 1)  legend="접기 비율 (읽은 줄 / 반영 행)"
+    B  sync_outbox_pending  legend="미반영 줄 수"
+    desc: 이 방식의 이점이 나오는지를 보는 유일한 지표다. 1 이면 접힌 것이 없다는 뜻이고(서로 다른 행이 한 번씩 바뀌는 부하), 그런 부하에서는 CDC 대비 이득이 없다. 같은 행을 반복 갱신할수록 값이 커진다.
+  panel #42 timeseries "JVM 런타임 — 스레드·GC" @ x12 y67 12x8
+    A  jvm_threads_live_threads{job="cdc-service"}  legend="JVM 스레드"
+    B  rate(jvm_gc_pause_seconds_sum{job="cdc-service"}[1m]) / clamp_min(rate(jvm_gc_pause_seconds_count{job="cdc-service"}[1m]), 0.001)  legend="GC 평균 정지(초)"
+    desc: 스레드 수는 거의 고정이어야 한다 — 동기화 루프는 스레드 하나로 돈다. GC 정지가 길어지면 배치 크기가 힙에 비해 큰 것이다.
+[row] 정합성 · 격리 · 진행 지점
+  panel #51 stat "DLQ — 미해결 격리 건" @ x0 y76 6x5
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  cdc_dlq_total_pending  legend="pending"  instant
+    B  cdc_dlq_total_retry_requested  legend="retry 요청"  instant
+    C  cdc_dlq_total_discarded  legend="폐기"  instant
+    desc: 반영하지 못해 격리된 행. 유실이 아니라 추적되는 미반영이다 — 대사 불일치의 정당한 사유이므로 판정식에서 뺀다. 이 방식의 DLQ 에는 값이 없고 (표, PK) 만 있다. 재처리는 그 PK 를 outbox 에 다시 넣어 현재 값을 읽게 하는 식이다.
+  panel #52 stat "대사 판정 (DLQ 보정 후)" @ x6 y76 6x5
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  max(abs(sum by (table_name) (cdc_source_rows) - sum by (table_name) (cdc_target_rows)) - (sum by (table_name) (cdc_dlq_rows{status="PENDING"}) or sum by (table_name) (cdc_source_rows * 0)))  legend="설명 안 되는 차이"  instant
+    desc: 판정식: |source − target| − DLQ(PENDING). 0 이 아닌 차이만 남긴다. 이 방식은 반영이 접혀서 몰려 오므로 순간적으로 벌어졌다 붙는 것은 정상이다 — 10분 이상 남아 있는 차이만 조사한다.
+  panel #53 stat "고아 참조" @ x12 y76 6x5
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  sum(cdc_orphan_rows) or vector(0)  legend="고아 행"  instant
+    desc: 부모가 사라진 자식 행. 건수 대사로는 안 잡힌다. 이 방식에서 특히 볼 값이다 — 접기 때문에 부모·자식의 반영 순서가 원천 커밋 순서와 달라질 수 있고, 수신 측에는 FK 가 없어 DB 가 막아주지 않는다.
+  panel #54 stat "체크포인트 정체" @ x18 y76 6x5
+    unit=s  decimals=0
+    thresholds base:green 300:orange
+    calc lastNotNull
+    A  max(cdc_checkpoint_stale_seconds)  legend="마지막 반영 이후"  instant
+    B  max(cdc_checkpoint_seq)  legend="반영한 seq"  instant
+    desc: CDC 두 스택의 진행 지점이 LSN 이라면 여기서는 outbox 의 seq 다. 변경이 없으면 정체 시간이 자라는 것이 정상이고, outbox 에 줄이 쌓이는데도 자라면 워커가 멈춘 것이다(경보는 두 조건을 함께 건다).
+  panel #55 timeseries "적체와 진행 — 미반영 줄 수 vs seq 전진" @ x0 y81 12x8
+    unit=none  decimals=2
+    overrides 1건
+    A  cdc_outbox_pending  legend="미반영 줄 수"
+    B  rate(cdc_checkpoint_seq[1m])  legend="seq 전진 (줄/s)"
+    C  sum(rate(cdc_events_total[1m]))  legend="반영 행/s"
+    desc: 두 선이 갈라지는 구간을 찾는 패널이다. 줄은 쌓이는데 seq 가 안 오르면 워커가 멈춘 것이고, 둘 다 0 이면 그냥 조용한 구간이다.
+  panel #56 table "격리된 행 — 무엇이 왜 막혔나" @ x12 y81 12x8
+    A  SELECT to_char(last_failed_at, 'HH24:MI:SS') AS "마지막 실패", source_table AS "표", row_id AS "행", op AS "연산", status AS "상태", failure_message AS "원인" FROM sync_dead_letter WHERE $__timeFilter(last_failed_at) ORDER BY id DESC LIMIT 100
+    desc: 실패 원인 문자열은 카디널리티 때문에 지표 레이블로 올릴 수 없어 표를 직접 읽는다. 대시보드 시간 범위를 따른다.
+  panel #57 table "현재 발생 중인 경보" @ x0 y89 24x7
+    A  ALERTS  instant
+    desc: pending 은 조건은 맞았으나 for 시간을 아직 못 채운 상태다. 규칙은 prometheus/rules/cdc-alerts.yml 에 있다.
