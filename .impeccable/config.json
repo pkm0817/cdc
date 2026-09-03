@@ -65,6 +65,24 @@
         ],
         "createdAt": "2026-09-03T16:18:30.704Z",
         "reason": "HW Doc Kit house style: same note/kpi accent borders across all sibling docs (docs/v1~v3, poc-results); design system deliberately inherited"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "docs/staged-load-report.html"
+        ],
+        "createdAt": "2026-09-03T22:46:57.144Z",
+        "reason": "HW Doc Kit house style: same note/kpi accent borders as all sibling docs; design system deliberately inherited"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "docs/staged-load-report.html"
+        ],
+        "createdAt": "2026-09-03T22:46:57.186Z",
+        "reason": "HW Doc Kit house style: same note/kpi accent borders as all sibling docs; design system deliberately inherited"
       }
     ]
   }
