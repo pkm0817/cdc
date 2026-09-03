@@ -463,13 +463,15 @@ body{ background:var(--bg2) }
       <span class="kicker">Verification Summary · V1 – V6</span>
       <h1>「PoC CDC 기술 검토 - 시나리오」 항목별 근거</h1>
       <p class="sub">시나리오 문서의 <b>목차와 항목을 그대로 두고</b>, 각 항목 아래에 실제로 무엇을 재서 어떤 값이 나왔는지를 채운 문서입니다.
-        수치는 사람이 옮겨 적은 것이 아니라 검증 스크립트가 남긴 <span class="mono">results.md</span> 에서 그대로 가져왔습니다<sup class="ref" data-ref="1">1</sup>.
+        수치는 사람이 옮겨 적은 것이 아니라 검증 스크립트가 남긴 <span class="mono">results.md</span> 에서 그대로 가져왔고<sup class="ref" data-ref="1">1</sup>,
+        회차별 재측정(V1~V3, 2026-09-03)의 값은 해당 회차 보고서<sup class="ref" data-ref="3">3</sup>를 출처로 함께 반영했습니다.
         <b>측정한 것 / 반영만 된 것 / 아직 못 잰 것 / 사람이 정할 것</b>을 구분해 적었습니다.</p>
       <div class="meta">
         <span class="chip chip--ok">전체 시나리오 29/29 통과</span>
         <span class="chip chip--ok">「아직 안 한 것」 5건 전부 반영</span>
         <span class="chip chip--risk">데이터 회귀 1건 재현</span>
-        <span class="chip chip--warn">미측정 2건</span>
+        <span class="chip chip--warn">V1 버스트 조건부 (재측정 예산 초과)</span>
+        <span class="chip chip--warn">잔여 실측 1건 — standby 페일오버</span>
         <span class="chip chip--info">남은 판단 13건</span>
         <span class="chip chip--info">운영 지표 실측 포함</span>
       </div>
@@ -537,8 +539,8 @@ body{ background:var(--bg2) }
             </tr>
             <tr>
               <td>대량 변경 1만 건 배치에서 밀리지 않는 처리량</td>
-              <td><span class="chip chip--ok">측정</span></td>
-              <td><b>6,218 events/s</b>, 수신 <b>10,000 / 10,000</b>, 커밋 123 ms · 캡처 완료 1,608 ms, LSN 단조 증가 확인</td>
+              <td><span class="chip chip--warn">조건부</span></td>
+              <td>수신 <b>10,000 / 10,000</b> · 유실 0 · LSN 단조 증가, 캡처만은 <b>6,218 events/s</b>. 다만 <b>회차별 재측정에서 적재까지의 지연이 5.36~8.55 s(예산의 107~171%)</b> — 세 번 재서 세 번 다 예산의 99% 이상, 두 번 초과. 시계 편차 1 ms 게이트 통과라 실제 지연이다 (V1 회차 보고서 03절)</td>
             </tr>
             <tr>
               <td>지연 볼 때 시계 편차도 같이 재야 함</td>
@@ -566,8 +568,10 @@ body{ background:var(--bg2) }
 
       <div class="note note--ok" style="margin-top:14px">
         <p class="note__t">V1 결론</p>
-        <b>통과.</b> 단건 지연은 여유가 크고, 필드 단위 변경 식별도 값까지 됩니다.
-        주의할 것은 지연을 결정하는 것이 건수가 아니라 <b>트랜잭션 크기</b>라는 점입니다 — 1만 건 버스트에서 예산에 가까워집니다.
+        <b>조건부 통과.</b> 단건 지연은 여유가 크고(예산의 10%), 필드 단위 변경 식별도 값까지 됩니다.
+        다만 <b>1만 건 버스트는 회차별 재측정에서 예산을 넘겼습니다</b> — 99.4% · 171.0% · 107.1%, 3회 중 2회 초과.
+        유실 0 · 순서 보존은 유지되므로 걸린 것은 지연 하나이고,
+        <b>1만 건 버스트가 실제 업무 부하에 존재하는지</b>에 따라 예산 상향 / 원천 배치 분할 / 적재 경로 개선 중 하나를 정해야 합니다.
       </div>
     </section>
 
@@ -575,7 +579,7 @@ body{ background:var(--bg2) }
     <section class="sec" id="s2">
       <h2><span class="n">V2</span>Provider Down case</h2>
       <p class="lead">통과 기준 — <b>유실 0건 + 다운 허용시간(디스크 한계) 산출</b>.
-        앞의 절반은 통과했고, <b>뒤의 절반은 지금도 미측정</b>입니다.</p>
+        회차별 재측정(다운 3초 · 60초 · 600초)까지 포함해 <b>둘 다 충족</b>됐습니다.</p>
 
       <div class="tbl-wrap">
         <table class="tbl">
@@ -584,12 +588,12 @@ body{ background:var(--bg2) }
             <tr>
               <td>꺼져 있던 구간의 변경분이 하나도 빠지지 않고 도착하는지</td>
               <td><span class="chip chip--ok">측정</span></td>
-              <td>다운 중 <b>1,000건</b> → 재기동 후 <b>1,000 / 1,000</b>, <b>유실 0</b>. 다운 시간 2,046 ms</td>
+              <td>다운 중 <b>1,000건</b> → 재기동 후 <b>1,000 / 1,000</b>, <b>유실 0</b>. 다운 시간 2,046 ms. 회차별 재측정도 <b>3초 · 60초 · 600초 세 회차 전부 유실 0</b> — 10분 다운(44,550 변경)도 재기동 32초 만에 따라잡았다</td>
             </tr>
             <tr>
               <td>꺼져 있는 동안 WAL 이 얼마나 쌓이는지</td>
               <td><span class="chip chip--ok">측정</span></td>
-              <td>슬롯이 붙잡은 WAL <b>161.9 KiB</b>, <b>변경 1건당 165 bytes</b></td>
+              <td>슬롯이 붙잡은 WAL <b>161.9 KiB</b>, <b>변경 1건당 165 bytes</b>(2초 회차). 재측정 600초 회차는 <b>223 B/변경 · 16.2 KiB/s</b> — 짧은 다운 직후는 누적율이 3분의 2로 낮게 나오므로 <b>허용시간 계산에는 60초 이상 회차 값</b>을 쓴다. 디스크는 16 MiB 세그먼트 계단으로 찬다</td>
             </tr>
             <tr>
               <td>DB 로그 쌓이는 양 모니터링</td>
@@ -599,7 +603,7 @@ body{ background:var(--bg2) }
             <tr>
               <td><b>다운 허용시간 산출</b> (= 디스크 여유 / WAL 증가율)</td>
               <td><span class="chip chip--ok">측정</span></td>
-              <td><b>산출됨.</b> 디스크 여유 <b>7.5 GiB</b>(<span class="mono">/var/lib</span>, node-exporter 실측)와 165 bytes/변경으로 계산하면 변경 1,000/s 부하에서 <b>13.5시간</b>, 10,000/s 에서 <b>1.4시간</b>. 전체 표는 10절. 상한을 걸면 이 값이 그만큼 짧아진다</td>
+              <td><b>산출됨.</b> 이 회차는 디스크 여유 <b>7.5 GiB</b>(<span class="mono">/var/lib</span>) 기준 1,000/s 에서 <b>13.5시간</b>(10절). 재측정 회차는 마운트 라벨을 교정한 뒤 여유 <b>999.4 GB</b>(<span class="mono">/</span>) · 223 B/변경 기준으로 1,000/s 에서 <b>51.8일</b>, 10,000/s 에서 <b>5.2일</b>, 1 GB 상한이면 10,000/s 에서 <b>8분</b> — 결론은 값이 아니라 <b>운영 변경 속도 실측이 선행</b>이라는 것. 상한을 걸면 이 값이 그만큼 짧아진다</td>
             </tr>
             <tr>
               <td><span class="mono">max_slot_wal_keep_size</span> 를 어떻게 할지가 V2 의 결론</td>
@@ -609,7 +613,7 @@ body{ background:var(--bg2) }
             <tr>
               <td>165 bytes/변경 은 REPLICA IDENTITY FULL 기준인 점 주의</td>
               <td><span class="chip chip--ok">측정</span></td>
-              <td><b>교정 필요.</b> 같은 부하를 두 설정에서 재보니 INSERT 는 <b>DEFAULT 166 B / FULL 166 B (1.00배)</b> 로 차이가 없다. V2 수치는 INSERT 1,000건으로 잰 값이라 <b>REPLICA IDENTITY 와 무관</b>하다 — FULL 의 대가는 UPDATE/DELETE 에서만 나타난다(V5-b)</td>
+              <td><b>교정 필요.</b> 같은 부하를 두 설정에서 재보니 INSERT 는 <b>DEFAULT 166 B / FULL 166 B (1.00배)</b> 로 차이가 없다. V2 수치는 INSERT 1,000건으로 잰 값이라 <b>REPLICA IDENTITY 와 무관</b>하다 — FULL 의 대가는 UPDATE/DELETE 에서만 나타난다(V5-b). 격리 재측정(UPDATE 5,000행 × 3회, CHECKPOINT 로 구간 분리)에서는 <b>FULL 의 순수 대가가 UPDATE 한 행당 +67 B (1.17배)</b>, 회차 편차 4% 안</td>
             </tr>
             <tr>
               <td>V5 요구가 V2 디스크 압력을 키우고 있는 구조</td>
@@ -618,8 +622,8 @@ body{ background:var(--bg2) }
             </tr>
             <tr>
               <td>다운 시간을 2초 / 1분 / 10분 으로 늘려가며 WAL 증가가 선형인지</td>
-              <td><span class="chip chip--warn">미측정</span></td>
-              <td>현재 시나리오는 <b>2초 구간 한 점</b>만 잰다. 허용시간을 외삽하려면 최소 세 점이 필요하다</td>
+              <td><span class="chip chip--ok">측정</span></td>
+              <td><b>선형 확인.</b> 재측정에서 3초 · 60초 · 600초 세 점을 쟀고, 600초 회차의 121~573초 구간 회귀가 <b>16.4 KiB/s · 편차 5% 안</b>. 단 3초 회차는 워밍업 때문에 3분의 2로 낮게 나온다 — <b>짧은 다운으로 외삽하면 위험을 과소평가</b>한다 (V2 회차 보고서 02절)</td>
             </tr>
             <tr>
               <td>재기동 후 실제 DB 데이터 건수·정합성 확인</td>
@@ -632,8 +636,8 @@ body{ background:var(--bg2) }
 
       <div class="note note--warn" style="margin-top:14px">
         <p class="note__t">V2 결론</p>
-        유실 0 은 확인됐고, <b>다운 허용시간도 이번에 숫자로 나왔습니다</b>(10절).
-        남은 것은 재는 일이 아니라 <b>고르는 일</b>입니다 — <span class="mono">max_slot_wal_keep_size</span> 상한을 걸면
+        유실 0 은 세 자릿수 다운 시간(3초~600초)에서 전부 확인됐고, WAL 증가는 <b>선형</b>이며, <b>다운 허용시간도 숫자로 나왔습니다</b>(10절 · V2 회차 보고서 04절).
+        남은 것은 재는 일 하나(<b>운영 변경 속도 실측</b>)와 <b>고르는 일</b>입니다 — <span class="mono">max_slot_wal_keep_size</span> 상한을 걸면
         허용시간이 그만큼 짧아지는 대신 초과 순간 슬롯이 무효화되어 V3 로 넘어갑니다.
         그 상한은 <b>V4 의 "중복으로 복구 가능한 최대 폭"과 같은 값</b>이라 두 항목을 같이 정해야 합니다.
       </div>
@@ -661,7 +665,7 @@ body{ background:var(--bg2) }
             <tr>
               <td>재동기화(관심 테이블 재적재)로 정합을 복원하는 절차</td>
               <td><span class="chip chip--ok">측정</span></td>
-              <td>재동기화 전 <b>50 / 101</b> → 후 <b>101 / 101</b> 복원</td>
+              <td>재동기화 전 <b>50 / 101</b> → 후 <b>101 / 101</b> 복원. 재측정에서 절차를 <b>5단계로 확정</b>(정지 → 재적재 → 삭제 대사 → 체크포인트·오프셋 초기화 → 재기동) — <b>수신측 <span class="mono">cdc_checkpoint</span> 를 지우는 단계가 빠져 첫 복구 시도가 실제로 실패</b>했다. 가드가 보는 것은 오프셋 파일이 아니라 체크포인트 표다</td>
             </tr>
             <tr>
               <td>탐지가 로그 예외뿐이라 prometheus 에 안 올라옴 → 경보 연결할 것</td>
@@ -671,7 +675,7 @@ body{ background:var(--bg2) }
             <tr>
               <td>슬롯이 삭제되는 것보다 무효화되는 게 실무에서 더 잦음 → <span class="mono">wal_status</span> 감시</td>
               <td><span class="chip chip--info">반영</span></td>
-              <td>exporter 에 <span class="mono">wal_status</span> 를 정렬 가능한 <span class="mono">cdc_slot_status_code</span> 로 노출. 경보 <span class="mono">CdcSlotWalUnreserved</span>(<span class="mono">&gt;= 2</span>, 곧 잘림) · <span class="mono">CdcSlotWalLost</span>(<span class="mono">== 3</span>, 즉시). <span class="mono">safe_wal_size</span> 도 함께 수집</td>
+              <td>exporter 에 <span class="mono">wal_status</span> 를 정렬 가능한 <span class="mono">cdc_slot_status_code</span> 로 노출. 경보 <span class="mono">CdcSlotWalUnreserved</span>(<span class="mono">&gt;= 2</span>, 곧 잘림) · <span class="mono">CdcSlotWalLost</span>(<span class="mono">== 3</span>, 즉시). <span class="mono">safe_wal_size</span> 도 함께 수집. 재측정에서 <b>무효화 경로 자체를 재현</b>했다 — 상한 32 MB 에서 <span class="mono">reserved → unreserved → lost</span> 전이와 경보 발화까지. <b><span class="mono">unreserved</span> 는 아직 시간이 있는 경고</b>(lost 로 가려면 체크포인트가 필요)라 이 단계에 대응하면 재동기화를 피할 수 있다</td>
             </tr>
             <tr>
               <td>DB 이중화 후 같은 상황이 생기는지 확인</td>
@@ -680,13 +684,13 @@ body{ background:var(--bg2) }
             </tr>
             <tr>
               <td>확인 항목을 "페일오버 후 재동기화에 얼마나 걸리고 데이터가 얼마나 되는지"로 바꿀 것</td>
-              <td><span class="chip chip--warn">미측정</span></td>
-              <td>슬롯 삭제로 같은 상태를 만들어 <b>복원 자체는 확인</b>했으나(101/101), <b>실제 데이터 규모에서의 소요 시간은 안 쟀다.</b> 재동기화 시간은 대상 표 크기에 비례하므로 PoC 규모(101행)의 값은 외삽에 쓸 수 없다</td>
+              <td><span class="chip chip--ok">대체 측정</span></td>
+              <td>PG16 은 페일오버 시 슬롯 소실이 확정이므로, <b>같은 상태(슬롯 소실)에서 복구 소요를 실측</b>했다 — <b>139행 22.8초 / 108,159행 40.2초</b>. 재적재는 병목이 아니고(778배 데이터에 2.9→3.8초) 재기동 + 스냅샷 재수집이 시간을 쓴다. standby 를 세운 <b>실제 페일오버 전환 측정만</b> 별도 과제로 남는다 (V3 회차 보고서 04절)</td>
             </tr>
             <tr>
               <td>재적재만으로는 정합이 안 맞음 — 원본에서 사라진 행 처리 필요</td>
               <td><span class="chip chip--ok">측정</span></td>
-              <td>맞다. 재동기화는 멱등 UPSERT 라 중복 적재는 안전하지만 <b>원본에서 사라진 행은 재적재로 지워지지 않는다.</b> 절차에 "target 에만 남은 행 찾아서 처리" 단계가 필요하고, 소프트 삭제 표는 <span class="mono">deleted</span> 플래그로, 하드 삭제 표는 별도 대사로 다뤄야 한다</td>
+              <td>맞다 — <b>재현까지 했다.</b> 재적재만 하면 target 103 &gt; source 102 로 <b>오히려 많아진다</b>(하드 삭제 행이 남아서). 삭제 대사까지 해야 102/102 · 체크섬 일치. 절차에 "target 에만 남은 행 찾아서 처리" 단계가 필요하고, 소프트 삭제 표는 <span class="mono">deleted</span> 플래그로 무관, <b>하드 삭제 표만</b> 별도 대사가 필요하다. 대사식이 절댓값이라 이 방향이 안 보이던 것도 <b>target 초과 행</b> 패널로 살렸다</td>
             </tr>
           </tbody>
         </table>
@@ -694,8 +698,9 @@ body{ background:var(--bg2) }
 
       <div class="note note--info" style="margin-top:14px">
         <p class="note__t">V3 결론</p>
-        <b>조용히 넘어가지 않는다</b>는 것이 확인됐고, 탐지 결과가 지표·경보로도 나갑니다.
-        남은 것은 <b>페일오버 실측</b>과, 그 앞단의 <b>PostgreSQL 버전 선택</b>입니다.
+        <b>조용히 넘어가지 않는다</b>는 것이 확인됐고(삭제·무효화 양쪽 재현), 탐지 결과가 지표·경보로도 나갑니다.
+        복구는 <b>5단계 절차로 확정</b>됐고 10만 행 규모에서 40.2초로 실측됐습니다.
+        남은 것은 <b>standby 를 세운 실제 페일오버 전환 실측</b>과, 그 앞단의 <b>PostgreSQL 버전 선택</b>입니다.
       </div>
     </section>
 
@@ -1096,8 +1101,11 @@ body{ background:var(--bg2) }
 
       <h3>다운 허용시간 — 이번에 산출된 값</h3>
       <p>V2 가 요구한 <b>디스크 여유 / WAL 증가율</b> 의 두 항이 모두 지표로 올라와 있어 이제 계산됩니다.
-        디스크 여유는 node-exporter 실측(<span class="mono">/var/lib</span> <b>7.5 GiB</b>),
-        변경당 WAL 은 V2 측정치(<b>165 bytes/변경</b>)를 씁니다.</p>
+        디스크 여유는 이 회차의 node-exporter 실측(<span class="mono">/var/lib</span> <b>7.5 GiB</b>),
+        변경당 WAL 은 V2 측정치(<b>165 bytes/변경</b>)를 씁니다.
+        <b>회차별 재측정과는 두 항이 다릅니다</b> — 재측정은 마운트 라벨 교정 후 여유 <b>999.4 GB</b>(<span class="mono">/</span>) ·
+        600초 회차 <b>223 B/변경</b> 기준이라 1,000/s 에서 <b>51.8일</b>이 나옵니다(V2 회차 보고서 04절).
+        아래 표는 보수적인(작은 디스크) 쪽 계산이며, <b>어느 표를 쓰든 결론은 같습니다 — 운영 변경 속도와 실제 마운트를 먼저 실측해야 상한값을 고를 수 있습니다.</b></p>
       <div class="tbl-wrap">
         <table class="tbl">
           <thead><tr><th style="width:20%">변경률</th><th class="num" style="width:24%">WAL 증가율</th><th class="num" style="width:24%">허용시간 (상한 없음)</th><th>읽는 법</th></tr></thead>
@@ -1163,8 +1171,8 @@ body{ background:var(--bg2) }
       <ul class="chk">
         <li><input type="checkbox" id="q1"><span><span class="t">구간 대사 주기·구간 폭, 전체 대사 야간 시각 (V6)</span><span class="d">구간 폭은 야간 주기보다 넉넉해야 두 그물 사이에 구멍이 안 생긴다. 최대 탐지 지연 = 야간 배치 주기</span></span></li>
         <li><input type="checkbox" id="q2"><span><span class="t">체크섬 대사 실행 주체 — 배치 잡인지 exporter 인지 (V6)</span><span class="d">건수·고아는 exporter 가 상시로 내는데 체크섬은 스크립트다. 어디서 돌릴지 정해야 경보로 연결된다</span></span></li>
-        <li><input type="checkbox" id="q3"><span><span class="t">다운 시간 2초/1분/10분 3점 측정으로 WAL 선형성 확인 (V2)</span><span class="d">지금은 2초 한 점뿐이라 허용시간을 외삽할 근거가 없다</span></span></li>
-        <li><input type="checkbox" id="q4"><span><span class="t">페일오버 후 재동기화 소요 시간·데이터량 실측 (V3)</span><span class="d">PoC 규모(101행)의 값은 외삽에 쓸 수 없다</span></span></li>
+        <li><input type="checkbox" id="q3"><span><span class="t">운영 변경 속도 실측 (V2)</span><span class="d">WAL 선형성은 3점 재측정(3초·60초·600초)으로 확인됐다. 남은 것은 허용시간 표의 어느 행을 볼지 정하는 운영 변경 속도다 — 이것 없이는 상한값을 고를 수 없다</span></span></li>
+        <li><input type="checkbox" id="q4"><span><span class="t">standby 를 세운 실제 페일오버 전환 실측 (V3)</span><span class="d">슬롯 소실 복구는 108,159행 40.2초로 실측됐다. 실제 페일오버 전환(standby 승격 포함)만 남았다</span></span></li>
         <li><input type="checkbox" id="q5"><span><span class="t">버스트 처리량 판정식 확정 (V1)</span><span class="d">rate([1m]) 은 버스트를 희석한다. [15s] 창을 대시보드에 추가할지</span></span></li>
       </ul>
 
@@ -1185,8 +1193,8 @@ body{ background:var(--bg2) }
           <span class="refs__meta">code · src/embedded-cdc/dev/cdc-service/build/verification/results.md (2026-09-03 실행)</span></span></li>
         <li id="ref-2"><span class="refs__n">2</span><span><span class="refs__src">[PoC] CDC 기술 검토 - 시나리오 (이 문서가 근거를 채운 원본)</span>
           <span class="refs__meta">doc · advancedre-[PoC] CDC 기술 검토 - 시나리오-010926-225135.pdf</span></span></li>
-        <li id="ref-3"><span class="refs__n">3</span><span><span class="refs__src">회차별 상세 보고서</span>
-          <span class="refs__meta">doc · docs/v1-verification-report.html, docs/v4-verification-report.html, docs/v5-verification-report.html, docs/v6-verification-report.html</span></span></li>
+        <li id="ref-3"><span class="refs__n">3</span><span><span class="refs__src">회차별 상세 보고서 (V1~V6, repo 최상위 docs/)</span>
+          <span class="refs__meta">doc · docs/v1-basic-capture-report.html, docs/v2-provider-down-report.html, docs/v3-capture-gap-report.html, docs/v4-verification-report.html, docs/v5-verification-report.html, docs/v6-verification-report.html · V1 진행 기록: src/embedded-cdc/docs/v1-verification-report.html</span></span></li>
         <li id="ref-4"><span class="refs__n">4</span><span><span class="refs__src">검증 시나리오 구현</span>
           <span class="refs__meta">code · dev/cdc-service/src/test/java/dev/embeddedcdc/verification/ (V1~V6 + V4-b · V5-b · V6-b)</span></span></li>
         <li id="ref-5"><span class="refs__n">5</span><span><span class="refs__src">운영이 그대로 쓰는 점검 질의</span>

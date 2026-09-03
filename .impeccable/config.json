@@ -1,0 +1,71 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/embedded-cdc/docs/v1-v6-summary-report.html"
+        ],
+        "createdAt": "2026-09-03T15:27:22.287Z",
+        "reason": "HW Doc Kit house style: identical border-left accents in all sibling docs (docs/v1~v3 reports, poc-results); session only edited reference text"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/embedded-cdc/docs/poc-closing-report.html"
+        ],
+        "createdAt": "2026-09-03T15:27:22.329Z",
+        "reason": "HW Doc Kit house style: identical border-left accents in all sibling docs (docs/v1~v3 reports, poc-results); session only edited reference text"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "src/embedded-cdc/docs/v1-v6-summary-report.html"
+        ],
+        "createdAt": "2026-09-03T16:18:30.546Z",
+        "reason": "HW Doc Kit house style: same note/kpi accent borders across all sibling docs (docs/v1~v3, poc-results); design system deliberately inherited"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "docs/poc-final-analysis.html"
+        ],
+        "createdAt": "2026-09-03T16:18:30.586Z",
+        "reason": "HW Doc Kit house style: same note/kpi accent borders across all sibling docs (docs/v1~v3, poc-results); design system deliberately inherited"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "docs/poc-final-analysis.html"
+        ],
+        "createdAt": "2026-09-03T16:18:30.625Z",
+        "reason": "HW Doc Kit house style: same note/kpi accent borders across all sibling docs (docs/v1~v3, poc-results); design system deliberately inherited"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "docs/poc-final-briefing.html"
+        ],
+        "createdAt": "2026-09-03T16:18:30.664Z",
+        "reason": "HW Doc Kit house style: same note/kpi accent borders across all sibling docs (docs/v1~v3, poc-results); design system deliberately inherited"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "docs/poc-final-briefing.html"
+        ],
+        "createdAt": "2026-09-03T16:18:30.704Z",
+        "reason": "HW Doc Kit house style: same note/kpi accent borders across all sibling docs (docs/v1~v3, poc-results); design system deliberately inherited"
+      }
+    ]
+  }
+}
