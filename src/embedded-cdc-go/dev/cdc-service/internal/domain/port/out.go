@@ -91,6 +91,25 @@ type DeadLetterStore interface {
 	MarkRetryFailed(ctx context.Context, id int64, cause error) error
 }
 
+// ChangeAuditStore 는 필드 단위 변경 이력을 남기는 곳(outbound port)이다.
+//
+// 왜 지표가 아니라 표인가. "어떤 필드가 바뀌었는지" 를 Prometheus 레이블로 만들면
+// 시계열이 (테이블 × 컬럼 조합) 수만큼 생긴다. 컬럼 20개짜리 테이블 하나로
+// 조합이 백만 단위가 되고, 그 순간 Prometheus 가 먼저 죽는다.
+// 변경 필드는 카디널리티가 높은 데이터이지 지표 축이 아니다.
+// 지표로는 "몇 건 기록했는가"(cdc_change_audit_rows_total{table})만 낸다.
+//
+// 적용과 같은 트랜잭션에 둔다. 떼어내면 적용이 롤백된 뒤에도 감사 로그에는
+// 반영된 것으로 남아, 감사 로그가 실제 target 상태와 어긋난다. DLQ 와 반대되는
+// 선택인데, DLQ 는 "실패했다는 사실" 이라 적용의 롤백에 휩쓸리면 안 되고,
+// 감사 로그는 "반영했다는 사실" 이라 같이 롤백돼야 한다.
+type ChangeAuditStore interface {
+	// Record 는 UPDATE 한 건의 변경 필드를 남긴다.
+	// diff.Identifiable 이 false 면 판정 불가로 기록한다 — "안 바뀜" 과 구분되어야
+	// REPLICA IDENTITY 설정 사고를 사후에 찾을 수 있다.
+	Record(ctx context.Context, pipeline string, event model.ChangeEvent, diff model.FieldDiff) error
+}
+
 // FailureClassifier 는 적용 실패의 성격을 판정한다.
 //
 // 판정 근거(SQLSTATE 등)는 저장 기술에 딸린 지식이라 구현이 인프라에 있다.
@@ -108,6 +127,9 @@ type FailureClassifier interface {
 //	cdc_sink_errors_total{table}
 //	cdc_dead_letters_total{table}
 //	cdc_end_to_end_lag_seconds{table}
+//	cdc_capture_gap
+//	cdc_pipeline_halts_total{reason}
+//	cdc_clock_skew_seconds
 type PipelineMetrics interface {
 	EventApplied(table, op string)
 	ApplyFailed(table string)
@@ -117,6 +139,23 @@ type PipelineMetrics interface {
 
 	// EndToEndLag 의 sourceCommittedAtMs 가 0 이하면 기록하지 않는다.
 	EndToEndLag(table string, sourceCommittedAtMs int64)
+
+	// CaptureGap 은 기동 시 판정한 "되받을 수 없는 구간"의 유무다.
+	// 갭이 없을 때도 0 을 내보내야 한다 — 시계열이 아예 없으면 경보식이
+	// "없음" 과 "정상" 을 구분하지 못한다.
+	CaptureGap(detected bool)
+
+	// PipelineHalted 는 ack 를 보내지 않고 멈춘 횟수다.
+	// reason 은 라벨이 되므로 사유 코드만 넣는다 — 문장을 넣으면 카디널리티가 터진다.
+	PipelineHalted(reason string)
+
+	// ClockSkew 는 source DB 시계에서 이 프로세스 시계를 뺀 값(밀리초)이다.
+	// end-to-end 지연은 두 시계의 차라, 이 값이 크면 지연 수치를 판정에 쓸 수 없다.
+	ClockSkew(skewMs int64)
+
+	// ChangeAudited 는 변경 이력을 한 건 남겼다는 뜻이다. 건수까지만 센다 —
+	// 필드명을 레이블로 올리면 카디널리티가 터진다.
+	ChangeAudited(table string)
 }
 
 // TransactionRunner 는 "한 트랜잭션 경계"를 여는 포트다.

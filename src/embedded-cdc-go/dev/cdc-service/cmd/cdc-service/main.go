@@ -60,6 +60,8 @@ func run() error {
 	deadLetters := persistence.NewDeadLetterRepository(store, log)
 	classifier := cdc.NewSQLStateClassifier(log)
 	pipelineMetrics := metrics.New()
+	changeAudit := persistence.NewChangeAuditRepository(
+		store, cfg.Audit.ChangedFieldsTables, pipelineMetrics)
 
 	// ── 응용 ────────────────────────────────────────────────────────────────
 	applier, err := application.NewBatchApplier([]handler.TableSyncHandler{
@@ -67,7 +69,7 @@ func run() error {
 		handler.NewComputer(computers, log),
 		handler.NewGrade(grades, log),
 		handler.NewMember(members, log),
-	}, checkpoints, store, log)
+	}, checkpoints, changeAudit, store, log)
 	if err != nil {
 		return err
 	}
@@ -88,6 +90,11 @@ func run() error {
 			BatchSize: cfg.DeadLetter.ReprocessBatch,
 		}, log)
 	go reprocessor.Run(ctx)
+
+	// 시계 편차 프로브. 파이프라인과 독립이라 실패해도 적재에 영향이 없다 —
+	// 대신 그 구간의 지연 수치를 판정에 쓸 수 없다는 사실이 지표로 드러난다.
+	go metrics.NewClockSkewProbe(
+		cfg.SourceDSN(), cfg.Source.ClockSkewProbeInterval, pipelineMetrics, log).Run(ctx)
 
 	// ── 구동 ────────────────────────────────────────────────────────────────
 	guard := cdc.NewSlotContinuityGuard(

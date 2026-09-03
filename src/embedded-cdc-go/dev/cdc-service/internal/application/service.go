@@ -127,7 +127,7 @@ func (s *ChangeEventService) isolate(ctx context.Context, pipeline string, batch
 	)
 
 	for _, event := range batch {
-		err := s.applier.ApplyOne(ctx, event)
+		err := s.applier.ApplyOne(ctx, pipeline, event)
 		if err != nil {
 			if haltErr := s.haltIfUnrecoverable(err); haltErr != nil {
 				return haltErr
@@ -147,7 +147,7 @@ func (s *ChangeEventService) isolate(ctx context.Context, pipeline string, batch
 	// 기록해 두면 재기동 후 정상 적용된 뒤에도 DLQ 에 남아 회계가 어긋난다.
 	ratio := float64(len(failures)) / float64(len(batch))
 	if ratio > s.policy.HaltOnDeadLetterRatio {
-		return halt(fmt.Sprintf(
+		return s.halted(HaltDLQRatio, fmt.Sprintf(
 			"격리 비율이 임계를 넘었다 (%d/%d = %.0f%%, 임계 %.0f%%). "+
 				"개별 데이터 문제가 아니라 구조 문제로 본다. ack 를 보내지 않고 멈춘다",
 			len(failures), len(batch), ratio*100, s.policy.HaltOnDeadLetterRatio*100), nil)
@@ -156,7 +156,7 @@ func (s *ChangeEventService) isolate(ctx context.Context, pipeline string, batch
 	for _, f := range failures {
 		if err := s.deadLetters.Store(ctx, pipeline, f.event, f.cause, s.policy.MaxBatchRetries+1); err != nil {
 			// 격리 기록조차 실패하면 그것은 추적되지 않는 유실이다. 멈추는 편이 낫다.
-			return halt("격리 기록에 실패했다 — 추적되지 않는 유실이 되므로 멈춘다", err)
+			return s.halted(HaltUnrecoverable, "격리 기록에 실패했다 — 추적되지 않는 유실이 되므로 멈춘다", err)
 		}
 		s.metrics.DeadLettered(f.event.Table)
 		s.metrics.ApplyFailed(f.event.Table)
@@ -168,7 +168,7 @@ func (s *ChangeEventService) isolate(ctx context.Context, pipeline string, batch
 	// 격리된 건도 DLQ 에 남아 추적되므로, 여기까지 왔으면 진행 지점을 올려도 안전하다.
 	if highestLSN > 0 {
 		if err := s.applier.RecordCheckpoint(ctx, pipeline, highestLSN); err != nil {
-			return halt("진행 지점 기록에 실패했다", err)
+			return s.halted(HaltUnrecoverable, "진행 지점 기록에 실패했다", err)
 		}
 	}
 	if len(failures) > 0 {
@@ -185,9 +185,24 @@ func (s *ChangeEventService) haltIfUnrecoverable(err error) error {
 		return halted
 	}
 	if s.classifier.Classify(err) == model.VerdictHalt {
-		return halt("계속 돌리면 안 되는 실패다. ack 를 보내지 않고 멈춘다", err)
+		return s.halted(HaltUnrecoverable, "계속 돌리면 안 되는 실패다. ack 를 보내지 않고 멈춘다", err)
 	}
 	return nil
+}
+
+// halted 는 정지 오류를 만들면서 지표에 한 번 센다.
+//
+// 만드는 곳과 세는 곳을 하나로 묶은 이유가 있다. 정지는 "유실 없이 멈춘" 사건이라
+// 로그로만 남기면 지나간 뒤에는 몇 번이었는지 알 수 없다. 둘이 갈라져 있으면
+// 새 정지 경로가 생겼을 때 세는 것을 빠뜨린다.
+//
+// 종료 중 취소(HaltShutdown)는 세지 않는다 — 컨테이너를 내릴 때마다 오르면
+// 그 지표로 사고를 구분할 수 없다.
+func (s *ChangeEventService) halted(code, reason string, cause error) *HaltError {
+	if code != HaltShutdown {
+		s.metrics.PipelineHalted(code)
+	}
+	return halt(code, reason, cause)
 }
 
 func (s *ChangeEventService) recordSuccess(batch []model.ChangeEvent) {
@@ -205,6 +220,6 @@ func (s *ChangeEventService) backoff(ctx context.Context, attempt int) error {
 	case <-timer.C:
 		return nil
 	case <-ctx.Done():
-		return halt("재시도 대기 중 취소 — 종료 중으로 본다", ctx.Err())
+		return s.halted(HaltShutdown, "재시도 대기 중 취소 — 종료 중으로 본다", ctx.Err())
 	}
 }

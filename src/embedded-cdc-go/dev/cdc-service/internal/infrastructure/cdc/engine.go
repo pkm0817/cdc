@@ -87,6 +87,9 @@ func (e *Engine) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// 갭이 없을 때도 0 을 내보낸다. 시계열이 아예 없으면 경보식이
+	// "판정한 적 없음" 과 "정상" 을 구분하지 못한다.
+	e.metrics.CaptureGap(gap != nil)
 	if gap != nil {
 		if e.cfg.Source.FailOnCaptureGap {
 			return fmt.Errorf("캡처 연결고리 유실: %s", gap.Describe())

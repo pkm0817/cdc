@@ -22,6 +22,7 @@ type Config struct {
 	Apply      Apply
 	DeadLetter DeadLetter
 	Batch      Batch
+	Audit      Audit
 	MetricPort int
 	LogLevel   slog.Level
 }
@@ -56,6 +57,22 @@ type Source struct {
 	// FailOnCaptureGap 이 false 면 되받을 수 없는 구간을 발견해도 로그만 남기고 계속 돈다 —
 	// 어긋난 채로 도는 것을 감수하겠다는 뜻이다.
 	FailOnCaptureGap bool
+
+	// ClockSkewProbeInterval 은 source DB 시계와 이 프로세스 시계의 차를 재는 주기다.
+	// 0 이면 재지 않는다 — 그 경우 end-to-end 지연이 진짜 지연인지 시계 오차인지
+	// 가릴 근거가 사라진다 (cdc_clock_skew_seconds 가 안 나온다).
+	ClockSkewProbeInterval time.Duration
+}
+
+// Audit 은 변경 이력 정책이다.
+//
+// ChangedFieldsTables 에 든 표의 UPDATE 만 cdc_change_audit 에 남긴다.
+// 비우면 끄고, "*"(또는 "all")가 들어 있으면 전체다. 나머지는 일부 목록이다.
+// 전역 on/off 가 아니라 목록인 이유는 비용이다 — 이벤트당 INSERT 한 건이 더 붙어
+// 대량 UPDATE 구간의 처리량이 그만큼 깎인다(Java 판 실측: 2,467 → 1,654 events/s).
+// 감사가 필요한 표에만 켤 것.
+type Audit struct {
+	ChangedFieldsTables []string
 }
 
 // Target 은 적재 대상 DB 다.
@@ -115,6 +132,8 @@ func Load() (Config, error) {
 			HeartbeatTable:    env("CDC_HEARTBEAT_TABLE", "cdc_heartbeat"),
 			HeartbeatInterval: envDuration("CDC_HEARTBEAT_INTERVAL", 10*time.Second),
 			FailOnCaptureGap:  envBool("CDC_FAIL_ON_CAPTURE_GAP", true),
+
+			ClockSkewProbeInterval: envDuration("CDC_CLOCK_SKEW_PROBE_INTERVAL", 30*time.Second),
 		},
 		Target: Target{
 			Host:     env("TARGET_DB_HOST", "localhost"),
@@ -138,6 +157,10 @@ func Load() (Config, error) {
 			MaxSize:   envInt("CDC_BATCH_MAX_SIZE", 500),
 			MaxWait:   envDuration("CDC_BATCH_MAX_WAIT", 200*time.Millisecond),
 			QueueSize: envInt("CDC_BATCH_QUEUE_SIZE", 8192),
+		},
+		Audit: Audit{
+			// 비어 있으면 끔. compose 가 Java 판과 같은 기본값(car)을 준다.
+			ChangedFieldsTables: envList("CDC_AUDIT_CHANGED_FIELDS", nil),
 		},
 		MetricPort: envInt("CDC_METRIC_PORT", 8080),
 		LogLevel:   parseLevel(env("CDC_LOG_LEVEL", "info")),

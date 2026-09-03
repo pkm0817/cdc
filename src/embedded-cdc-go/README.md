@@ -15,7 +15,7 @@ Source PostgreSQL ──logical replication(pgoutput)──▶ cdc-service ─�
 - **car** : source ↔ target 스키마 동일 → 1:1 복제
 - **computer** : 스키마 다름 → 매핑(full_name/spec/price_krw) + 소프트 삭제 + LSN 순서 가드
 - **grade / member** : 관계가 있는 테이블 쌍 (FK 는 source 에만)
-- **모니터링** : Grafana(+Prometheus, postgres_exporter×2, podman-exporter) — 정합성·처리량·지연·slot lag·컨테이너 리소스
+- **모니터링** : Grafana(+Prometheus, postgres_exporter×2, podman-exporter, image-renderer) — 정합성·처리량·지연·slot lag·컨테이너 리소스, 대시보드 3종과 경보 23종
 
 ## 빠른 시작
 
@@ -49,7 +49,7 @@ docker compose down -v
 > 컨테이너 cgroup 이 `user.slice` 아래로 들어가 cAdvisor 가 이름을 붙이지 못한다.
 > docker 데몬 환경이면 `--profile cadvisor` 로 cAdvisor 를 대신 띄우고
 > `infra/monitoring/prometheus/prometheus.yml` 의 cadvisor job 주석을 푼다.
-> 대시보드는 `rules.yml` 이 만드는 `cdc:container_*` 만 읽으므로 어느 쪽이든 같다.
+> 대시보드는 `rules/container-resources.yml` 이 만드는 `cdc:container_*` 만 읽으므로 어느 쪽이든 같다.
 >
 > 소켓 uid 가 1000 이 아니면 `PODMAN_SOCK=/run/user/<uid>/podman/podman.sock` 로 덮어쓴다.
 
@@ -127,6 +127,39 @@ UPDATE cdc_dead_letter SET status = 'RETRY_REQUESTED' WHERE id = 1;
 산출물은 `dev/cdc-service/build/verification/results.md` (지연·처리량·WAL 보유량 등 계측치)다.
 통과/실패와 별개로 "무엇이 얼마였는지"가 남는다.
 
+## 대시보드
+
+Java 판과 같은 세 장을 같은 구조로 둔다. 두 스택을 나란히 놓고 같은 눈금으로 보기 위해서다.
+
+| 대시보드 | uid | 무엇을 보나 |
+|---|---|---|
+| Embedded CDC (Go) Overview | `embedded-cdc-go` | 정합성·처리량·지연·슬롯·리소스. 상시로 켜 두는 화면 |
+| CDC PoC 검증 지표 (Go) | `cdc-go-poc` | PoC 질의 12개 축(유실·silent failure·failover·offset·중단·중복·lag·retention·스키마·모니터링·운영·후속 계측) |
+| CDC 검증 리포트 (V1–V6, Go) | `embedded-cdc-go-verify` | V1~V6 시나리오별 통과 기준·현재 측정치·남은 결정 |
+
+Java 판과 **지표 이름·표 모양을 맞춰 두었기 때문에** 패널 쿼리가 그대로 쓰인다. 다른 곳은 둘뿐이다.
+
+- **런타임 지표** — JVM 힙·GC 대신 `go_memstats_*` · `go_gc_duration_seconds` · `go_goroutines`
+- **스냅샷 진행률** — 이쪽에만 있다. go-pq-cdc 가 진행 상황을 원천 `cdc_snapshot_job` 에 남기기 때문이다
+
+변경 이력(`cdc_change_audit`)도 Java 판과 같은 표·같은 지표로 남긴다. 한 가지 차이는 TOAST 로 빠진 컬럼이
+자리표시자 대신 **키 부재**로 온다는 것이고, 그 컬럼은 `unreadable_fields` 로 분리해 기록한다.
+
+경보 규칙은 `infra/monitoring/prometheus/rules/cdc-alerts.yml` 에 있고, 상태는 Prometheus **Alerts**
+탭과 PoC 대시보드의 "현재 발생 중인 경보" 패널에서 본다. Java 판과 판정이 갈리는 곳은
+그 파일 상단 주석에 적어 두었다 — 요지는 **캡처 갭을 LSN 뺄셈으로 판정하지 않는다**는 것이다.
+heartbeat 가 슬롯만 밀고 체크포인트는 밀지 않아 유휴 구간에 정상적으로 음수가 되기 때문이다.
+
+### 대시보드 변경 추적
+
+JSON 은 3,000줄이 넘어 패널에 쿼리 한 줄을 더해도 `git diff` 에서 묻힌다. 그래서 "무엇을
+그리는가"만 뽑은 개요 파일(`*.outline.txt`)을 JSON 옆에 같이 둔다. 리뷰는 이 파일의 diff 로 한다.
+
+```bash
+node scripts/dashboard-outline.js --write infra/monitoring/grafana/dashboards/*.json  # 커밋 전 필수
+node scripts/dashboard-outline.js --check infra/monitoring/grafana/dashboards/*.json  # 뒤처지면 exit 1
+```
+
 ## 폴더 구조
 
 ```
@@ -143,7 +176,7 @@ embedded-cdc-go/
 │   │   │   └── infrastructure/    # cdc(go-pq-cdc) · persistence(pgx) · metrics · config
 │   │   └── test/verification/     # V1~V6 검증 시나리오
 │   └── docker-compose.app.yml
-├── scripts/           # up / demo / load / verify / down (ps1 + sh)
+├── scripts/           # up / demo / load / verify / down (ps1 + sh) + dashboard-outline.js
 └── docs/architecture.md
 ```
 
@@ -173,6 +206,8 @@ go run ./cmd/cdc-service    # localhost:57432/57433 으로 붙는다 (config 기
 | `CDC_HALT_DLQ_RATIO` | `0.5` | 한 배치에서 이 비율 넘게 격리되면 구조 문제로 보고 멈춤 |
 | `CDC_HEARTBEAT_TABLE` | `cdc_heartbeat` | 비우면 heartbeat 끔 (유휴 구간에 WAL 이 쌓인다) |
 | `CDC_DLQ_REPROCESS` | `true` | DLQ 재처리 루프 |
+| `CDC_CLOCK_SKEW_PROBE_INTERVAL` | `30s` | 원천 DB 시계와의 편차 측정 주기. 0 이면 끔 (지연 수치의 신뢰도를 판정할 수 없게 된다) |
+| `CDC_AUDIT_CHANGED_FIELDS` | `car` (compose) | UPDATE 의 변경 필드를 `cdc_change_audit` 에 남길 표. 비우면 끔 · `car,computer` 일부 · `*` 전체. Java 판과 같은 표·같은 지표(`cdc_change_audit_rows_total`) |
 
 ## 원천 DB 에 쓰기 권한이 필요한 이유
 

@@ -94,7 +94,7 @@ func (r *DeadLetterReprocessor) reprocessOnce(ctx context.Context) {
 	for _, pending := range claimed {
 		// 체크포인트를 올리지 않는 경로다 — 지나간 LSN 을 다시 적용하는 것이므로
 		// 진행 지점을 건드리면 안 된다.
-		applyErr := r.applier.ApplyOne(ctx, pending.Event)
+		applyErr := r.applier.ApplyOne(ctx, r.pipeline, pending.Event)
 		if applyErr == nil {
 			if err := r.deadLetters.MarkResolved(ctx, pending.ID); err != nil {
 				r.log.Warn("재처리 성공 표시 실패", "dlqId", pending.ID, "error", err)
