@@ -100,6 +100,26 @@ CDC 두 스택과 이름·라벨을 맞췄다. 같은 대시보드 쿼리로 셋
 이 방식을 쓸 이유가 없다는 뜻이다. 서로 다른 행만 한 번씩 바뀌는 부하에서는 접힐 것이
 없어 CDC 대비 이점이 사라진다. 이 값을 먼저 보고 판단한다.
 
+## 대시보드
+
+CDC 두 스택과 **같은 세 장을 같은 자리에** 둔다. 어느 스택을 고르든 같은 질문을 같은 패널에서 보기 위해서다.
+
+| 대시보드 | uid | 무엇을 보나 |
+|---|---|---|
+| CDC Custom (outbox) Overview | `cdc-custom` | 정합성·처리량·지연·outbox 적체·리소스 + DLQ·체크포인트·경보 |
+| CDC PoC 검증 지표 (Custom/outbox) | `cdc-custom-poc` | PoC 질의 12개 축. 슬롯·WAL 자리는 이 방식의 등가물(outbox 적체·seq 전진·정체·트리거)로 |
+| CDC 검증 리포트 (V1–V6, Custom/outbox) | `cdc-custom-verify` | V1~V6 를 이 방식에서 무엇이 되는지로 다시 읽은 것 |
+
+행·패널 id·좌표가 CDC 두 스택과 같다. 쿼리만 다른데, 다른 이유는 두 가지뿐이다.
+
+- **슬롯이 없다** — 보유 WAL → outbox 미반영 줄 수·표 크기, 슬롯 전진 → 체크포인트 seq 전진, heartbeat 나이 →
+  "읽을 줄이 있는데 멈춘 시간", 캡처 갭 → 트리거 빠진 표 (`cdc_trigger_enabled`)
+- **값을 싣지 않는다** — 필드 단위 변경 이력(`cdc_change_audit`)이 구조적으로 없다. 그 자리에는 DLQ 원문을 둔다.
+  V5(TOAST) 시나리오도 이 방식에는 없다
+
+경보 규칙은 `infra/monitoring/prometheus/rules/cdc-alerts.yml` 에 있다(13종). 대시보드 JSON 을 고치면
+`node scripts/dashboard-outline.js --write infra/monitoring/grafana/dashboards/*.json` 으로 개요 파일을 같이 갱신한다.
+
 ## 같은 부하로 비교하기
 
 시드·갱신 SQL 은 세 스택이 동일하다.

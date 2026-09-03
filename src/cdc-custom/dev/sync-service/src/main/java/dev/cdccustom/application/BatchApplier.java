@@ -1,5 +1,6 @@
 package dev.cdccustom.application;
 
+import dev.cdccustom.domain.Op;
 import dev.cdccustom.domain.PendingChanges;
 import dev.cdccustom.domain.port.TableSyncer;
 import dev.cdccustom.infrastructure.jdbc.CheckpointStore;
@@ -57,7 +58,15 @@ public class BatchApplier {
             List<Long> upserts = changes.upsertIds(table);
             if (!upserts.isEmpty()) {
                 applied += syncer.upsert(upserts, changes.maxSeq());
-                metrics.applied(table, "u", upserts.size());
+                // 반영은 UPSERT 한 문장이지만 지표는 c 와 u 를 나눠 센다.
+                // 전부 u 로 세면 INSERT 부하가 UPDATE 로 보인다 — CDC 두 스택과 라벨을
+                // 맞춘 이유가 같은 눈금으로 비교하는 것인데, 그 눈금이 어긋난다.
+                for (Op op : List.of(Op.CREATE, Op.UPDATE)) {
+                    int n = changes.count(table, op);
+                    if (n > 0) {
+                        metrics.applied(table, op.code(), n);
+                    }
+                }
             }
         }
         checkpoint.advanceTo(changes.maxSeq());

@@ -33,8 +33,11 @@ public enum Op {
 
     /**
      * 이 연산이 "소스에서 현재 값을 읽어 반영"에 해당하는가.
-     * 삭제만 아니면 전부 그렇다 — 생성과 수정을 구분할 필요가 없다.
+     * 삭제만 아니면 전부 그렇다 — <b>반영 경로</b>에서는 생성과 수정을 구분할 필요가 없다.
      * 어차피 UPSERT 한 문장으로 처리하기 때문이다.
+     *
+     * <p>단 <b>지표</b>는 구분한다 ({@link PendingChanges#count}). 여기서 뭉개면
+     * INSERT 부하가 UPDATE 로 보이고, 세 스택을 같은 라벨로 비교하려던 뜻이 어긋난다.
      */
     public boolean isUpsert() {
         return this != DELETE;

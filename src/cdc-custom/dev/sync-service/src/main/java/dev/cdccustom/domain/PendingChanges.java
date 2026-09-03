@@ -75,6 +75,26 @@ public final class PendingChanges {
         return idsWhere(table, false);
     }
 
+    /**
+     * 표별·연산별 접힌 건수. 지표(cdc_events_total{op}) 용이다.
+     *
+     * <p>반영은 c 와 u 를 구분하지 않고 UPSERT 한 문장으로 하지만, 지표까지 뭉개면
+     * "INSERT 를 했는데 UPDATE 가 누적된다" 는 그림이 된다 — 실제로 그랬다.
+     * outbox 에는 트리거가 c/u/d 를 정확히 적으므로 그 값을 그대로 센다.
+     *
+     * <p>접힌 뒤의 값이라는 점에 주의. 같은 배치에서 c → u 로 접힌 행은 u 한 건이고,
+     * d → c 로 되살아난 행은 c 한 건이다. "이벤트 수" 가 아니라 "반영한 행의 마지막 연산" 이다.
+     */
+    public int count(String table, Op op) {
+        int n = 0;
+        for (Map.Entry<ChangeKey, Op> e : latest.entrySet()) {
+            if (e.getKey().table().equals(table) && e.getValue() == op) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     private List<Long> idsWhere(String table, boolean upsert) {
         List<Long> ids = new ArrayList<>();
         for (Map.Entry<ChangeKey, Op> e : latest.entrySet()) {
