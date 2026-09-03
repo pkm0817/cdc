@@ -1,0 +1,365 @@
+# CDC PoC 검증 지표 (Custom/outbox)
+uid=cdc-custom-poc  schema=39  refresh=5s  time=now-1h~now
+tags=cdc,poc,cdc-custom,outbox
+
+[row] PoC 판정 요약 — 한눈에 보는 4개 축
+  panel #2 stat "정합성 — 최대 행 수 차이" @ x0 y1 6x4
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  max(abs(cdc_source_rows - on(table_name) cdc_target_rows))  legend="행 차이"  instant
+    desc: source 와 target 의 테이블별 행 수 차. 0 이 아니면 유실 또는 미반영이다. (1)
+  panel #3 stat "outbox 최장 대기" @ x6 y1 6x4
+    unit=s  decimals=0
+    thresholds base:green 60:yellow 300:red
+    calc lastNotNull
+    A  max(cdc_outbox_oldest_age_seconds) or vector(0)  legend="oldest"  instant
+    desc: 가장 오래된 미반영 줄의 나이. 이 방식에는 "되받을 수 없는 구간" 이 없다 — 줄은 우리가 지우기 전까지 남는다. 대신 이 값이 자라면 워커가 멈춘 것이다. (1)(3)(4)
+  panel #4 stat "정체 (읽을 줄이 있는데 멈춘 시간)" @ x12 y1 6x4
+    unit=s  decimals=1
+    thresholds base:green 60:yellow 300:red
+    calc lastNotNull
+    A  max(cdc_checkpoint_stale_seconds) and on() (max(cdc_outbox_pending) > 0) or vector(0)  legend="stalled"  instant
+    desc: heartbeat 가 없는 방식이라 "살아 있는가" 는 이렇게 본다: outbox 에 줄이 있는데 체크포인트가 안 움직인 시간. 줄이 없으면 0 이다. (2)(10)
+  panel #5 stat "outbox 미반영 줄 수" @ x18 y1 6x4
+    unit=none  decimals=0
+    thresholds base:green 100000:yellow 1000000:red
+    calc lastNotNull
+    A  max(cdc_outbox_pending)  legend="pending"  instant
+    desc: CDC 의 슬롯 보유 WAL 에 해당한다. 컨슈머가 멈추면 WAL 이 아니라 이 표가 자란다 — 행당 약 30바이트라 훨씬 느리지만 상한이 없는 것은 같다. (5)(8)
+[row] 1. 데이터 유실 및 정합성
+  panel #7 text "" @ x0 y6 24x4
+    text: **질의 대응** — 중단·장애 시 누락 / 위치 불일치로 인한 중복·누락 / failover 후 데이터 갭 / snapshot 없는 부분 복구의 정합성. 이 방식의 판정식은 **
+  panel #8 stat "테이블별 행 수 차이 |source − target|" @ x0 y10 8x6
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  abs(cdc_source_rows - on(table_name) cdc_target_rows)  legend="{{table_name}}"  instant
+    desc: 0 이 정상. 적재 중에는 일시적으로 벌어졌다가 수렴한다
+  panel #9 stat "DLQ — 미해결 격리 건" @ x8 y10 8x6
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  cdc_dlq_total_pending  legend="pending"  instant
+    B  cdc_dlq_total_retry_requested  legend="retry 요청"  instant
+    C  cdc_dlq_total_discarded  legend="폐기"  instant
+    desc: PENDING/RETRY_REQUESTED. 0 이 아니면 그만큼 target 에 반영되지 않았다
+  panel #10 stat "관계 정합성 — 고아 행" @ x16 y10 8x6
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  cdc_orphan_rows  legend="{{child_table}} → {{parent_table}}"  instant
+    desc: target 의 member 중 참조하는 grade 가 없는 행. 순서 역전이나 부분 복구의 흔적이다
+  panel #11 timeseries "행 수 추이 — source vs target" @ x0 y16 24x7
+    unit=none  decimals=0
+    A  sum(cdc_source_rows)  legend="source 합계"
+    B  sum(cdc_target_rows)  legend="target 합계"
+    desc: 두 선이 벌어진 채 수렴하지 않으면 유실이다. 적재 중 벌어지는 것은 정상(backlog)
+[row] 2. Silent Failure 탐지
+  panel #13 text "" @ x0 y24 24x5
+    text: **질의 대응** — 프로세스는 정상인데 반영이 안 되는 상황의 탐지 / heartbeat 없이 운영할 때의 판별 기준 / 무엇을 보는가. **heartbeat 가 없다.** 슬롯
+  panel #14 stat "정체 (읽을 줄이 있는데 멈춘 시간)" @ x0 y29 6x5
+    unit=s  decimals=1
+    thresholds base:green 60:yellow 300:red
+    calc lastNotNull
+    A  max(cdc_checkpoint_stale_seconds) and on() (max(cdc_outbox_pending) > 0) or vector(0)  legend="stalled"  instant
+    desc: 폴링 주기 안에 소화돼야 한다. 60초 넘으면 의심, 300초 넘으면 멈춘 것으로 본다
+  panel #15 stat "워커 살아 있음" @ x6 y29 6x5
+    unit=none  decimals=0
+    thresholds base:red 1:green
+    calc lastNotNull
+    A  up{job="cdc-service"}  legend="up"  instant
+    desc: 1 = Prometheus 가 워커를 긁고 있음. 슬롯 연결 상태에 해당하는 값인데, 이 방식에는 연결이 없으므로 프로세스 생존만 본다
+  panel #16 stat "체크포인트 지연" @ x12 y29 6x5
+    unit=s  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  cdc_checkpoint_stale_seconds  legend="{{pipeline}}"  instant
+    desc: 마지막으로 target 에 반영한 시각 이후 경과. 유휴 구간에는 자라는 것이 정상이다
+  panel #17 stat "앱 프로세스" @ x18 y29 6x5
+    unit=none  decimals=0
+    thresholds base:red 1:green
+    calc lastNotNull
+    A  up{job="cdc-service"}  legend="up"  instant
+    desc: 1 = Prometheus 가 앱을 긁고 있음. 이것만 보면 silent failure 를 놓친다
+  panel #18 timeseries "유휴 구간 판별 — seq 전진 vs 이벤트 처리량" @ x0 y34 24x7
+    unit=none  decimals=0
+    overrides 1건
+    A  increase(cdc_checkpoint_seq[5m])  legend="체크포인트 seq 전진 (5분)"
+    B  sum(rate(cdc_events_total[5m])) * 300  legend="5분간 반영 행"
+    desc: seq 가 전진하는데 반영 행이 0 이면 접혀서 사라진 줄이다(같은 행 반복 갱신). 둘 다 0 이고 outbox 도 비어 있으면 그냥 유휴다
+[row] 3. Failover 및 재기동 이후 복구
+  panel #20 text "" @ x0 y42 24x5
+    text: **질의 대응** — Primary/Standby failover 후 자동 복구 / position 불일치 / managed DB 의 슬롯 유지 제한 / failover 후 sna
+  panel #21 stat "앱 가동 시간" @ x0 y47 6x5
+    unit=s  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  process_uptime_seconds{job="cdc-service"}  legend="uptime"  instant
+    desc: 재기동하면 0 으로 떨어진다. 잦은 재기동은 크래시 루프다
+  panel #22 stat "컨테이너 가동 시간" @ x6 y47 6x5
+    unit=s  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  time() - podman_container_started_seconds{name="cdc-custom-service"}  legend="container uptime"  instant
+    desc: 앱보다 짧으면 컨테이너가 재생성된 것이다
+  panel #23 stat "outbox 표 크기" @ x12 y47 6x5
+    unit=bytes  decimals=0
+    thresholds base:green 268435456:yellow 1073741824:red
+    calc lastNotNull
+    A  cdc_outbox_size_bytes  legend="size"  instant
+    desc: 반영 뒤 지워지므로 평소엔 작다. 계속 자라면 지우지 못하고 있거나 VACUUM 이 못 따라가는 것이다
+  panel #24 stat "반영한 seq" @ x18 y47 6x5
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  max(cdc_checkpoint_seq)  legend="seq"  instant
+    desc: 재기동하면 이 seq 다음부터 다시 읽는다. 이미 반영된 줄을 다시 읽어도 UPSERT 라 결과가 같다
+  panel #25 timeseries "재기동 흔적 — 미반영 줄과 워커 가동" @ x0 y52 24x6
+    unit=none  decimals=0
+    overrides 1건
+    A  cdc_outbox_pending  legend="미반영 줄 수"
+    B  up{job="cdc-service"}  legend="워커 up"
+    desc: up 이 끊긴 구간에 줄이 쌓였다가 복귀 후 내려가는 모양이어야 한다. 복귀했는데 줄이 안 내려가면 체크포인트가 깨진 것이다
+[row] 4. Offset / Position 관리
+  panel #27 text "" @ x0 y59 24x7
+    text: **질의 대응** — 위치 저장 장소 / 저장소와 원천 위치의 불일치 / 중복·누락 판단 방법 / 저장소 이중화. **위치 정보는 두 곳뿐이다.** outbox 의 seq(원천)와
+  panel #28 timeseries "진행 지점 — 반영 seq 와 미반영 줄 수" @ x0 y66 16x8
+    unit=none  decimals=0
+    overrides 1건
+    A  cdc_checkpoint_seq  legend="체크포인트(반영 완료 seq)"
+    B  cdc_outbox_pending  legend="미반영 줄 수"
+    desc: CDC 의 세 위치(오프셋·슬롯·체크포인트)가 여기서는 둘로 준다: outbox 의 seq 와 우리 체크포인트. 둘의 차가 곧 미반영 줄이다
+  panel #29 stat "미반영 줄 수" @ x16 y66 8x8
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  max(cdc_outbox_pending)  legend="차이"  instant
+    desc: outbox 의 최대 seq − 체크포인트 seq 에 해당한다. 반영은 접힌 뒤라 이 수치가 곧 지연 건수는 아니다
+[row] 5. 장기 중단 이후 복구 전략
+  panel #31 text "" @ x0 y75 24x5
+    text: **질의 대응** — 장시간 중단 후 resume 불가 사례 / snapshot 재동기화와 incremental replay 의 구분 기준 / 재동기화 중 원천 변경 / 부분 복구
+  panel #32 stat "outbox 미반영 줄 수" @ x0 y80 6x5
+    unit=none  decimals=0
+    thresholds base:green 100000:yellow 1000000:red
+    calc lastNotNull
+    A  cdc_outbox_pending  legend="pending"  instant
+    desc: 중단이 길어질수록 자란다. 이 값이 곧 원천 표의 비대다
+  panel #33 stat "outbox 표 크기" @ x6 y80 6x5
+    unit=bytes  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  cdc_outbox_size_bytes  legend="size"  instant
+    desc: CDC 의 safe_wal_size 자리. 상한이 없다는 점은 같고, 자라는 속도는 행당 약 30바이트라 훨씬 느리다
+  panel #34 stat "WAL 디렉터리 / 파일 수" @ x12 y80 6x5
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  cdc_wal_size_bytes  legend="WAL 크기"  instant
+    B  cdc_wal_files  legend="WAL 파일 수"  instant
+    desc: 슬롯이 붙잡은 만큼 원천에 쌓인다
+  panel #35 stat "원천 디스크 여유" @ x18 y80 6x5
+    unit=bytes  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  min(node_filesystem_avail_bytes{fstype="ext4"})  legend="여유"  instant
+    desc: 행 수보다 이 값이 먼저 경보를 준다
+  panel #36 timeseries "중단 내성 — outbox 표 크기와 WAL" @ x0 y85 24x7
+    unit=bytes  decimals=0
+    A  cdc_outbox_size_bytes  legend="outbox 표 크기"
+    B  cdc_wal_size_bytes  legend="WAL 디렉터리"
+    desc: outbox 표 크기의 기울기로 "앞으로 몇 시간 버티는지" 를 읽는다. 반영이 재개되면 표는 지워지지만 디스크는 VACUUM 뒤에야 준다
+[row] 6. 중복 및 순서 보장
+  panel #38 text "" @ x0 y93 24x6
+    text: **질의 대응** — 재전송으로 인한 downstream 중복 / 순서 역전으로 인한 상태 오염 / 멱등성을 어느 계층에 두는가 / PK dedup 외의 전략. **멱등성은 방식 
+  panel #39 stat "LSN 가드 — 역전 차단 건" @ x0 y99 8x5
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  cdc_guard_lsn_guard  legend="{{table_name}}"  instant
+    desc: 순서가 뒤집힌 이벤트를 적용하지 않고 버린 수
+  panel #40 stat "소프트 삭제 행" @ x8 y99 8x5
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  cdc_guard_soft_delete  legend="{{table_name}}"  instant
+    desc: 물리 삭제하지 않은 행. 되살아남 방지의 흔적이다
+  panel #41 stat "누적 적용 이벤트 vs target 행" @ x16 y99 8x5
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  sum(cdc_events_total)  legend="적용 이벤트"  instant
+    B  sum(cdc_target_rows)  legend="target 행"  instant
+    desc: 이벤트 수가 행 수보다 많은 것은 정상이다(UPDATE·재전송). 행이 더 많으면 이상이다
+[row] 7. CDC lag 및 대량 트래픽
+  panel #43 text "" @ x0 y105 24x4
+    text: **질의 대응** — bulk insert/update 시 lag 급증 / backlog 누적 / DB 부하와 병목 중 먼저 한계에 닿는 지점 / lag 해소 전략. **이 방식이
+  panel #44 stat "평균 지연" @ x0 y109 6x5
+    unit=s  decimals=1
+    thresholds base:green 5:yellow 30:red
+    calc lastNotNull
+    A  sum(rate(cdc_end_to_end_lag_seconds_sum[5m])) / clamp_min(sum(rate(cdc_end_to_end_lag_seconds_count[5m])), 0.001)  legend="평균"  instant
+    desc: source 커밋 → target 반영. sum/count 로 계산한다
+  panel #45 stat "최대 지연" @ x6 y109 6x5
+    unit=s  decimals=1
+    thresholds base:green 5:yellow 30:red
+    calc lastNotNull
+    A  max(cdc_end_to_end_lag_seconds_max)  legend="최대"  instant
+    desc: 감쇠 최댓값. 부하가 끝나면 스스로 내려간다
+  panel #46 stat "CDC 적용 속도" @ x12 y109 6x5
+    unit=none  decimals=1
+    thresholds base:text
+    calc lastNotNull
+    A  sum(rate(cdc_events_total[1m]))  legend="events/sec"  instant
+    desc: 초당 target 에 반영한 이벤트 수
+  panel #47 stat "원천 커밋 속도" @ x18 y109 6x5
+    unit=none  decimals=1
+    thresholds base:text
+    calc lastNotNull
+    A  sum(rate(pg_stat_database_tup_inserted{job="source-db",datname="sourcedb"}[1m]) + rate(pg_stat_database_tup_updated{job="source-db",datname="sourcedb"}[1m]) + rate(pg_stat_database_tup_deleted{job="source-db",datname="sourcedb"}[1m]))  legend="rows/sec"  instant
+    desc: 초당 원천에서 발생한 행 변경 수. 위 값보다 크면 backlog 가 쌓인다
+  panel #48 timeseries "병목 지점 — 원천 커밋 속도 vs CDC 적용 속도" @ x0 y114 12x8
+    unit=none  decimals=1
+    A  sum(rate(pg_stat_database_tup_inserted{job="source-db",datname="sourcedb"}[1m]) + rate(pg_stat_database_tup_updated{job="source-db",datname="sourcedb"}[1m]) + rate(pg_stat_database_tup_deleted{job="source-db",datname="sourcedb"}[1m]))  legend="원천 커밋 rows/sec"
+    B  sum(rate(cdc_events_total[1m]))  legend="CDC 적용 events/sec"
+    desc: 원천 선이 위에 있는 구간이 backlog 가 쌓이는 구간이다
+  panel #49 timeseries "End-to-End 지연 추이" @ x12 y114 12x8
+    unit=s  decimals=1
+    A  sum(rate(cdc_end_to_end_lag_seconds_sum[1m])) / clamp_min(sum(rate(cdc_end_to_end_lag_seconds_count[1m])), 0.001)  legend="평균 지연"
+    B  max(cdc_end_to_end_lag_seconds_max)  legend="최대 지연"
+    C  max(cdc_clock_epoch_seconds{job="source-db"} - timestamp(cdc_clock_epoch_seconds{job="source-db"}))  legend="시계 편차 (DB − 수집기)"
+    D  0.5  legend="편차 허용치 (목표 지연의 10%)"
+    desc: backlog 가 지연으로 나타나는 모습. 부하 종료 후 0 으로 수렴해야 한다. 시계 편차 시계열이 허용치 0.5s 선을 넘는 구간의 지연값은 판정에 쓰지 않는다 - 지연이 아니라 시계 오차다
+[row] 8. 로그 보관 및 비용
+  panel #51 text "" @ x0 y123 24x5
+    text: **질의 대응** — lag 증가로 인한 WAL retention 팽창 / storage 비용 / purge 불가 / retention 정책 기준. **슬롯이 없으므로 WAL re
+  panel #52 stat "현재 retention 정책" @ x0 y128 8x5
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  pg_settings_max_slot_wal_keep_size_bytes{job="source-db"}  legend="max_slot_wal_keep_size"  instant
+    B  pg_settings_wal_keep_size_bytes{job="source-db"}  legend="wal_keep_size"  instant
+    desc: 슬롯이 없으므로 이 값들은 이 방식에 직접 영향이 없다. CDC 두 스택과 같은 자리에 두어 "이 방식은 이 설정에 묶이지 않는다" 를 보인다
+  panel #53 stat "WAL 총량 / 파일 수" @ x8 y128 8x5
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  cdc_wal_size_bytes  legend="WAL 크기"  instant
+    B  cdc_wal_files  legend="파일 수"  instant
+    desc: 슬롯이 붙잡은 만큼 여기 쌓인다
+  panel #54 stat "원천 DB 크기" @ x16 y128 8x5
+    unit=bytes  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  cdc_db_size_bytes{job="source-db"}  legend="{{datname}}"  instant
+    desc: 데이터 자체의 증가분. WAL 증가와 구분해서 봐야 비용 원인이 갈린다
+  panel #55 timeseries "WAL 증가와 outbox 표 크기" @ x0 y133 24x7
+    unit=bytes  decimals=0
+    A  cdc_wal_size_bytes  legend="WAL 디렉터리"
+    B  cdc_outbox_size_bytes  legend="outbox 표 크기"
+    C  min(node_filesystem_avail_bytes{fstype="ext4"})  legend="디스크 여유"
+    desc: outbox 표가 자라면 컨슈머가 못 따라오고 있다는 뜻이다. WAL 은 트리거 INSERT 까지 포함한 원천 쓰기 비용이다
+[row] 9. Schema 변경 영향
+  panel #57 text "" @ x0 y141 24x7
+    text: **질의 대응** — 컬럼 추가·삭제·타입 변경의 영향 / schema compatibility 관리 / PK 변경 시 재구성 필요 여부 / 배포 절차. **상시로 감시하는 것은 
+  panel #58 table "표별 outbox 트리거" @ x0 y148 8x7
+    A  cdc_trigger_enabled  instant
+    desc: enabled=0 인 트리거가 있으면 그 연산의 변경이 outbox 에 안 들어간다 — 슬롯 유실과 같은 급의 사고인데 DB 는 알려 주지 않는다
+  panel #59 table "수신 측 방어 기제" @ x8 y148 8x7
+    A  cdc_guard_lsn_guard  instant
+    desc: lsn_guard=1 이면 source_seq 비교로 순서 역전을 막는다. TOAST 문제는 이 방식에 없다 — 값을 이벤트에 싣지 않고 소스에서 현재 값을 읽는다
+  panel #60 stat "스키마 불일치의 사후 신호" @ x16 y148 8x7
+    unit=none  decimals=2
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  cdc_dlq_total_pending  legend="DLQ pending"  instant
+    B  sum(rate(cdc_sink_errors_total[5m])) or vector(0)  legend="sink 오류/초"  instant
+    desc: 수신 측 컬럼이 없으면 적재가 실패해 DLQ 로 간다. 이것이 유일한 탐지 경로다
+[row] 10. 모니터링 및 탐지 체계
+  panel #62 text "" @ x0 y156 24x6
+    text: **질의 대응** — 상태 판단의 핵심 지표 / heartbeat 기반 모니터링 여부 / silent failure 알람 기준 / 탐지 지연 사례와 보완. **핵심 지표 네 개로 
+  panel #63 table "현재 발생 중인 경보" @ x0 y162 12x7
+    A  ALERTS  instant
+    desc: pending 은 조건은 맞았으나 for 시간을 아직 못 채운 상태다
+  panel #64 stat "핵심 지표 4개" @ x12 y162 12x7
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  max(cdc_checkpoint_stale_seconds) and on() (max(cdc_outbox_pending) > 0) or vector(0)  legend="정체(s)"  instant
+    B  max(abs(cdc_source_rows - on(table_name) cdc_target_rows))  legend="행 수 차이"  instant
+    C  max(cdc_outbox_pending)  legend="미반영 줄"  instant
+    D  max(cdc_outbox_oldest_age_seconds) or vector(0)  legend="최장 대기(s)"  instant
+    desc: 이 네 개가 정상이면 나머지는 원인 분석용이다
+[row] 11. outbox 폴링 운영 — CDC(WAL) 방식 대비
+  panel #66 text "" @ x0 y170 24x8
+    text: **질의 대응** — 운영 경험 / 위치 durability 와 재기동 복구 / backpressure·memory pressure 제어 / 표준 패턴 부재의 어려움. **dura
+  panel #67 timeseries "JVM 힙 vs 컨테이너 RSS" @ x0 y178 12x8
+    unit=bytes  decimals=0
+    A  sum(jvm_memory_used_bytes{job="cdc-service",area="heap"})  legend="JVM 힙"
+    B  cdc:container_mem_bytes{name="cdc-custom-service"}  legend="컨테이너 RSS"
+    C  podman_container_mem_limit_bytes{name="cdc-custom-service"}  legend="컨테이너 한도"
+    desc: 힙이 아니라 RSS 가 컨테이너 한도에 닿는다. 둘의 간격이 JVM 외 메모리다
+  panel #68 timeseries "GC 정지 시간 — backpressure 의 대가" @ x12 y178 12x8
+    unit=s  decimals=3
+    A  rate(jvm_gc_pause_seconds_sum{job="cdc-service"}[1m])  legend="초당 GC 정지 시간"
+    B  jvm_gc_pause_seconds_max{job="cdc-service"}  legend="최대 GC 정지"
+    desc: 배치를 키우면 지연은 줄고 GC 정지는 늘어난다
+  panel #69 stat "진행 지점 저장소 상태" @ x0 y186 24x5
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  cdc_checkpoint_stale_seconds  legend="체크포인트 지연(s)"  instant
+    B  max(cdc_outbox_oldest_age_seconds) or vector(0)  legend="outbox 최장 대기(s)"  instant
+    C  sum(cdc_dlq_total_rows)  legend="DLQ 누적 행"  instant
+    desc: 체크포인트는 수신 DB 의 표 하나다. 오프셋 파일도 슬롯도 없어 잃을 것이 없다 — 잃으면 0 부터 다시 읽고, UPSERT 라 결과는 같다
+[row] 12. 후속 계측 — 지연 신뢰도 · 접기 효율 · 격리 원문
+  panel #71 text "" @ x0 y193 24x4
+    text: **이 섹션은 "이 지연 수치를 믿어도 되는가" 와 "이 방식이 이득인가" 를 답한다.** **시계 편차** — 지연은 outbox 에 기록된 시각(DB 시계)과 반영 시각(앱 시
+  panel #72 stat "시계 편차 (source DB − 수집기)" @ x0 y197 6x5
+    unit=s  decimals=3
+    thresholds base:green 0.5:red
+    calc lastNotNull
+    A  max(cdc_clock_epoch_seconds{job="source-db"} - timestamp(cdc_clock_epoch_seconds{job="source-db"}))  legend="시계 편차"  instant
+    desc: 앱이 직접 재는 편차 지표가 없어 DB 시계와 수집기 시계의 편차로 대신한다. 0.5초를 넘으면 그 구간 지연 수치는 판정에 쓰지 않는다
+  panel #73 stat "접기 비율 (30분)" @ x6 y197 6x5
+    unit=none  decimals=2
+    thresholds base:red 1.1:green
+    calc lastNotNull
+    A  increase(sync_outbox_entries_total[30m]) / clamp_min(increase(sync_folded_rows_total[30m]), 1)  legend="읽은 줄 / 반영 행"  instant
+    desc: 이 방식의 존재 이유를 재는 값이다. 1 에 가까우면 접힌 것이 없다 — 같은 행이 반복해서 바뀌지 않는 부하라 CDC 대비 이득이 없다
+  panel #74 stat "재기동 횟수 (1시간)" @ x12 y197 6x5
+    unit=none  decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  changes(process_start_time_seconds{job="cdc-service"}[1h]) or vector(0)  legend="재기동"  instant
+    desc: HALT 카운터가 없는 대신 프로세스 기동 시각의 변화로 본다. 반복되면 크래시 루프다
+  panel #75 stat "반영 행 속도" @ x18 y197 6x5
+    unit=rowsps  decimals=1
+    thresholds base:green
+    calc lastNotNull
+    A  sum(rate(sync_folded_rows_total[5m])) or vector(0)  legend="반영 행/s"  instant
+    desc: 접은 뒤 실제로 타깃에 쓴 행/초. 위 접기 비율과 곱하면 outbox 에서 읽은 줄/초가 된다
+  panel #76 timeseries "적체 구간 — seq 전진 vs 반영 이벤트" @ x0 y202 12x8
+    unit=none  decimals=0
+    A  increase(cdc_checkpoint_seq[5m])  legend="seq 전진량 (5분)"
+    B  sum(rate(cdc_events_total[5m])) * 300  legend="반영 이벤트 (5분 환산)"
+    desc: seq 는 전진하는데 반영이 적으면 접히고 있는 것이다(정상). seq 가 멈춰 있는데 outbox 에 줄이 있으면 워커가 멈춘 것이다
+  panel #77 timeseries "지연 신뢰도 — 지연과 시계 편차를 같은 축에서" @ x12 y202 12x8
+    unit=s  decimals=1
+    overrides 3건
+    A  max(cdc_end_to_end_lag_seconds_max)  legend="최대 지연"
+    B  max(cdc_clock_epoch_seconds{job="source-db"} - timestamp(cdc_clock_epoch_seconds{job="source-db"}))  legend="시계 편차 (DB − 수집기)"
+    C  0.5  legend="편차 허용치"
+    desc: 편차(초록)가 허용치 0.5s(빨강 기준선)를 넘는 구간의 지연값은 버린다. 앱 시계 지표가 없어 수집기 시계 기준이다
+  panel #78 table "격리된 행 — 무엇이 왜 막혔나" @ x0 y210 14x9
+    A  SELECT to_char(last_failed_at, 'HH24:MI:SS') AS "마지막 실패", source_table AS "표", row_id AS "행", op AS "연산", status AS "상태", failure_message AS "원인" FROM sync_dead_letter WHERE $__timeFilter(last_failed_at) ORDER BY id DESC LIMIT 100
+    desc: 이 방식의 DLQ 에는 값이 없고 (표, PK) 만 있다 — 값을 이벤트에 싣지 않으므로 "무엇이 무엇으로" 는 답할 수 없다. 재처리는 그 PK 를 outbox 에 다시 넣어 현재 값을 읽게 하는 식이다
+  panel #79 table "어느 표가 자주 막히나" @ x14 y210 6x9
+    A  SELECT source_table AS "표", status AS "상태", count(*) AS "건수" FROM sync_dead_letter GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20
+    desc: 같은 표가 반복되면 데이터 문제가 아니라 그 표의 매핑 문제다
+  panel #80 stat "재처리 신청 대기" @ x20 y210 4x9
+    unit=none  decimals=0
+    thresholds base:text
+    calc lastNotNull
+    A  SELECT count(*) AS value FROM sync_dead_letter WHERE status = 'RETRY_REQUESTED'
+    desc: PENDING 은 자동으로 집지 않는다. 사람이 표시한 건만 재처리된다

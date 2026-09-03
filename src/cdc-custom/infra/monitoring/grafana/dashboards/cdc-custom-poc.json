@@ -1,0 +1,3772 @@
+{
+  "uid": "cdc-custom-poc",
+  "title": "CDC PoC 검증 지표 (Custom/outbox)",
+  "tags": [
+    "cdc",
+    "poc",
+    "cdc-custom",
+    "outbox"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "editable": true,
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "PoC 판정 요약 — 한눈에 보는 4개 축",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "정합성 — 최대 행 수 차이",
+      "description": "source 와 target 의 테이블별 행 수 차. 0 이 아니면 유실 또는 미반영이다. (1)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(abs(cdc_source_rows - on(table_name) cdc_target_rows))",
+          "legendFormat": "행 차이",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "outbox 최장 대기",
+      "description": "가장 오래된 미반영 줄의 나이. 이 방식에는 \"되받을 수 없는 구간\" 이 없다 — 줄은 우리가 지우기 전까지 남는다. 대신 이 값이 자라면 워커가 멈춘 것이다. (1)(3)(4)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_outbox_oldest_age_seconds) or vector(0)",
+          "legendFormat": "oldest",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 60,
+                "color": "yellow"
+              },
+              {
+                "value": 300,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "정체 (읽을 줄이 있는데 멈춘 시간)",
+      "description": "heartbeat 가 없는 방식이라 \"살아 있는가\" 는 이렇게 본다: outbox 에 줄이 있는데 체크포인트가 안 움직인 시간. 줄이 없으면 0 이다. (2)(10)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_checkpoint_stale_seconds) and on() (max(cdc_outbox_pending) > 0) or vector(0)",
+          "legendFormat": "stalled",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 60,
+                "color": "yellow"
+              },
+              {
+                "value": 300,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "outbox 미반영 줄 수",
+      "description": "CDC 의 슬롯 보유 WAL 에 해당한다. 컨슈머가 멈추면 WAL 이 아니라 이 표가 자란다 — 행당 약 30바이트라 훨씬 느리지만 상한이 없는 것은 같다. (5)(8)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_outbox_pending)",
+          "legendFormat": "pending",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 100000,
+                "color": "yellow"
+              },
+              {
+                "value": 1000000,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "1. 데이터 유실 및 정합성",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      }
+    },
+    {
+      "id": 7,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — 중단·장애 시 누락 / 위치 불일치로 인한 중복·누락 / failover 후 데이터 갭 / snapshot 없는 부분 복구의 정합성.\n\n이 방식의 판정식은 **행 수 대사(count)** 다 — 세 스택이 같다. n_live_tup 같은 추정치가 아니라 count(*) 를 쓴다.\nsync_dead_letter 는 반영에 실패해 격리된 행이다. **0 이 아니면 그만큼이 target 에 없다** — 대사 차이와 함께 봐야 원인이 갈린다(유실인지, 격리인지).\n**이 방식에는 \"되받을 수 없는 구간\" 이 없다.** outbox 줄은 우리가 지우기 전까지 남고, 반영은 소스의 현재 값을 읽으므로 중간 상태를 놓쳐도 최종 상태는 맞는다. 대신 **중간 상태는 애초에 없다** — 그것이 한계이자 정의다."
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "테이블별 행 수 차이 |source − target|",
+      "description": "0 이 정상. 적재 중에는 일시적으로 벌어졌다가 수렴한다",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "abs(cdc_source_rows - on(table_name) cdc_target_rows)",
+          "legendFormat": "{{table_name}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "DLQ — 미해결 격리 건",
+      "description": "PENDING/RETRY_REQUESTED. 0 이 아니면 그만큼 target 에 반영되지 않았다",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_dlq_total_pending",
+          "legendFormat": "pending",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_dlq_total_retry_requested",
+          "legendFormat": "retry 요청",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "cdc_dlq_total_discarded",
+          "legendFormat": "폐기",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "관계 정합성 — 고아 행",
+      "description": "target 의 member 중 참조하는 grade 가 없는 행. 순서 역전이나 부분 복구의 흔적이다",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_orphan_rows",
+          "legendFormat": "{{child_table}} → {{parent_table}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "행 수 추이 — source vs target",
+      "description": "두 선이 벌어진 채 수렴하지 않으면 유실이다. 적재 중 벌어지는 것은 정상(backlog)",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(cdc_source_rows)",
+          "legendFormat": "source 합계"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(cdc_target_rows)",
+          "legendFormat": "target 합계"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "2. Silent Failure 탐지",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      }
+    },
+    {
+      "id": 13,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — 프로세스는 정상인데 반영이 안 되는 상황의 탐지 / heartbeat 없이 운영할 때의 판별 기준 / 무엇을 보는가.\n\n**heartbeat 가 없다.** 슬롯이 없으니 밀어 줄 것도 없다. 대신 판별식이 하나로 준다: **outbox 에 줄이 있는데 체크포인트가 안 움직이는 시간**(정체). 줄이 없으면 0 이라 유휴와 구분된다.\n2차는 **최장 대기 시간**이다. 줄 수가 적어도 오래 묵어 있으면 워커가 멈춘 것이다.\n이벤트 처리량으로는 판별할 수 없는 것은 세 스택이 같다 — 원천에 변경이 없으면 0 이 정상이다."
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "정체 (읽을 줄이 있는데 멈춘 시간)",
+      "description": "폴링 주기 안에 소화돼야 한다. 60초 넘으면 의심, 300초 넘으면 멈춘 것으로 본다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 29
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_checkpoint_stale_seconds) and on() (max(cdc_outbox_pending) > 0) or vector(0)",
+          "legendFormat": "stalled",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 60,
+                "color": "yellow"
+              },
+              {
+                "value": 300,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "워커 살아 있음",
+      "description": "1 = Prometheus 가 워커를 긁고 있음. 슬롯 연결 상태에 해당하는 값인데, 이 방식에는 연결이 없으므로 프로세스 생존만 본다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 29
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"cdc-service\"}",
+          "legendFormat": "up",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "체크포인트 지연",
+      "description": "마지막으로 target 에 반영한 시각 이후 경과. 유휴 구간에는 자라는 것이 정상이다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 29
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_checkpoint_stale_seconds",
+          "legendFormat": "{{pipeline}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "앱 프로세스",
+      "description": "1 = Prometheus 가 앱을 긁고 있음. 이것만 보면 silent failure 를 놓친다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 29
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"cdc-service\"}",
+          "legendFormat": "up",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "유휴 구간 판별 — seq 전진 vs 이벤트 처리량",
+      "description": "seq 가 전진하는데 반영 행이 0 이면 접혀서 사라진 줄이다(같은 행 반복 갱신). 둘 다 0 이고 outbox 도 비어 있으면 그냥 유휴다",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(cdc_checkpoint_seq[5m])",
+          "legendFormat": "체크포인트 seq 전진 (5분)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(cdc_events_total[5m])) * 300",
+          "legendFormat": "5분간 반영 행",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5분간 반영 행"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "이벤트 수"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "type": "row",
+      "title": "3. Failover 및 재기동 이후 복구",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      }
+    },
+    {
+      "id": 20,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — Primary/Standby failover 후 자동 복구 / position 불일치 / managed DB 의 슬롯 유지 제한 / failover 후 snapshot 재생성 필요 여부.\n\n**이 방식은 failover 에 가장 강하다.** 슬롯이 없으므로 승계 문제가 없고, outbox 표는 일반 표라 standby 로 그대로 복제된다. 워커는 재기동 후 **체크포인트 seq 다음부터** 다시 읽고, 이미 반영된 줄을 다시 읽어도 UPSERT 라 결과가 같다.\nsnapshot 재생성이 필요한 경우는 **outbox 표 자체가 잘렸을 때**(누군가 TRUNCATE 했거나 보관 기간으로 잘라냈을 때)뿐이다. 그때는 CDC 와 같이 전량 재적재다.\n아래 \"반영한 seq\" 가 재기동 전후로 이어지는지가 판정이다."
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "앱 가동 시간",
+      "description": "재기동하면 0 으로 떨어진다. 잦은 재기동은 크래시 루프다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 47
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "process_uptime_seconds{job=\"cdc-service\"}",
+          "legendFormat": "uptime",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "컨테이너 가동 시간",
+      "description": "앱보다 짧으면 컨테이너가 재생성된 것이다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 47
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - podman_container_started_seconds{name=\"cdc-custom-service\"}",
+          "legendFormat": "container uptime",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "outbox 표 크기",
+      "description": "반영 뒤 지워지므로 평소엔 작다. 계속 자라면 지우지 못하고 있거나 VACUUM 이 못 따라가는 것이다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 47
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_outbox_size_bytes",
+          "legendFormat": "size",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 268435456,
+                "color": "yellow"
+              },
+              {
+                "value": 1073741824,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "반영한 seq",
+      "description": "재기동하면 이 seq 다음부터 다시 읽는다. 이미 반영된 줄을 다시 읽어도 UPSERT 라 결과가 같다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 47
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_checkpoint_seq)",
+          "legendFormat": "seq",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "재기동 흔적 — 미반영 줄과 워커 가동",
+      "description": "up 이 끊긴 구간에 줄이 쌓였다가 복귀 후 내려가는 모양이어야 한다. 복귀했는데 줄이 안 내려가면 체크포인트가 깨진 것이다",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_outbox_pending",
+          "legendFormat": "미반영 줄 수",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "up{job=\"cdc-service\"}",
+          "legendFormat": "워커 up",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "워커 up"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "4. Offset / Position 관리",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      }
+    },
+    {
+      "id": 27,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — 위치 저장 장소 / 저장소와 원천 위치의 불일치 / 중복·누락 판단 방법 / 저장소 이중화.\n\n**위치 정보는 두 곳뿐이다.** outbox 의 seq(원천)와 수신 DB 의 sync_checkpoint(우리). CDC 의 오프셋 파일·슬롯이 없다.\n- 체크포인트는 적용과 같은 트랜잭션이라 중복 판정의 기준이 된다. 잃으면 0 부터 다시 읽는다 — 느리지만 틀리지 않는다.\n- 이중화가 필요 없다는 것이 이 방식의 이점이다. **잃어도 되는 위치 정보**이기 때문이다.\n\n아래 두 선(반영 seq · 미반영 줄 수)이 이 섹션의 전부다. 줄 수가 0 으로 수렴하지 않으면 워커가 못 따라가는 것이다."
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "진행 지점 — 반영 seq 와 미반영 줄 수",
+      "description": "CDC 의 세 위치(오프셋·슬롯·체크포인트)가 여기서는 둘로 준다: outbox 의 seq 와 우리 체크포인트. 둘의 차가 곧 미반영 줄이다",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 66
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_checkpoint_seq",
+          "legendFormat": "체크포인트(반영 완료 seq)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_outbox_pending",
+          "legendFormat": "미반영 줄 수",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "미반영 줄 수"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "미반영 줄 수",
+      "description": "outbox 의 최대 seq − 체크포인트 seq 에 해당한다. 반영은 접힌 뒤라 이 수치가 곧 지연 건수는 아니다",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 66
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_outbox_pending)",
+          "legendFormat": "차이",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "5. 장기 중단 이후 복구 전략",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      }
+    },
+    {
+      "id": 31,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — 장시간 중단 후 resume 불가 사례 / snapshot 재동기화와 incremental replay 의 구분 기준 / 재동기화 중 원천 변경 / 부분 복구의 부담.\n\n**구분 기준: outbox 표가 살아 있는가.** 살아 있으면 얼마나 오래 멈췄든 incremental replay 다 — 줄이 남아 있는 한 되받을 수 있고, 같은 행의 반복 변경은 접혀서 반영 비용이 줄기까지 한다.\n**대가는 원천 표의 비대다.** 슬롯이 WAL 을 붙잡는 대신 outbox 표가 자란다. 행당 약 30바이트라 CDC 의 WAL 압력보다 한참 느리지만 상한이 없는 것은 같다. 아래 표 크기의 기울기로 \"앞으로 몇 시간\" 을 읽는다.\n재동기화가 확정되는 경우는 outbox 표가 잘렸을 때뿐이다."
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "outbox 미반영 줄 수",
+      "description": "중단이 길어질수록 자란다. 이 값이 곧 원천 표의 비대다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 80
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_outbox_pending",
+          "legendFormat": "pending",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 100000,
+                "color": "yellow"
+              },
+              {
+                "value": 1000000,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "outbox 표 크기",
+      "description": "CDC 의 safe_wal_size 자리. 상한이 없다는 점은 같고, 자라는 속도는 행당 약 30바이트라 훨씬 느리다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 80
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_outbox_size_bytes",
+          "legendFormat": "size",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "WAL 디렉터리 / 파일 수",
+      "description": "슬롯이 붙잡은 만큼 원천에 쌓인다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 80
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_wal_size_bytes",
+          "legendFormat": "WAL 크기",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_wal_files",
+          "legendFormat": "WAL 파일 수",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "원천 디스크 여유",
+      "description": "행 수보다 이 값이 먼저 경보를 준다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 80
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(node_filesystem_avail_bytes{fstype=\"ext4\"})",
+          "legendFormat": "여유",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 36,
+      "type": "timeseries",
+      "title": "중단 내성 — outbox 표 크기와 WAL",
+      "description": "outbox 표 크기의 기울기로 \"앞으로 몇 시간 버티는지\" 를 읽는다. 반영이 재개되면 표는 지워지지만 디스크는 VACUUM 뒤에야 준다",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 85
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_outbox_size_bytes",
+          "legendFormat": "outbox 표 크기",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_wal_size_bytes",
+          "legendFormat": "WAL 디렉터리",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 37,
+      "type": "row",
+      "title": "6. 중복 및 순서 보장",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 92
+      }
+    },
+    {
+      "id": 38,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 93
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — 재전송으로 인한 downstream 중복 / 순서 역전으로 인한 상태 오염 / 멱등성을 어느 계층에 두는가 / PK dedup 외의 전략.\n\n**멱등성은 방식 자체에 있다.** 반영은 \"소스의 현재 값을 읽어 UPSERT\" 라 같은 줄을 몇 번 읽어도 결과가 같다. 재기동 후 마지막 배치를 다시 읽는 것이 곧 재전송인데, 그것을 여기서 흡수한다.\n**순서 역전은 접기 단계에서 사라진다.** (표, 행) 기준으로 마지막 연산만 남기므로 옛 연산이 새 값을 덮어쓸 자리가 없다. 다만 배치 경계를 넘는 역전은 남는다 — 그래서 수신 행에 source_seq 를 두고 더 낮은 seq 는 적용하지 않는다(LSN 가드의 등가물).\n삭제도 소프트 삭제다 — 지워진 행이 늦게 온 UPDATE 로 되살아나는 것을 막는다."
+      }
+    },
+    {
+      "id": 39,
+      "type": "stat",
+      "title": "LSN 가드 — 역전 차단 건",
+      "description": "순서가 뒤집힌 이벤트를 적용하지 않고 버린 수",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 99
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_guard_lsn_guard",
+          "legendFormat": "{{table_name}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40,
+      "type": "stat",
+      "title": "소프트 삭제 행",
+      "description": "물리 삭제하지 않은 행. 되살아남 방지의 흔적이다",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 99
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_guard_soft_delete",
+          "legendFormat": "{{table_name}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 41,
+      "type": "stat",
+      "title": "누적 적용 이벤트 vs target 행",
+      "description": "이벤트 수가 행 수보다 많은 것은 정상이다(UPDATE·재전송). 행이 더 많으면 이상이다",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 99
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(cdc_events_total)",
+          "legendFormat": "적용 이벤트",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum(cdc_target_rows)",
+          "legendFormat": "target 행",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 42,
+      "type": "row",
+      "title": "7. CDC lag 및 대량 트래픽",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 104
+      }
+    },
+    {
+      "id": 43,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 105
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — bulk insert/update 시 lag 급증 / backlog 누적 / DB 부하와 병목 중 먼저 한계에 닿는 지점 / lag 해소 전략.\n\n**이 방식이 대량 UPDATE 에 만들어졌다.** 30만 건 UPDATE 가 CDC 에서는 REPLICA IDENTITY FULL 때문에 312MB 의 WAL 이 됐지만, 여기서는 outbox 에 행당 약 30바이트로 적히고 같은 행은 접힌다.\n병목은 **반영 쪽의 벌크 SELECT + UPSERT** 다. 아래 두 선의 간격이 backlog 이고, 접기 비율(12번 섹션)이 그 간격을 얼마나 줄여 주는지를 말한다.\n**단 지연의 바닥이 폴링 주기다.** 변경 한 건도 최소 한 주기는 기다린다 — CDC 의 ms 단위 지연은 이 방식으로 안 나온다."
+      }
+    },
+    {
+      "id": 44,
+      "type": "stat",
+      "title": "평균 지연",
+      "description": "source 커밋 → target 반영. sum/count 로 계산한다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 109
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(cdc_end_to_end_lag_seconds_sum[5m])) / clamp_min(sum(rate(cdc_end_to_end_lag_seconds_count[5m])), 0.001)",
+          "legendFormat": "평균",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 5,
+                "color": "yellow"
+              },
+              {
+                "value": 30,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 45,
+      "type": "stat",
+      "title": "최대 지연",
+      "description": "감쇠 최댓값. 부하가 끝나면 스스로 내려간다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 109
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_end_to_end_lag_seconds_max)",
+          "legendFormat": "최대",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 5,
+                "color": "yellow"
+              },
+              {
+                "value": 30,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 46,
+      "type": "stat",
+      "title": "CDC 적용 속도",
+      "description": "초당 target 에 반영한 이벤트 수",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 109
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(cdc_events_total[1m]))",
+          "legendFormat": "events/sec",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 47,
+      "type": "stat",
+      "title": "원천 커밋 속도",
+      "description": "초당 원천에서 발생한 행 변경 수. 위 값보다 크면 backlog 가 쌓인다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 109
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_tup_inserted{job=\"source-db\",datname=\"sourcedb\"}[1m]) + rate(pg_stat_database_tup_updated{job=\"source-db\",datname=\"sourcedb\"}[1m]) + rate(pg_stat_database_tup_deleted{job=\"source-db\",datname=\"sourcedb\"}[1m]))",
+          "legendFormat": "rows/sec",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 48,
+      "type": "timeseries",
+      "title": "병목 지점 — 원천 커밋 속도 vs CDC 적용 속도",
+      "description": "원천 선이 위에 있는 구간이 backlog 가 쌓이는 구간이다",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 114
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_tup_inserted{job=\"source-db\",datname=\"sourcedb\"}[1m]) + rate(pg_stat_database_tup_updated{job=\"source-db\",datname=\"sourcedb\"}[1m]) + rate(pg_stat_database_tup_deleted{job=\"source-db\",datname=\"sourcedb\"}[1m]))",
+          "legendFormat": "원천 커밋 rows/sec"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(cdc_events_total[1m]))",
+          "legendFormat": "CDC 적용 events/sec"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 49,
+      "type": "timeseries",
+      "title": "End-to-End 지연 추이",
+      "description": "backlog 가 지연으로 나타나는 모습. 부하 종료 후 0 으로 수렴해야 한다. 시계 편차 시계열이 허용치 0.5s 선을 넘는 구간의 지연값은 판정에 쓰지 않는다 - 지연이 아니라 시계 오차다",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 114
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(cdc_end_to_end_lag_seconds_sum[1m])) / clamp_min(sum(rate(cdc_end_to_end_lag_seconds_count[1m])), 0.001)",
+          "legendFormat": "평균 지연"
+        },
+        {
+          "refId": "B",
+          "expr": "max(cdc_end_to_end_lag_seconds_max)",
+          "legendFormat": "최대 지연"
+        },
+        {
+          "refId": "C",
+          "expr": "max(cdc_clock_epoch_seconds{job=\"source-db\"} - timestamp(cdc_clock_epoch_seconds{job=\"source-db\"}))",
+          "legendFormat": "시계 편차 (DB − 수집기)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "0.5",
+          "legendFormat": "편차 허용치 (목표 지연의 10%)"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50,
+      "type": "row",
+      "title": "8. 로그 보관 및 비용",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 122
+      }
+    },
+    {
+      "id": 51,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 123
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — lag 증가로 인한 WAL retention 팽창 / storage 비용 / purge 불가 / retention 정책 기준.\n\n**슬롯이 없으므로 WAL retention 문제가 없다.** WAL 은 체크포인트 뒤에 정상적으로 지워진다. max_slot_wal_keep_size 류는 아래 표에 참고로만 띄운다.\n대신 **outbox 표가 retention 이다.** 반영 뒤 지우므로 평소엔 작고, 컨슈머가 멈추면 자란다. 잘라내면 그 구간은 재동기화다 — CDC 의 슬롯 lost 와 같은 결정이고, 그 선택이 곧 정책이다.\n원천 쓰기 비용은 WAL 에 트리거 INSERT 가 더해지는 만큼 늘어난다. 아래 WAL 증가율에 그것이 포함돼 있다."
+      }
+    },
+    {
+      "id": 52,
+      "type": "stat",
+      "title": "현재 retention 정책",
+      "description": "슬롯이 없으므로 이 값들은 이 방식에 직접 영향이 없다. CDC 두 스택과 같은 자리에 두어 \"이 방식은 이 설정에 묶이지 않는다\" 를 보인다",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 128
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "pg_settings_max_slot_wal_keep_size_bytes{job=\"source-db\"}",
+          "legendFormat": "max_slot_wal_keep_size",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "pg_settings_wal_keep_size_bytes{job=\"source-db\"}",
+          "legendFormat": "wal_keep_size",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 53,
+      "type": "stat",
+      "title": "WAL 총량 / 파일 수",
+      "description": "슬롯이 붙잡은 만큼 여기 쌓인다",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 128
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_wal_size_bytes",
+          "legendFormat": "WAL 크기",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_wal_files",
+          "legendFormat": "파일 수",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 54,
+      "type": "stat",
+      "title": "원천 DB 크기",
+      "description": "데이터 자체의 증가분. WAL 증가와 구분해서 봐야 비용 원인이 갈린다",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 128
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_db_size_bytes{job=\"source-db\"}",
+          "legendFormat": "{{datname}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 55,
+      "type": "timeseries",
+      "title": "WAL 증가와 outbox 표 크기",
+      "description": "outbox 표가 자라면 컨슈머가 못 따라오고 있다는 뜻이다. WAL 은 트리거 INSERT 까지 포함한 원천 쓰기 비용이다",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 133
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_wal_size_bytes",
+          "legendFormat": "WAL 디렉터리",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "cdc_outbox_size_bytes",
+          "legendFormat": "outbox 표 크기",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "min(node_filesystem_avail_bytes{fstype=\"ext4\"})",
+          "legendFormat": "디스크 여유",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 56,
+      "type": "row",
+      "title": "9. Schema 변경 영향",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 140
+      }
+    },
+    {
+      "id": 57,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 141
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — 컬럼 추가·삭제·타입 변경의 영향 / schema compatibility 관리 / PK 변경 시 재구성 필요 여부 / 배포 절차.\n\n**상시로 감시하는 것은 트리거다.** 포착이 전적으로 문장 단위 트리거에 달려 있어, 표를 새로 만들고 트리거를 빠뜨리거나 누군가 DISABLE 하면 그 표의 변경은 흔적 없이 사라진다. 슬롯 유실과 같은 급의 사고인데 DB 는 아무 것도 알려 주지 않는다.\n**TOAST 문제는 없다.** 값을 이벤트에 싣지 않고 소스에서 현재 값을 읽으므로, 컬럼이 빠져서 오는 경우가 구조적으로 없다 — CDC 두 스택의 V5 가 통째로 사라진다.\n**한계** — 컬럼 추가·타입 변경은 반영 SELECT/UPSERT 가 실패해 DLQ 로 간다. 사후 관측이다. PK 변경은 outbox 가 PK 를 들고 있으므로 재구성이 필요하다."
+      }
+    },
+    {
+      "id": 58,
+      "type": "table",
+      "title": "표별 outbox 트리거",
+      "description": "enabled=0 인 트리거가 있으면 그 연산의 변경이 outbox 에 안 들어간다 — 슬롯 유실과 같은 급의 사고인데 DB 는 알려 주지 않는다",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 148
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_trigger_enabled",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "job": true,
+              "instance": true,
+              "server": true,
+              "__name__": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 59,
+      "type": "table",
+      "title": "수신 측 방어 기제",
+      "description": "lsn_guard=1 이면 source_seq 비교로 순서 역전을 막는다. TOAST 문제는 이 방식에 없다 — 값을 이벤트에 싣지 않고 소스에서 현재 값을 읽는다",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 148
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_guard_lsn_guard",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "job": true,
+              "instance": true,
+              "server": true,
+              "__name__": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 60,
+      "type": "stat",
+      "title": "스키마 불일치의 사후 신호",
+      "description": "수신 측 컬럼이 없으면 적재가 실패해 DLQ 로 간다. 이것이 유일한 탐지 경로다",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 148
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_dlq_total_pending",
+          "legendFormat": "DLQ pending",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(cdc_sink_errors_total[5m])) or vector(0)",
+          "legendFormat": "sink 오류/초",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 61,
+      "type": "row",
+      "title": "10. 모니터링 및 탐지 체계",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 155
+      }
+    },
+    {
+      "id": 62,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 156
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — 상태 판단의 핵심 지표 / heartbeat 기반 모니터링 여부 / silent failure 알람 기준 / 탐지 지연 사례와 보완.\n\n**핵심 지표 네 개로 좁힌다.** 나머지는 원인 분석용이다.\n1. 정체(읽을 줄이 있는데 멈춘 시간) — 살아 있는가\n2. abs(cdc_source_rows − cdc_target_rows) — 맞는가\n3. cdc_outbox_pending — 버틸 수 있는가\n4. cdc_outbox_oldest_age_seconds — 얼마나 밀렸는가\n\nheartbeat 가 없어도 판별이 되는 이유는 outbox 가 곧 \"해야 할 일 목록\" 이기 때문이다. 목록이 비어 있으면 유휴, 차 있는데 안 줄면 죽은 것이다."
+      }
+    },
+    {
+      "id": 63,
+      "type": "table",
+      "title": "현재 발생 중인 경보",
+      "description": "pending 은 조건은 맞았으나 for 시간을 아직 못 채운 상태다",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 162
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ALERTS",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "job": true,
+              "instance": true,
+              "server": true,
+              "__name__": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 64,
+      "type": "stat",
+      "title": "핵심 지표 4개",
+      "description": "이 네 개가 정상이면 나머지는 원인 분석용이다",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 162
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_checkpoint_stale_seconds) and on() (max(cdc_outbox_pending) > 0) or vector(0)",
+          "legendFormat": "정체(s)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "max(abs(cdc_source_rows - on(table_name) cdc_target_rows))",
+          "legendFormat": "행 수 차이",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "max(cdc_outbox_pending)",
+          "legendFormat": "미반영 줄",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        },
+        {
+          "refId": "D",
+          "expr": "max(cdc_outbox_oldest_age_seconds) or vector(0)",
+          "legendFormat": "최장 대기(s)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65,
+      "type": "row",
+      "title": "11. outbox 폴링 운영 — CDC(WAL) 방식 대비",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 169
+      }
+    },
+    {
+      "id": 66,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 170
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**질의 대응** — 운영 경험 / 위치 durability 와 재기동 복구 / backpressure·memory pressure 제어 / 표준 패턴 부재의 어려움.\n\n**durability** — 잃어도 되는 위치 정보(체크포인트 seq)뿐이다. 잃으면 0 부터 다시 읽고 결과는 같다. CDC 의 오프셋 파일·슬롯 같은 단일 실패점이 없다.\n**backpressure** — 폴링이라 밀려도 원천을 막지 않는다. 밀린 만큼 outbox 표가 자라고, 접기 때문에 밀릴수록 오히려 줄당 반영 비용이 준다. 대신 지연의 바닥이 폴링 주기다.\n**memory pressure** — 한 배치만 힙에 든다. 접기 map 이 배치 크기에 비례하므로 배치를 키우면 힙이 오른다.\n**표준 패턴 부재** — 라이브러리가 없다. 트리거·접기·벌크 반영이 전부 우리 코드라 검증 부담이 크고, 그 대신 동작을 전부 설명할 수 있다."
+      }
+    },
+    {
+      "id": 67,
+      "type": "timeseries",
+      "title": "JVM 힙 vs 컨테이너 RSS",
+      "description": "힙이 아니라 RSS 가 컨테이너 한도에 닿는다. 둘의 간격이 JVM 외 메모리다",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 178
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(jvm_memory_used_bytes{job=\"cdc-service\",area=\"heap\"})",
+          "legendFormat": "JVM 힙"
+        },
+        {
+          "refId": "B",
+          "expr": "cdc:container_mem_bytes{name=\"cdc-custom-service\"}",
+          "legendFormat": "컨테이너 RSS"
+        },
+        {
+          "refId": "C",
+          "expr": "podman_container_mem_limit_bytes{name=\"cdc-custom-service\"}",
+          "legendFormat": "컨테이너 한도"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 68,
+      "type": "timeseries",
+      "title": "GC 정지 시간 — backpressure 의 대가",
+      "description": "배치를 키우면 지연은 줄고 GC 정지는 늘어난다",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 178
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(jvm_gc_pause_seconds_sum{job=\"cdc-service\"}[1m])",
+          "legendFormat": "초당 GC 정지 시간"
+        },
+        {
+          "refId": "B",
+          "expr": "jvm_gc_pause_seconds_max{job=\"cdc-service\"}",
+          "legendFormat": "최대 GC 정지"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 69,
+      "type": "stat",
+      "title": "진행 지점 저장소 상태",
+      "description": "체크포인트는 수신 DB 의 표 하나다. 오프셋 파일도 슬롯도 없어 잃을 것이 없다 — 잃으면 0 부터 다시 읽고, UPSERT 라 결과는 같다",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 186
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cdc_checkpoint_stale_seconds",
+          "legendFormat": "체크포인트 지연(s)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "max(cdc_outbox_oldest_age_seconds) or vector(0)",
+          "legendFormat": "outbox 최장 대기(s)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum(cdc_dlq_total_rows)",
+          "legendFormat": "DLQ 누적 행",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 70,
+      "type": "row",
+      "title": "12. 후속 계측 — 지연 신뢰도 · 접기 효율 · 격리 원문",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 192
+      }
+    },
+    {
+      "id": 71,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 193
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**이 섹션은 \"이 지연 수치를 믿어도 되는가\" 와 \"이 방식이 이득인가\" 를 답한다.**\n\n**시계 편차** — 지연은 outbox 에 기록된 시각(DB 시계)과 반영 시각(앱 시계)의 차다. 앱 시계 지표가 없어 DB 시계와 수집기 시계의 편차로 가드레일을 건다. 0.5초를 넘는 구간의 지연 수치는 판정에 쓰지 않는다.\n**접기 비율** — 이 방식의 존재 이유를 재는 값이다. 1 에 가까우면 접힌 것이 없고, 그런 부하에서는 CDC 대비 이득이 없다.\n**격리 원문** — 변경 이력(무엇이 무엇으로)은 이 방식에 없다. 값을 싣지 않으므로 구조적으로 만들 수 없다. 대신 DLQ 원문을 읽는다."
+      }
+    },
+    {
+      "id": 72,
+      "type": "stat",
+      "title": "시계 편차 (source DB − 수집기)",
+      "description": "앱이 직접 재는 편차 지표가 없어 DB 시계와 수집기 시계의 편차로 대신한다. 0.5초를 넘으면 그 구간 지연 수치는 판정에 쓰지 않는다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 197
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_clock_epoch_seconds{job=\"source-db\"} - timestamp(cdc_clock_epoch_seconds{job=\"source-db\"}))",
+          "legendFormat": "시계 편차",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 0.5,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 73,
+      "type": "stat",
+      "title": "접기 비율 (30분)",
+      "description": "이 방식의 존재 이유를 재는 값이다. 1 에 가까우면 접힌 것이 없다 — 같은 행이 반복해서 바뀌지 않는 부하라 CDC 대비 이득이 없다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 197
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(sync_outbox_entries_total[30m]) / clamp_min(increase(sync_folded_rows_total[30m]), 1)",
+          "legendFormat": "읽은 줄 / 반영 행",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 1.1,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 74,
+      "type": "stat",
+      "title": "재기동 횟수 (1시간)",
+      "description": "HALT 카운터가 없는 대신 프로세스 기동 시각의 변화로 본다. 반복되면 크래시 루프다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 197
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "changes(process_start_time_seconds{job=\"cdc-service\"}[1h]) or vector(0)",
+          "legendFormat": "재기동",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 75,
+      "type": "stat",
+      "title": "반영 행 속도",
+      "description": "접은 뒤 실제로 타깃에 쓴 행/초. 위 접기 비율과 곱하면 outbox 에서 읽은 줄/초가 된다",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 197
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(sync_folded_rows_total[5m])) or vector(0)",
+          "legendFormat": "반영 행/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          },
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rowsps",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 76,
+      "type": "timeseries",
+      "title": "적체 구간 — seq 전진 vs 반영 이벤트",
+      "description": "seq 는 전진하는데 반영이 적으면 접히고 있는 것이다(정상). seq 가 멈춰 있는데 outbox 에 줄이 있으면 워커가 멈춘 것이다",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 202
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(cdc_checkpoint_seq[5m])",
+          "legendFormat": "seq 전진량 (5분)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(cdc_events_total[5m])) * 300",
+          "legendFormat": "반영 이벤트 (5분 환산)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 77,
+      "type": "timeseries",
+      "title": "지연 신뢰도 — 지연과 시계 편차를 같은 축에서",
+      "description": "편차(초록)가 허용치 0.5s(빨강 기준선)를 넘는 구간의 지연값은 버린다. 앱 시계 지표가 없어 수집기 시계 기준이다",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 202
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(cdc_end_to_end_lag_seconds_max)",
+          "legendFormat": "최대 지연"
+        },
+        {
+          "refId": "B",
+          "expr": "max(cdc_clock_epoch_seconds{job=\"source-db\"} - timestamp(cdc_clock_epoch_seconds{job=\"source-db\"}))",
+          "legendFormat": "시계 편차 (DB − 수집기)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cdc-custom-prom"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "0.5",
+          "legendFormat": "편차 허용치"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "시계 편차 (DB − 수집기)"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisSoftMin",
+                "value": -1
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 1
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "편차 (초)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "편차 허용치"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisSoftMin",
+                "value": -1
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 1
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    6
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "최대 지연"
+            },
+            "properties": [
+              {
+                "id": "custom.axisLabel",
+                "value": "지연 (초)"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 78,
+      "type": "table",
+      "title": "격리된 행 — 무엇이 왜 막혔나",
+      "description": "이 방식의 DLQ 에는 값이 없고 (표, PK) 만 있다 — 값을 이벤트에 싣지 않으므로 \"무엇이 무엇으로\" 는 답할 수 없다. 재처리는 그 PK 를 outbox 에 다시 넣어 현재 값을 읽게 하는 식이다",
+      "gridPos": {
+        "h": 9,
+        "w": 14,
+        "x": 0,
+        "y": 210
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdc-custom-target-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(last_failed_at, 'HH24:MI:SS') AS \"마지막 실패\",\n       source_table AS \"표\", row_id AS \"행\", op AS \"연산\", status AS \"상태\",\n       failure_message AS \"원인\"\n  FROM sync_dead_letter\n WHERE $__timeFilter(last_failed_at)\n ORDER BY id DESC LIMIT 100",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdc-custom-target-db"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 79,
+      "type": "table",
+      "title": "어느 표가 자주 막히나",
+      "description": "같은 표가 반복되면 데이터 문제가 아니라 그 표의 매핑 문제다",
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 14,
+        "y": 210
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdc-custom-target-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT source_table AS \"표\", status AS \"상태\", count(*) AS \"건수\" FROM sync_dead_letter GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdc-custom-target-db"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 80,
+      "type": "stat",
+      "title": "재처리 신청 대기",
+      "description": "PENDING 은 자동으로 집지 않는다. 사람이 표시한 건만 재처리된다",
+      "gridPos": {
+        "h": 9,
+        "w": 4,
+        "x": 20,
+        "y": 210
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdc-custom-target-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS value FROM sync_dead_letter WHERE status = 'RETRY_REQUESTED'",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdc-custom-target-db"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "text"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
