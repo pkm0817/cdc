@@ -131,13 +131,19 @@ services:
     image: grafana/grafana:11.2.0
     container_name: cdc-custom-grafana
     networks: [cdc-custom-net]
-    depends_on: [prometheus]
+    depends_on: [prometheus, renderer]
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_DEFAULT_THEME: light
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # 패널을 PNG 로 굽는 별도 컨테이너. 이게 없으면 /render 가 "No image renderer
+      # available" 그림만 돌려주고, 경보 스크린샷과 PDF 내보내기도 동작하지 않는다.
+      GF_RENDERING_SERVER_URL: http://renderer:8081/render
+      # 렌더러가 그림을 뜨려고 Grafana 를 다시 부를 때 쓰는 주소다.
+      # localhost 로 두면 렌더러 컨테이너 자신을 가리켜 빈 화면이 나온다.
+      GF_RENDERING_CALLBACK_URL: http://grafana:3000/
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
@@ -145,6 +151,23 @@ services:
     ports:
       - "58300:3000"
 
+  # ── 이미지 렌더러 ───────────────────────────────────────────────────────────
+  # Grafana 본체에는 렌더링 기능이 없다. 이 컨테이너가 헤드리스 Chromium 을 들고
+  # 패널을 그려 PNG 로 돌려준다. 대시보드/패널 PNG·PDF 내보내기와 경보 스크린샷에 쓴다.
+  # 포트를 밖으로 열지 않는다 — 열어두면 임의의 URL 을 렌더링시킬 수 있는 창구가 된다.
+  renderer:
+    image: grafana/grafana-image-renderer:3.11.6
+    container_name: cdc-custom-renderer
+    networks: [cdc-custom-net]
+    environment:
+      RENDERING_VERBOSE_LOGGING: "false"
+      RENDERING_CLUSTERING_MAX_CONCURRENCY: "2"
+      RENDERING_TIMEZONE: "Asia/Seoul"
+    restart: unless-stopped
+
+# 볼륨 이름의 emb-go- 접두사는 Go 판에서 옮겨 오며 남은 것이다. compose 가
+# 프로젝트 이름으로 스코프하므로 다른 스택과 충돌하지는 않는다. 이름을 바꾸면
+# 기존 Prometheus 시계열 이력이 끊기므로, 다음 -Wipe 때 함께 정리한다.
 volumes:
   emb-go-prometheus-data:
   emb-go-grafana-data:

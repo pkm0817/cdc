@@ -2,9 +2,11 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
-# 수집기가 podman-exporter 든 cAdvisor 든 대시보드가 같은 이름을 읽도록 정규화한다.
+# rules/container-resources.yml : 수집기(podman-exporter/cAdvisor)가 달라도 대시보드가
+#                                 같은 이름(cdc:container_*)을 읽도록 정규화한다.
+# rules/cdc-alerts.yml           : 경보 규칙. 임계값의 근거는 그 파일 상단 주석 참고.
 rule_files:
-  - /etc/prometheus/rules.yml
+  - /etc/prometheus/rules/*.yml
 
 scrape_configs:
   # cdc-service — 처리량, end-to-end 지연, 에러.
