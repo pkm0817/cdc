@@ -42,7 +42,7 @@ public class JpaChangeAuditStore implements ChangeAuditStore {
 
     @Override
     public void record(String pipeline, ChangeEvent event, FieldDiff diff) {
-        if (!props.auditedTables().contains(event.table())) {
+        if (!props.audits(event.table())) {
             return;
         }
         jpa.save(new ChangeAuditEntity(

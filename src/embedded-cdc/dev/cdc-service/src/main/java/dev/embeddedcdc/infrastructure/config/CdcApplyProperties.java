@@ -28,14 +28,54 @@ public record CdcApplyProperties(
         String auditChangedFields
 ) {
 
-    /** 감사 대상 테이블. 설정이 비어 있으면 빈 집합이고, 그때 감사 기록은 일어나지 않는다. */
+    /**
+     * 전체 테이블을 뜻하는 값. {@code CDC_AUDIT_CHANGED_FIELDS=*} 또는 {@code all}.
+     * 목록에 섞여 있어도 전체로 본다 — "car,*" 는 "*" 다.
+     */
+    public static final String ALL = "*";
+
+    /**
+     * 감사 대상 테이블. 설정이 비어 있으면 빈 집합이고, 그때 감사 기록은 일어나지 않는다.
+     * 전체({@link #ALL})가 지정된 경우 이 집합은 비어 있으므로, 판정은 {@link #audits(String)} 로 할 것.
+     */
     public Set<String> auditedTables() {
         if (auditChangedFields == null || auditChangedFields.isBlank()) {
             return Set.of();
         }
         return Arrays.stream(auditChangedFields.split(","))
-                .map(String::trim)
-                .filter(table -> !table.isEmpty())
+                .map(CdcApplyProperties::normalize)
+                .filter(table -> !table.isEmpty() && !ALL.equals(table))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /** 전체 테이블에 감사를 켰는가. */
+    public boolean auditsAllTables() {
+        if (auditChangedFields == null || auditChangedFields.isBlank()) {
+            return false;
+        }
+        return Arrays.stream(auditChangedFields.split(","))
+                .map(CdcApplyProperties::normalize)
+                .anyMatch(ALL::equals);
+    }
+
+    /**
+     * 이 테이블의 UPDATE 를 감사 로그에 남기는가. 판정은 이 메서드 하나로 한다 —
+     * 전체/일부/끔 세 경우를 호출자가 각각 따지게 두면 언젠가 하나를 빠뜨린다.
+     */
+    public boolean audits(String table) {
+        return auditsAllTables() || auditedTables().contains(normalize(table));
+    }
+
+    /**
+     * "public.car" 처럼 스키마가 붙어 와도 받아 준다 — Go 판 설정을 그대로 옮겨 오는 경우가 있다.
+     * "all" 은 "*" 로 통일한다.
+     */
+    private static String normalize(String raw) {
+        String s = raw == null ? "" : raw.trim();
+        if (s.equalsIgnoreCase("all")) {
+            return ALL;
+        }
+        int dot = s.lastIndexOf('.');
+        return dot >= 0 ? s.substring(dot + 1) : s;
     }
 }
