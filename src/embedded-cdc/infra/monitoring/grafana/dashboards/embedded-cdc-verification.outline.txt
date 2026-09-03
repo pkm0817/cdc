@@ -137,28 +137,40 @@ tags=cdc,embedded,debezium,verification,report
   panel #19 text "V2 메모 — 보고서에 쓸 문장" @ x12 y49 12x8
     text: **측정치** — 다운 중 1000건 → 재기동 후 1000/1000, **유실 0**. 슬롯이 붙잡은 WAL 161.9 KiB, **165 bytes/변경**. **V2 의 실질
 [row] V3 — 캡처 연결고리 끊김 · 통과 기준: 유실 자동 탐지 + 재동기화 절차 문서화
-  panel #21 stat "슬롯 wal_status" @ x0 y58 6x5
+  panel #21 stat "슬롯 wal_status" @ x4 y58 4x5
     thresholds base:green 2:orange 3:red
     calc lastNotNull
     A  max(cdc_slot_status_code)
     desc: 슬롯이 삭제되는 것보다 '살아있으면서 쓸모없어지는' 상태가 실무에선 더 잦다. unreserved 단계에서 대응하면 재동기화를 피할 수 있다.
-  panel #22 stat "슬롯 존재 여부" @ x6 y58 6x5
+  panel #22 stat "슬롯 존재 여부" @ x8 y58 4x5
     decimals=0
     thresholds base:red 1:green
     calc lastNotNull
     A  count(cdc_slot_active)
     desc: 0 이면 슬롯이 삭제된 것 — V3 재현 상황과 동일하다. PostgreSQL 16 은 페일오버 시 논리 슬롯을 승계하지 않으므로 이중화 전환 후에도 0 이 된다.
-  panel #23 stat "cdc-service 가동" @ x12 y58 6x5
+  panel #23 stat "cdc-service 가동" @ x12 y58 4x5
     thresholds base:red 1:green
     calc lastNotNull
     A  up{job="cdc-service"}
-    desc: SlotContinuityGuard 가 캡처 갭을 탐지해 기동을 거부하면 스크랩이 실패해 0 이 된다. 앱에 HALT/기동실패 카운터가 생기기 전까지는 이것이 유일한 신호다.
-  panel #24 stat "프로세스 가동시간" @ x18 y58 6x5
+    desc: SlotContinuityGuard 가 캡처 갭을 탐지해 기동을 거부하면 스크랩이 실패해 0 이 된다. 다만 이것은 간접 신호다 — 앱이 직접 내는 cdc_capture_gap 과 cdc_pipeline_halts_total 을 먼저 볼 것. 앱이 아예 안 뜨는 상황에서는 그 두 지표도
+  panel #24 stat "프로세스 가동시간" @ x16 y58 4x5
     unit=s
     thresholds base:red 300:green
     calc lastNotNull
     A  process_uptime_seconds{job="cdc-service"}
-    desc: 재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다.
+    desc: 재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다. 사유는 HALT 사유별 패널에서 본다 — 여기서는 "반복되고 있다" 만 알 수 있다.
+  panel #79 stat "재동기화 필요" @ x0 y58 4x5
+    decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  clamp_max((max(cdc_capture_gap) or vector(0)) + ((max(cdc_slot_status_code) or vector(0)) >= bool 3) + (absent(cdc_slot_active) or vector(0)), 1)
+    desc: V3 의 판정을 한 칸으로 모은 것. 셋 중 하나라도 서면 1 이다 — (1) cdc_capture_gap = 1, 되받을 수 없는 구간을 앱이 직접 알렸다. (2) wal_status = lost(코드 3), 필요한 WAL 이 이미 잘렸다. (3) 슬롯 자체가 없다(absent) — 
+  panel #80 stat "target 초과 행" @ x20 y58 4x5
+    decimals=0
+    thresholds base:green 1:red
+    calc lastNotNull
+    A  clamp_min(max(sum by (table_name) (cdc_target_rows) - sum by (table_name) (cdc_source_rows)), 0)
+    desc: 재적재로는 지워지지 않는 행. V3 통과 기준의 나머지 절반인 "재동기화 절차" 가 여기서 갈린다 — 재동기화는 멱등 UPSERT 라 중복 적재는 안전하지만, <b>원본에서 사라진 행은 다시 적재해도 지워지지 않는다.</b> 대사 패널이 |source − target| 로 절댓값을 쓰는
   panel #25 timeseries "캡처 갭 판정 — 체크포인트 LSN − 슬롯 restart_lsn" @ x0 y63 12x8
     unit=bytes
     thresholds base:red 0:green

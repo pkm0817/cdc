@@ -1484,8 +1484,8 @@
       "description": "가장 오래된 미반영 줄의 나이. 줄 수가 적어도 이 값이 자라면 워커가 멈춘 것이다",
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 0,
+        "w": 4,
+        "x": 4,
         "y": 58
       },
       "datasource": {
@@ -1581,8 +1581,8 @@
       "description": "outbox 트리거가 켜져 있는 표 수. 원천 표 수보다 적으면 그 차이만큼의 표는 포착되지 않는다 — 슬롯 소실에 해당하는 상황",
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 6,
+        "w": 4,
+        "x": 8,
         "y": 58
       },
       "datasource": {
@@ -1638,10 +1638,10 @@
       "id": 23,
       "type": "stat",
       "title": "cdc-service 가동",
-      "description": "SlotContinuityGuard 가 캡처 갭을 탐지해 기동을 거부하면 스크랩이 실패해 0 이 된다. 앱에 HALT/기동실패 카운터가 생기기 전까지는 이것이 유일한 신호다.",
+      "description": "SlotContinuityGuard 가 캡처 갭을 탐지해 기동을 거부하면 스크랩이 실패해 0 이 된다. 다만 이것은 간접 신호다 — 앱이 직접 내는 cdc_capture_gap 과 cdc_pipeline_halts_total 을 먼저 볼 것. 앱이 아예 안 뜨는 상황에서는 그 두 지표도 없으므로, 이 값이 마지막 경로로 남는다.",
       "gridPos": {
         "h": 5,
-        "w": 6,
+        "w": 4,
         "x": 12,
         "y": 58
       },
@@ -1709,11 +1709,11 @@
       "id": 24,
       "type": "stat",
       "title": "프로세스 가동시간",
-      "description": "재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다.",
+      "description": "재시작 루프 감지용. 이 값이 반복해서 0 으로 떨어지면 기동 직후 실패하고 있다는 뜻이다. 사유는 HALT 사유별 패널에서 본다 — 여기서는 \"반복되고 있다\" 만 알 수 있다.",
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 18,
+        "w": 4,
+        "x": 16,
         "y": 58
       },
       "datasource": {
@@ -1753,6 +1753,133 @@
               {
                 "color": "green",
                 "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 79,
+      "type": "stat",
+      "title": "재동기화 필요",
+      "description": "V3 의 판정을 한 칸으로 모은 것. 이 방식에는 복제 슬롯이 없으므로 캡처 연결고리는 outbox 트리거다 — CDC 두 스택에서 \"슬롯이 사라졌다\" 가 오는 자리에 \"트리거가 빠졌다\" 가 온다. 둘 중 하나라도 서면 1 이다: (1) 꺼진 트리거가 있다(tgenabled = D), 그 연산의 변경은 outbox 에 안 들어간다. (2) 원천 표 중 트리거가 하나도 없는 표가 있다. 두 경우 모두 그 표의 변경은 <b>흔적 없이 사라진다</b> — 슬롯 소실과 달리 WAL 에도 남지 않아 사후 복구가 더 어렵다. 반대로 이 방식에는 \"슬롯 무효화\" 에 해당하는 상태가 없다. outbox 는 우리가 지우기 전까지 남으므로 max_slot_wal_keep_size 초과로 조용히 쓸모없어지는 일이 일어나지 않는다. PostgreSQL 16 의 페일오버 시 슬롯 미승계 문제도 해당되지 않는다 — outbox 는 표라서 복제된다.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max((((count(cdc_trigger_enabled == 0) or vector(0)) > bool 0) or ((count(cdc_source_rows) - (count(count by (table_name) (cdc_trigger_enabled == 1)) or vector(0))) > bool 0)), 1)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "정상",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "재동기화 필요",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 80,
+      "type": "stat",
+      "title": "target 초과 행",
+      "description": "재적재로는 지워지지 않는 행. V3 통과 기준의 나머지 절반인 \"재동기화 절차\" 가 여기서 갈린다 — 재동기화는 멱등 UPSERT 라 중복 적재는 안전하지만, <b>원본에서 사라진 행은 다시 적재해도 지워지지 않는다.</b> 대사 패널이 |source − target| 로 절댓값을 쓰는 바람에 이 방향이 화면에서 사라져 있었다. 여기서는 부호를 살려 target 이 source 보다 많은 만큼만 센다. 0 이 아니면 재적재만으로는 정합이 복원되지 않았다는 뜻이고, \"target 에만 남은 행 찾아서 처리\" 단계가 필요하다. 소프트 삭제를 쓰는 표는 deleted 플래그로 해결되지만 하드 삭제 표는 별도 대사가 있어야 한다. 주의: 건수만 보는 판정이라 같은 수만큼 지워지고 새로 들어오면 0 으로 보인다 — 체크섬 대사(V6)를 같이 돌려야 한다.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cdc-custom-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_min(max(sum by (table_name) (cdc_target_rows) - sum by (table_name) (cdc_source_rows)), 0)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
               }
             ]
           }
