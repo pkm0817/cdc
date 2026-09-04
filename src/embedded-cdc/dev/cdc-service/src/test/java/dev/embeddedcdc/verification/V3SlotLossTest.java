@@ -78,7 +78,12 @@ class V3SlotLossTest extends VerificationSupport {
         // ── 연결고리 절단 ─────────────────────────────────────────────────
         dropSlotQuietly(SLOT);
         assertThat(slotExists(SLOT)).as("슬롯이 사라진 상태를 만든다").isFalse();
-        VerificationReport.note("V3", "복제 슬롯 강제 삭제 — DB 재기동이나 이중화 전환에서도 같은 상태가 된다");
+        // 같은 상태가 되는 경로를 정확히 적는다. 재기동은 여기 들지 않는다 —
+        // 논리 슬롯은 pg_replslot/ 에 디스크로 남아 정상 재기동과 크래시 복구를 살아남는다
+        // (scripts/v3b-failover.sh 의 A-1·A-2 실측). 슬롯이 사라지는 것은 데이터 디렉터리를
+        // 버릴 때(A-3)와 페일오버할 때(B-2)다. PG16 은 논리 슬롯을 standby 로 동기화하지 않는다.
+        VerificationReport.note("V3", "복제 슬롯 강제 삭제 — 볼륨이 사라지는 재기동이나 "
+                + "이중화 전환(페일오버)에서도 같은 상태가 된다. 정상 재기동으로는 슬롯이 사라지지 않는다");
 
         // ── 되받을 수 없는 구간의 변경 ────────────────────────────────────
         insertRecordsInOneTransaction("V3-GAP", CHANGES_IN_GAP);
