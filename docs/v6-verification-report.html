@@ -439,6 +439,15 @@ body{ background:var(--bg2) }
 .shot__src{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--ink4);
            border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-right:7px}
 
+
+/* 한글은 단어 안에서 끊지 않는다. 기본값(break-word)이면 "결/정" 처럼
+   낱말 한가운데가 갈라져 제목이 읽히지 않는다. keep-all 은 띄어쓰기에서만 줄을 바꾼다.
+   긴 영문 식별자나 경로는 그대로 두면 넘치므로 overflow-wrap 으로 받아 준다. */
+h1, h2, h3, p, li, td, th, dt, dd, .card__d, .step__d, .note, figcaption {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.mono, .refs__meta, pre { word-break: break-all; overflow-wrap: normal }
 </style>
 </head>
 <body>
@@ -550,6 +559,103 @@ body{ background:var(--bg2) }
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <h3>이전 회차에 통과해 있던 것 — 2026-09-04 재측정</h3>
+      <p class="lead">V6 본체(대사 검출력 · heartbeat)는 이전 회차에 통과했고 이 보고서는 그 위에 얹힌 회차입니다.
+        다만 <b>그 다섯 수치가 이 문서 어디에도 적혀 있지 않아</b> 근거를 따라갈 수 없었습니다.
+        같은 시나리오를 다시 돌려 아래에 붙입니다<sup class="ref" data-ref="6">6</sup>.</p>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:34%">측정 항목</th><th style="width:22%">이전 회차</th><th style="width:22%">재측정</th><th>판정</th></tr></thead>
+          <tbody>
+            <tr><td>정상 상태 건수·체크섬 대사</td><td class="mono">300/300 일치</td>
+              <td class="mono">300/300<br>0a826cc7…c15 양쪽 동일</td>
+              <td><span class="chip chip--ok">재현</span></td></tr>
+            <tr><td>수신측 3건 삭제 시 검출</td><td class="mono">불일치 검출</td>
+              <td class="mono">건수차 3건 · 불일치</td>
+              <td><span class="chip chip--ok">재현</span></td></tr>
+            <tr><td>행은 그대로, 금액만 +1 시 검출</td><td class="mono">불일치 검출</td>
+              <td class="mono">불일치</td>
+              <td><span class="chip chip--warn">재현 · 단서 있음</span></td></tr>
+            <tr><td><span class="mono">heartbeat.interval.ms</span> 단독 · 슬롯 전진</td><td class="mono">0 bytes</td>
+              <td class="mono">0 bytes<br>(붙잡은 WAL 104 → 36,192 B)</td>
+              <td><span class="chip chip--ok">재현</span></td></tr>
+            <tr><td><span class="mono">heartbeat.action.query</span> 병행 · 슬롯 전진</td><td class="mono">33,440 bytes</td>
+              <td class="mono"><b>38,752 bytes</b></td>
+              <td><span class="chip chip--risk">값 불일치</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code">
+        <div class="code__bar"><span>계측 원문 — docs/data/v6-results-2026-09-04.md (34~51행)<sup class="ref" data-ref="6">6</sup></span><button class="code__copy" type="button">복사</button></div>
+<pre><span class="cm">## V6. 대사와 heartbeat</span>
+- **V6** · 원본 건수: `300`
+- **V6** · 수신측 건수: `300`
+- **V6** · 원본 체크섬:   `0a826cc7b1f40f0d3654c4dfc0f18c15`
+- **V6** · 수신측 체크섬: `0a826cc7b1f40f0d3654c4dfc0f18c15`
+- **V6** · 대사 결과: `일치`
+- **V6** · 수신측에서 3건을 임의 삭제 — 유실 상황 주입
+- **V6** · 유실 주입 후 건수차: `3 건`
+- **V6** · 유실 주입 후 대사 결과: `불일치`
+- **V6** · 값 변조 후 대사 결과: `불일치`
+- **V6** · 간격만 · confirmed_flush_lsn: `0/5445CF8 -&gt; 0/5445CF8`   <span class="cm">← 전진 없음</span>
+- **V6** · 간격만 · 붙잡은 WAL: `104 -&gt; 36192 bytes`               <span class="cm">← 그런데 WAL 은 쌓인다</span>
+<span class="hl">- **V6** · heartbeat.interval.ms 단독 · 슬롯 전진량: `0 bytes`</span>
+- **V6** · 간격 + action.query · confirmed_flush_lsn: `0/545C488 -&gt; 0/5465BE8`
+- **V6** · 간격 + action.query · 붙잡은 WAL: `872 -&gt; 39680 bytes`
+<span class="hl">- **V6** · heartbeat.action.query 병행 · 슬롯 전진량: `38752 bytes`</span></pre>
+      </div>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:36%">측정 항목</th><th style="width:34%">생성 지점</th><th>통과 조건</th></tr></thead>
+          <tbody>
+            <tr><td>정상 300/300 · 체크섬 일치</td>
+              <td><span class="mono">V6ReconciliationTest.java:67~97</span></td>
+              <td><span class="mono">assertThat(r.matches()).isTrue()</span></td></tr>
+            <tr><td>3건 삭제 검출</td>
+              <td><span class="mono">V6ReconciliationTest.java:103~114</span></td>
+              <td><span class="mono">matches()==false</span> <b>그리고</b> 건수차 <span class="mono">== 3</span> — 이중 단정이라 우연한 불일치로는 통과하지 못한다</td></tr>
+            <tr><td>금액만 +1 검출</td>
+              <td><span class="mono">V6ReconciliationTest.java:117~121</span></td>
+              <td><span class="chip chip--risk">단정 없음</span> — <span class="mono">metric</span>·<span class="mono">note</span> 기록만 한다</td></tr>
+            <tr><td><span class="mono">interval.ms</span> 단독 · 0 bytes</td>
+              <td><span class="mono">V6ReconciliationTest.java:126~141</span></td>
+              <td><span class="mono">assertThat(advanced).isZero()</span> — <b>정확한 값</b>을 요구한다</td></tr>
+            <tr><td><span class="mono">action.query</span> 병행 · 전진</td>
+              <td><span class="mono">V6ReconciliationTest.java:146~171</span></td>
+              <td><span class="mono">assertThat(advanced).isGreaterThan(0)</span> — <b>값이 아니라 부호만</b> 본다</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--risk">
+        <p class="note__t">33,440 bytes 는 상수가 아니라 1회 관측값이다</p>
+        테스트의 단정은 <span class="mono">assertThat(advanced).isGreaterThan(0)</span> 입니다
+        (<span class="mono">V6ReconciliationTest.java:169</span>) — <b>"전진했다"만 통과 조건</b>이고 값은 매번 달라집니다.
+        지금까지 관측된 값이 셋입니다: <b>33,440</b>(Java 최초) · <b>33,280</b>(go-pq-cdc) · <b>38,752</b>(재측정).
+        유휴 시간과 heartbeat 주기에 따라 변합니다.
+        <br><br>
+        <b>문제는 이 숫자가 고정값처럼 박혀 있다는 것입니다</b> —
+        <span class="mono">application.yml:61</span>, <span class="mono">01-schema.sql:120</span>,
+        Grafana 대시보드 패널 설명 두 곳. 읽는 사람이 "33,440 이 나와야 정상"으로 오해합니다.
+        <b>판정 기준은 값이 아니라 <span class="mono">&gt; 0</span> 입니다.</b>
+      </div>
+
+      <div class="note note--warn">
+        <p class="note__t">재측정에서 드러난 것 둘</p>
+        <b>(1) "전진 안 함"의 실제 피해가 수치로 나옵니다.</b>
+        <span class="mono">interval.ms</span> 단독일 때 슬롯 전진은 0 인데
+        <b>붙잡은 WAL 은 104 → 36,192 bytes 로 늘었습니다.</b>
+        0 bytes 만 적으면 "아무 일도 안 일어났다"로 읽히지만, 실제로는 <b>WAL 이 쌓이고 있습니다</b>.
+        <br><br>
+        <b>(2) 값 변조 검출은 단독으로 입증되지 않았습니다.</b>
+        이 검사는 삭제 3건을 <b>복구하지 않은 채</b> 이어서 돌아 이미 불일치인 상태이고,
+        <span class="mono">V6ReconciliationTest.java:120~121</span> 에는 <span class="mono">assertThat</span> 이 없습니다.
+        "건수는 같은데 체크섬만 다르다"를 보여주려는 의도인데 <b>건수가 같지 않습니다</b>.
+        시연은 되지만 회귀 방어는 되지 않습니다 — 05 절에 조치 항목으로 넣었습니다.
       </div>
 
       <div class="note note--info">
@@ -730,6 +836,20 @@ WHERE ch.grade_id IS NOT NULL AND pa.id IS NULL;</pre>
         다만 선택도가 낮으면(구간이 전체의 수십 %) 플래너가 아예 쓰지 않으므로, <b>구간 폭은 표 크기에 맞춰</b> 정해야 합니다.
       </div>
 
+      <div class="note note--warn">
+        <p class="note__t">2026-09-04 재측정 — 결론은 유지, 절대값은 환경에 따라 다르다<sup class="ref" data-ref="6">6</sup></p>
+        같은 시나리오를 다시 돌린 값입니다. <b>비율과 결론은 그대로이고 절대 시간만 올라갔습니다.</b>
+        <br><br>
+        전체 대사 <b>203 ms</b>(위 144 ms) · 구간 대사 인덱스 없음 <b>18 ms</b>(위 12 ms) ·
+        인덱스 있음 <b>13 ms</b>(위 9 ms). 감소폭은 <b>11.3배</b>로 위 그림의 12배와 사실상 같습니다.
+        실행 계획도 동일하게 갈렸습니다 — <span class="mono">Seq Scan</span> → <span class="mono">Index Only Scan</span>
+        인데 시간은 18 → 13 ms 로 거의 변화가 없습니다.
+        <br><br>
+        <b>즉 "비용을 만드는 것은 스캔이 아니라 정렬·집계"라는 이 절의 결론은 재현됩니다.</b>
+        다만 <b>00 절 KPI 의 <span class="mono">12×</span> 는 실행마다 11~12배 사이로 움직이는 값</b>이므로
+        고정 수치가 아니라 자릿수로 읽어야 합니다. 구간 밖 1행 변조 실험도 재현됐습니다(전체 검출 · 구간 검출 못 함).
+      </div>
+
       <h3>잃는 것 — 구간 밖의 조용한 어긋남</h3>
       <div class="tbl-wrap">
         <table class="tbl">
@@ -777,6 +897,9 @@ WHERE ch.grade_id IS NOT NULL AND pa.id IS NULL;</pre>
         <li><input type="checkbox" id="v6a"><span><span class="t">구간 대사 주기와 구간 폭, 전체 대사 야간 시각 확정 (필수)</span><span class="d">구간 폭은 야간 배치 주기보다 넉넉해야 두 그물 사이에 구멍이 안 생긴다. 최대 탐지 지연 = 야간 배치 주기</span></span></li>
         <li><input type="checkbox" id="v6b"><span><span class="t">변환 표(computer)의 값 대사를 포기할지 결정</span><span class="d">건수 대사만으로는 값이 틀어진 것을 못 잡는다. 수신에 원천 시각을 실으면 구간 대사는 살아나지만 값 대사는 여전히 안 된다</span></span></li>
         <li><input type="checkbox" id="v6c"><span><span class="t">대사 실행 주체 결정 — 배치 잡인지 exporter 인지</span><span class="d">지금 건수·고아는 exporter 가 상시로 내고, 체크섬은 스크립트다. 체크섬을 어디서 돌릴지 정해야 경보로 연결된다</span></span></li>
+        <li><input type="checkbox" id="v6f"><span><span class="t">33,440 bytes 가 박힌 네 곳을 고친다 (재측정으로 드러남 · 01 절)</span><span class="d"><span class="mono">application.yml:61</span> · <span class="mono">01-schema.sql:120</span> · Grafana 패널 설명 2곳. 재측정은 38,752 bytes 로 값이 다르다. 판정 기준은 값이 아니라 <span class="mono">&gt; 0</span> 이므로 "환경에 따라 변하는 관측값"으로 바꿔야 한다</span></span></li>
+        <li><input type="checkbox" id="v6g"><span><span class="t">값 변조 검출 테스트를 독립적으로 성립시킨다</span><span class="d">삭제 3건을 복구한 뒤 변조하도록 고치고 <span class="mono">assertThat</span> 을 붙인다. 지금은 건수가 이미 어긋난 상태라 "건수는 같은데 체크섬만 다르다"를 입증하지 못한다 (<span class="mono">V6ReconciliationTest.java:117~121</span>)</span></span></li>
+        <li><input type="checkbox" id="v6h"><span><span class="t">계측 산출물 보존을 <span class="mono">verify.sh</span> 에 넣는다 (전 시나리오 공통)</span><span class="d"><span class="mono">results.md</span> 가 <span class="mono">build/</span> 아래라 실행할 때마다 덮어써지고 저장소에 안 남는다. 이번에는 손으로 <span class="mono">docs/data/</span> 에 복사했다 — 절차로 만들어야 한다</span></span></li>
         <li><input type="checkbox" id="v6d"><span><span class="t">고아 대사 대상 관계 확인</span><span class="d">지금은 &lt;부모&gt;_id 이름 규칙으로 자동 탐지한다. 규칙에 안 맞는 관계가 실제 스키마에 있는지 확인할 것</span></span></li>
       </ul>
 
@@ -860,6 +983,10 @@ docker compose up -d --build
           <span class="refs__meta">code · src/embedded-cdc/infra/monitoring/prometheus/rules/cdc-alerts.yml — CdcReconcileMismatch, CdcOrphanRows, CdcDeadLetterPending</span></span></li>
         <li id="ref-5"><span class="refs__n">5</span><span><span class="refs__src">운영 지표 실측</span>
           <span class="refs__meta">data · Prometheus http://localhost:56090 — cdc_source_rows, cdc_target_rows, cdc_orphan_rows, cdc_dlq_total_pending, cdc_heartbeat_age_seconds (2026-09-03 조회)</span></span></li>
+        <li id="ref-6"><span class="refs__n">6</span><span><span class="refs__src">재측정 계측치 원본 (2026-09-04 실행 · V6 + V6-b 전체)</span>
+          <span class="refs__meta">data · docs/data/v6-results-2026-09-04.md — <span class="mono">./scripts/verify.sh 'dev.embeddedcdc.verification.V6*'</span> 산출물을
+          <span class="mono">build/</span> 밖으로 옮겨 보존한 것. 원 산출 경로(<span class="mono">dev/cdc-service/build/verification/results.md</span>)는
+          <span class="mono">.gitignore</span> 에 걸려 저장소에 남지 않는다</span></span></li>
       </ol>
     </section>
   </main>
@@ -947,10 +1074,28 @@ docker compose up -d --build
     return { d: d, mid: mid };
   }
 
+  /* 원본 JSON 이 바뀌었는지 보는 값. 문서를 고쳐 다시 배포하면 해시가 달라져
+     예전 편집본을 버린다 — 안 그러면 저자가 고친 그림이 영원히 안 보인다. */
+  function srcHash(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) { h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
+    return String(h);
+  }
+
   function Diagram(root) {
     this.root = root;
     this.editable = root.getAttribute('data-edit') !== 'off';
+
+    var all = document.querySelectorAll('.dgm');
+    this.key = 'hwdgm:' + (location.pathname.split('/').pop() || 'doc') + ':'
+      + (root.getAttribute('data-key') || Array.prototype.indexOf.call(all, root));
+
+    var tag = root.querySelector('script.dgm-data');
+    this.srcHash = srcHash(tag ? tag.textContent : '');
+
     this.data = this.read();
+    var saved = this.loadSaved();
+    if (saved) this.data = saved;
     this.view = { tx: 0, ty: 0, k: 1 };
     this.sel = null;          /* {type:'node'|'edge'|'group', id} */
     this.linkMode = false;
@@ -959,6 +1104,8 @@ docker compose up -d --build
     this.build();
     this.render();
     this.fit();
+    this.ready = true;
+    this.markSaved(!!this._restored);
   }
 
   Diagram.prototype.read = function () {
@@ -990,6 +1137,7 @@ docker compose up -d --build
     mk('맞춤', '화면에 맞추기', function () { self.fit(); });
     this.bMax = mk('넓게', '화면 가득 펼치기 (Esc 로 닫기)', function () { self.toggleMax(); });
     mk('JSON', '수정 결과를 JSON으로 복사해 원본 파일에 붙여넣기', function () { self.openJson(); });
+    this.bReset = mk('원래대로', '이 브라우저에 저장된 편집 내용을 지운다', function () { self.resetSaved(); });
     bar.appendChild(h('span', 'dgm__hint', '드래그 이동 · 더블클릭 라벨수정 · 휠 줌 · 빈 곳 드래그 팬'));
 
     var svg = s('svg', { 'class': 'dgm__svg' });
@@ -1104,6 +1252,15 @@ docker compose up -d --build
     this.paint();
   };
 
+  /* render 는 모든 변경 뒤에 불린다 — 여기 한 곳만 잡으면 끌기·라벨 편집·추가·삭제가
+     모두 저장된다. 첫 그리기와 되돌리기 때는 건너뛴다. */
+  (function (orig) {
+    Diagram.prototype.render = function () {
+      orig.call(this);
+      if (this.ready && !this._skipSave) this.save();
+    };
+  })(Diagram.prototype.render);
+
   Diagram.prototype.paint = function () {
     var self = this;
     this.gRoot.setAttribute('transform', 'translate(' + this.view.tx + ',' + this.view.ty + ') scale(' + this.view.k + ')');
@@ -1143,7 +1300,12 @@ docker compose up -d --build
   Diagram.prototype.fit = function () {
     var items = this.data.nodes.concat(this.data.groups);
     var r = this.svg.getBoundingClientRect();
-    var W = r.width || 800, H = r.height || 420;
+    // CSS transform:scale() 이 걸린 무대 안에서는 getBoundingClientRect 가 "화면에 보이는"
+    // 크기를 돌려준다. 그 값으로 배율을 잡으면 큰 화면에서 1.6배까지 확대돼 그림이 잘리고,
+    // 작은 화면에서는 반대로 필요 이상 줄어든다. clientWidth/Height 는 변환 전 레이아웃
+    // 크기라 무대 배율과 무관하다 — 이쪽을 먼저 쓰고, 숨겨진 장(0)일 때만 뒤로 물러난다.
+    var W = this.svg.clientWidth || r.width || 800;
+    var H = this.svg.clientHeight || r.height || 420;
     if (!items.length) { this.view = { tx: 20, ty: 20, k: 1 }; return this.paint(); }
     var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     items.forEach(function (n) {
@@ -1165,6 +1327,51 @@ docker compose up -d --build
     this.view.tx = cx - (cx - this.view.tx) * (k1 / k0);
     this.view.ty = cy - (cy - this.view.ty) * (k1 / k0);
     this.view.k = k1; this.paint();
+  };
+
+  /* ---------- 편집 내용 보관 (브라우저 안에만) ----------
+     끌어 옮기고 라벨을 고친 결과가 새로고침에도 남는다. 저장 위치는 이 브라우저의
+     localStorage 라 다른 사람에게는 전달되지 않는다 — 문서 자체에 반영하려면
+     JSON 버튼으로 내보내 원본 파일에 붙여넣어야 한다. */
+  Diagram.prototype.save = function () {
+    if (!this.editable || !this.key) return;
+    var self = this;
+    clearTimeout(this._saveT);
+    this._saveT = setTimeout(function () {
+      try {
+        localStorage.setItem(self.key, JSON.stringify({ v: self.srcHash, d: self.data }));
+        self.markSaved(true);
+      } catch (e) { /* 사생활 보호 모드 등 — 저장만 안 될 뿐 편집은 된다 */ }
+    }, 250);
+  };
+
+  Diagram.prototype.loadSaved = function () {
+    try {
+      var raw = localStorage.getItem(this.key);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || o.v !== this.srcHash || !o.d) { localStorage.removeItem(this.key); return null; }
+      this._restored = true;
+      return o.d;
+    } catch (e) { return null; }
+  };
+
+  Diagram.prototype.resetSaved = function () {
+    try { localStorage.removeItem(this.key); } catch (e) { }
+    this.data = this.read();
+    this.sel = null;
+    this._skipSave = true;
+    this.render();
+    this._skipSave = false;
+    this.fit();
+    this.markSaved(false);
+  };
+
+  /* 저장됨 표시. 버튼 라벨만 잠깐 바꾼다 — 별도 알림창은 발표 중에 방해가 된다. */
+  Diagram.prototype.markSaved = function (on) {
+    if (!this.bReset) return;
+    this.bReset.classList.toggle('is-on', !!on);
+    this.bReset.title = on ? '이 브라우저에 저장된 편집 내용을 지우고 원래대로' : '원래대로 (저장된 편집 없음)';
   };
 
   /* ---------- 편집 ---------- */
@@ -1323,7 +1530,9 @@ docker compose up -d --build
     });
     this.root.tabIndex = 0;
 
-    var ro = window.ResizeObserver ? new ResizeObserver(function () { self.paint(); }) : null;
+    // 폭이 바뀌면 다시 그리는 것만으로는 부족하다 — 좁아진 칸에 옛 배율로 그리면 넘쳐서 잘린다.
+    // fit() 으로 배율까지 다시 잡아야 항상 전체가 보인다.
+    var ro = window.ResizeObserver ? new ResizeObserver(function () { self.fit(); }) : null;
     if (ro) ro.observe(this.svg);
   };
 

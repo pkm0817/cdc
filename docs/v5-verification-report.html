@@ -439,6 +439,15 @@ body{ background:var(--bg2) }
 .shot__src{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--ink4);
            border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-right:7px}
 
+
+/* 한글은 단어 안에서 끊지 않는다. 기본값(break-word)이면 "결/정" 처럼
+   낱말 한가운데가 갈라져 제목이 읽히지 않는다. keep-all 은 띄어쓰기에서만 줄을 바꾼다.
+   긴 영문 식별자나 경로는 그대로 두면 넘치므로 overflow-wrap 으로 받아 준다. */
+h1, h2, h3, p, li, td, th, dt, dd, .card__d, .step__d, .note, figcaption {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.mono, .refs__meta, pre { word-break: break-all; overflow-wrap: normal }
 </style>
 </head>
 <body>
@@ -462,7 +471,9 @@ body{ background:var(--bg2) }
     <header class="doc-head">
       <span class="kicker">Verification Progress Report</span>
       <h1>V5 빈 이벤트 — 걸리는지 판별하는 법과, 해소의 대가</h1>
-      <p class="sub">「PoC CDC 기술 검토 - 시나리오」의 V5 에서 <b>결론은 났지만 실행할 수 없던 두 가지</b>를 이번에 채웠습니다.
+      <p class="sub">통과 기준은 하나입니다 — <b>관심 필드가 모든 이벤트에서 항상 판독 가능</b>할 것.
+        PostgreSQL 은 UPDATE 에서 <b>바뀌지 않은 대용량 필드를 이벤트에 싣지 않을 수 있고</b>, 그래서 이 "항상"은 조건부입니다.
+        「PoC CDC 기술 검토 - 시나리오」의 V5 에서 <b>결론은 났지만 실행할 수 없던 두 가지</b>를 이번에 채웠습니다.
         하나는 <b>관심 필드가 이 케이스에 걸리는지 판별하는 방법</b>이고,
         다른 하나는 <b>REPLICA IDENTITY FULL 이 실제로 얼마를 무는지</b>입니다.
         재보니 지금 스키마에는 걸리는 컬럼이 <b>하나도 없고</b>, 그런데도 FULL 을 못 내리는 이유는 V5 가 아니라 <b>V1</b> 이었습니다.</p>
@@ -520,6 +531,16 @@ body{ background:var(--bg2) }
     <!-- ---------- 1. 범위 ---------- -->
     <section class="sec" id="s1">
       <h2><span class="n">01</span>이번 회차 범위</h2>
+
+      <div class="note note--info">
+        <p class="note__t">시나리오 원문 — V5 의 통과 기준과 배경</p>
+        <b>통과 기준</b> — 관심 필드가 <b>모든 이벤트에서 항상 판독 가능</b>할 것.<br>
+        <b>배경</b> — PostgreSQL 특성상 UPDATE 시 <b>변경되지 않은 대용량 필드는 이벤트에 실리지 않을 수 있다</b><sup class="ref" data-ref="2">2</sup>.<br>
+        이 "항상"은 무조건 성립하는 성질이 아니라 <b>설정과 스키마가 만들어 주는 조건부 성질</b>입니다.
+        그래서 이번 회차의 질문은 "해소되는가"가 아니라 <b>우리 표가 걸리는가</b>와 <b>해소의 대가가 얼마인가</b>였습니다.
+        기준별 판정은 <a href="#s8">08 절</a>에 표로 모았습니다.
+      </div>
+
       <p class="lead">시나리오 문서의 V5 에서 <b>「확인 전략」 아래 채워지지 않은 두 항목</b>만 다뤘습니다<sup class="ref" data-ref="2">2</sup>.</p>
 
       <div class="tbl-wrap">
@@ -864,6 +885,7 @@ ORDER BY toast_candidate DESC, max_stored_bytes DESC;</pre>
         <li><input type="checkbox" id="v5c"><span><span class="t">감사 대상이 아닌 표의 REPLICA IDENTITY 를 내릴지 결정</span><span class="d">절감 12~22%. 설정을 표별로 가르는 관리 복잡도와 견줄 것 (06 절 ADR 은 유지 쪽을 권한다)</span></span></li>
         <li><input type="checkbox" id="v5d"><span><span class="t">대용량 컬럼을 캡처 대상에 넣을지 결정</span><span class="d">넣으면 FULL 은 사실상 불가능하고, DEFAULT 면 그 컬럼은 이벤트로 동기화할 수 없어 원본 재조회가 필요하다</span></span></li>
         <li><input type="checkbox" id="v5e"><span><span class="t">V2 의 "변경 1건당 WAL" 을 연산별로 나눌지 (V2 와 공동)</span><span class="d">단일 상수는 UPDATE 가 많은 시간대에 다운 허용시간을 과대평가한다</span></span></li>
+        <li><input type="checkbox" id="v5f"><span><span class="t">계측 산출물을 저장소에 남기기 (전 시나리오 공통)</span><span class="d"><span class="mono">results.md</span> 가 <span class="mono">build/</span> 아래라 gitignore 에 걸린다. 보고서의 실행 시점 수치를 나중에 대조할 원본이 남지 않는다 — 10 절 참조</span></span></li>
       </ul>
 
       <h3>이번 회차에서 코드·설정에 들어간 것</h3>
@@ -881,6 +903,33 @@ ORDER BY toast_candidate DESC, max_stored_bytes DESC;</pre>
               <td><span class="mono">cdc.verify.toast.sql</span> 추가</td></tr>
           </tbody>
         </table>
+      </div>
+
+      <h3>통과 기준 판정 — "관심 필드가 모든 이벤트에서 항상 판독 가능"</h3>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:36%">이벤트 · 설정</th><th style="width:16%">판독</th><th class="num">근거</th></tr></thead>
+          <tbody>
+            <tr><td>INSERT</td><td><span class="chip chip--ok">항상 가능</span></td>
+              <td class="num mono">after = 200,000 bytes 온전<br>REPLICA IDENTITY 와 무관</td></tr>
+            <tr><td>UPDATE · 그 컬럼을 바꾼 경우</td><td><span class="chip chip--ok">항상 가능</span></td>
+              <td class="num mono">새 값이 WAL 에 실린다</td></tr>
+            <tr><td>UPDATE · 안 바꾼 대용량 컬럼 — DEFAULT</td><td><span class="chip chip--risk">불가</span></td>
+              <td class="num mono">after = __debezium_unavailable_value<br>before 자체가 없음</td></tr>
+            <tr><td>UPDATE · 안 바꾼 대용량 컬럼 — FULL</td><td><span class="chip chip--ok">가능</span></td>
+              <td class="num mono">before·after 모두 200,000 bytes 복원<br>대가 = 그 UPDATE 1건이 656배</td></tr>
+            <tr><td>현 캡처 대상 스키마</td><td><span class="chip chip--ok">기준 충족</span></td>
+              <td class="num mono">toastable 13개 중 후보 0개(최대 17 bytes)<br>게다가 네 표가 이미 FULL</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn">
+        <p class="note__t">통과의 근거는 "FULL 로 바꿨다"가 아니다</p>
+        위 표에서 <b>불가</b> 칸이 하나 남아 있는 것이 이 항목의 성질입니다 —
+        기준은 <b>(1)</b> 후보 컬럼이 없거나 <b>(2)</b> 있다면 그 표가 FULL 일 때만 성립합니다.
+        지금은 <b>(1)</b> 로 충족돼 있고, <b>(1)</b> 은 스키마가 바뀌면 언제든 깨집니다.
+        그래서 통과를 유지시키는 장치는 설정값이 아니라 <b>03 절의 판별 절차가 스키마 변경마다 돌아가는 것</b>입니다(08 절 첫 번째 판단).
       </div>
 
       <h3>V5 항목별 결론</h3>
@@ -939,6 +988,50 @@ docker compose up -d --build
     <!-- ---------- 10. 참고 ---------- -->
     <section class="sec" id="s10">
       <h2><span class="n">10</span>참고 자료</h2>
+
+      <h3>숫자별 출처 — 이 보고서의 수치는 어디서 나왔는가</h3>
+      <p class="lead">본문 수치를 <b>누가 만들어 냈는지</b>까지 적어 둡니다. 재실행하면 이 자리의 값이 바뀔 수 있고, 바뀌면 본문을 고쳐야 합니다.</p>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:24%">수치</th><th style="width:16%">본문 위치</th><th style="width:34%">생성 지점</th><th>성격</th></tr></thead>
+          <tbody>
+            <tr><td>200,000 bytes (대용량 컬럼 크기)</td><td>02 · 05 절</td>
+              <td><span class="mono">V5ToastedFieldTest.java:39</span><br><span class="mono">V5ReplicaIdentityCostTest.java:73</span> — <span class="mono">PAYLOAD_SIZE</span></td>
+              <td><span class="chip chip--ok">코드 상수</span> 실행과 무관하게 고정</td></tr>
+            <tr><td><span class="mono">__debezium_unavailable_value</span> · before 부재</td><td>02 절</td>
+              <td><span class="mono">V5ToastedFieldTest.java:103~111</span>(DEFAULT), <span class="mono">:140~150</span>(FULL)</td>
+              <td><span class="chip chip--ok">단정문</span> 어긋나면 테스트가 깨진다</td></tr>
+            <tr><td>임계 2,032 bytes</td><td>03 절</td>
+              <td><span class="mono">scripts/toast-candidates.sql</span> — <span class="mono">TOAST_TUPLE_THRESHOLD</span></td>
+              <td><span class="chip chip--ok">PostgreSQL 상수</span></td></tr>
+            <tr><td>표 5개 · toastable 13개 · 후보 0개 · 최대 17 B</td><td>00 · 04 절</td>
+              <td><span class="mono">V5ReplicaIdentityCostTest.java:168~171</span><br>(선별 질의를 실제 스키마에 돌린 결과)</td>
+              <td><span class="chip chip--warn">실행 시점 값</span> 스키마가 바뀌면 바뀐다</td></tr>
+            <tr><td>WAL 12구간 · 656배 · 1.12 / 1.22 / 1.95배</td><td>00 · 05 절</td>
+              <td><span class="mono">V5ReplicaIdentityCostTest.java:497~503</span><br>(<span class="mono">DEFAULT</span> / <span class="mono">FULL</span> / <span class="mono">증가율</span>)</td>
+              <td><span class="chip chip--warn">실행 시점 값</span> 환경·버전에 따라 달라진다</td></tr>
+            <tr><td>네 표 <span class="mono">identity="full"</span> · <span class="mono">has_toast=1</span></td><td>04 절</td>
+              <td>Prometheus <span class="mono">cdc_replica_identity_full_image</span> · <span class="mono">cdc_toast_has_toast</span><sup class="ref" data-ref="5">5</sup></td>
+              <td><span class="chip chip--ok">상시 지표</span> 대시보드에서 재확인 가능</td></tr>
+            <tr><td>FPI 57개 · 2,509개 · 유휴 바닥값 0 B</td><td>05 절</td>
+              <td><span class="mono">pg_stat_wal</span> 차분 — <span class="mono">V5ReplicaIdentityCostTest.java:244</span></td>
+              <td><span class="chip chip--warn">실행 시점 값</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--risk">
+        <p class="note__t">근거 보존에 구멍이 하나 있습니다</p>
+        위 표에서 <b>실행 시점 값</b>으로 표시한 것들의 산출물은 <span class="mono">dev/cdc-service/build/verification/results.md</span> 인데,
+        이 경로는 <span class="mono">src/embedded-cdc/.gitignore:1</span> 의 <span class="mono">dev/cdc-service/build/</span> 에 걸려
+        <b>저장소에 남지 않습니다</b>. 즉 보고서를 나중에 읽는 사람은 <b>숫자를 대조할 원본을 가질 수 없고</b>,
+        재실행 외에는 검증 수단이 없습니다.
+        <br><br>
+        <b>조치 필요</b> — 계측 산출물을 <span class="mono">build/</span> 밖(예: <span class="mono">docs/data/</span>)으로 복사해 커밋하는 단계를
+        <span class="mono">verify.sh</span> 에 넣어야 합니다. 08 절의 남은 판단에 이 항목을 추가했습니다.
+      </div>
+
+      <h3>참고 문헌</h3>
       <ol class="refs">
         <li id="ref-1"><span class="refs__n">1</span><span><span class="refs__src">V1~V6 계측치 (verify 스크립트 산출물, 25/25 통과)</span>
           <span class="refs__meta">code · src/embedded-cdc/dev/cdc-service/build/verification/results.md (2026-09-03 실행)</span></span></li>
@@ -1037,10 +1130,28 @@ docker compose up -d --build
     return { d: d, mid: mid };
   }
 
+  /* 원본 JSON 이 바뀌었는지 보는 값. 문서를 고쳐 다시 배포하면 해시가 달라져
+     예전 편집본을 버린다 — 안 그러면 저자가 고친 그림이 영원히 안 보인다. */
+  function srcHash(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) { h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
+    return String(h);
+  }
+
   function Diagram(root) {
     this.root = root;
     this.editable = root.getAttribute('data-edit') !== 'off';
+
+    var all = document.querySelectorAll('.dgm');
+    this.key = 'hwdgm:' + (location.pathname.split('/').pop() || 'doc') + ':'
+      + (root.getAttribute('data-key') || Array.prototype.indexOf.call(all, root));
+
+    var tag = root.querySelector('script.dgm-data');
+    this.srcHash = srcHash(tag ? tag.textContent : '');
+
     this.data = this.read();
+    var saved = this.loadSaved();
+    if (saved) this.data = saved;
     this.view = { tx: 0, ty: 0, k: 1 };
     this.sel = null;          /* {type:'node'|'edge'|'group', id} */
     this.linkMode = false;
@@ -1049,6 +1160,8 @@ docker compose up -d --build
     this.build();
     this.render();
     this.fit();
+    this.ready = true;
+    this.markSaved(!!this._restored);
   }
 
   Diagram.prototype.read = function () {
@@ -1080,6 +1193,7 @@ docker compose up -d --build
     mk('맞춤', '화면에 맞추기', function () { self.fit(); });
     this.bMax = mk('넓게', '화면 가득 펼치기 (Esc 로 닫기)', function () { self.toggleMax(); });
     mk('JSON', '수정 결과를 JSON으로 복사해 원본 파일에 붙여넣기', function () { self.openJson(); });
+    this.bReset = mk('원래대로', '이 브라우저에 저장된 편집 내용을 지운다', function () { self.resetSaved(); });
     bar.appendChild(h('span', 'dgm__hint', '드래그 이동 · 더블클릭 라벨수정 · 휠 줌 · 빈 곳 드래그 팬'));
 
     var svg = s('svg', { 'class': 'dgm__svg' });
@@ -1194,6 +1308,15 @@ docker compose up -d --build
     this.paint();
   };
 
+  /* render 는 모든 변경 뒤에 불린다 — 여기 한 곳만 잡으면 끌기·라벨 편집·추가·삭제가
+     모두 저장된다. 첫 그리기와 되돌리기 때는 건너뛴다. */
+  (function (orig) {
+    Diagram.prototype.render = function () {
+      orig.call(this);
+      if (this.ready && !this._skipSave) this.save();
+    };
+  })(Diagram.prototype.render);
+
   Diagram.prototype.paint = function () {
     var self = this;
     this.gRoot.setAttribute('transform', 'translate(' + this.view.tx + ',' + this.view.ty + ') scale(' + this.view.k + ')');
@@ -1233,7 +1356,12 @@ docker compose up -d --build
   Diagram.prototype.fit = function () {
     var items = this.data.nodes.concat(this.data.groups);
     var r = this.svg.getBoundingClientRect();
-    var W = r.width || 800, H = r.height || 420;
+    // CSS transform:scale() 이 걸린 무대 안에서는 getBoundingClientRect 가 "화면에 보이는"
+    // 크기를 돌려준다. 그 값으로 배율을 잡으면 큰 화면에서 1.6배까지 확대돼 그림이 잘리고,
+    // 작은 화면에서는 반대로 필요 이상 줄어든다. clientWidth/Height 는 변환 전 레이아웃
+    // 크기라 무대 배율과 무관하다 — 이쪽을 먼저 쓰고, 숨겨진 장(0)일 때만 뒤로 물러난다.
+    var W = this.svg.clientWidth || r.width || 800;
+    var H = this.svg.clientHeight || r.height || 420;
     if (!items.length) { this.view = { tx: 20, ty: 20, k: 1 }; return this.paint(); }
     var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     items.forEach(function (n) {
@@ -1255,6 +1383,51 @@ docker compose up -d --build
     this.view.tx = cx - (cx - this.view.tx) * (k1 / k0);
     this.view.ty = cy - (cy - this.view.ty) * (k1 / k0);
     this.view.k = k1; this.paint();
+  };
+
+  /* ---------- 편집 내용 보관 (브라우저 안에만) ----------
+     끌어 옮기고 라벨을 고친 결과가 새로고침에도 남는다. 저장 위치는 이 브라우저의
+     localStorage 라 다른 사람에게는 전달되지 않는다 — 문서 자체에 반영하려면
+     JSON 버튼으로 내보내 원본 파일에 붙여넣어야 한다. */
+  Diagram.prototype.save = function () {
+    if (!this.editable || !this.key) return;
+    var self = this;
+    clearTimeout(this._saveT);
+    this._saveT = setTimeout(function () {
+      try {
+        localStorage.setItem(self.key, JSON.stringify({ v: self.srcHash, d: self.data }));
+        self.markSaved(true);
+      } catch (e) { /* 사생활 보호 모드 등 — 저장만 안 될 뿐 편집은 된다 */ }
+    }, 250);
+  };
+
+  Diagram.prototype.loadSaved = function () {
+    try {
+      var raw = localStorage.getItem(this.key);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || o.v !== this.srcHash || !o.d) { localStorage.removeItem(this.key); return null; }
+      this._restored = true;
+      return o.d;
+    } catch (e) { return null; }
+  };
+
+  Diagram.prototype.resetSaved = function () {
+    try { localStorage.removeItem(this.key); } catch (e) { }
+    this.data = this.read();
+    this.sel = null;
+    this._skipSave = true;
+    this.render();
+    this._skipSave = false;
+    this.fit();
+    this.markSaved(false);
+  };
+
+  /* 저장됨 표시. 버튼 라벨만 잠깐 바꾼다 — 별도 알림창은 발표 중에 방해가 된다. */
+  Diagram.prototype.markSaved = function (on) {
+    if (!this.bReset) return;
+    this.bReset.classList.toggle('is-on', !!on);
+    this.bReset.title = on ? '이 브라우저에 저장된 편집 내용을 지우고 원래대로' : '원래대로 (저장된 편집 없음)';
   };
 
   /* ---------- 편집 ---------- */
@@ -1413,7 +1586,9 @@ docker compose up -d --build
     });
     this.root.tabIndex = 0;
 
-    var ro = window.ResizeObserver ? new ResizeObserver(function () { self.paint(); }) : null;
+    // 폭이 바뀌면 다시 그리는 것만으로는 부족하다 — 좁아진 칸에 옛 배율로 그리면 넘쳐서 잘린다.
+    // fit() 으로 배율까지 다시 잡아야 항상 전체가 보인다.
+    var ro = window.ResizeObserver ? new ResizeObserver(function () { self.fit(); }) : null;
     if (ro) ro.observe(this.svg);
   };
 
