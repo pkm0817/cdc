@@ -1,0 +1,222 @@
+# CDC 캡처 신뢰성 검증 계측치
+
+## V1. 기본 캡처
+- **V1** · 목표 지연(통과 기준): `5 s`
+- **V1** · 시계 편차 허용치(목표 지연의 10%): `500 ms`
+- **V1** · INSERT 왕복 지연: `493 ms`
+- **V1** · INSERT 커밋 기준 지연(편차 보정): `436 ms  ← 무효`
+- **V1** · INSERT 시계 편차: `1227 ms (허용 500 ms)`
+- **V1** · INSERT: 시계 편차 1227 ms 가 허용치 500 ms 를 넘었다 — 규칙에 따라 이 회차의 커밋 기준 지연은 판정에 쓰지 않는다. 왕복 지연으로만 판정한다
+- **V1** · UPDATE 왕복 지연: `514 ms`
+- **V1** · UPDATE 커밋 기준 지연(편차 보정): `457 ms  ← 무효`
+- **V1** · UPDATE 시계 편차: `1124 ms (허용 500 ms)`
+- **V1** · UPDATE: 시계 편차 1124 ms 가 허용치 500 ms 를 넘었다 — 규칙에 따라 이 회차의 커밋 기준 지연은 판정에 쓰지 않는다. 왕복 지연으로만 판정한다
+- **V1** · 식별된 변경 필드: `[amount, status]`
+- **V1** · status: NEW -> CONFIRMED, amount: 20000.00 -> 22000.00 판독 성공
+- **V1** · 같은 판정식(FieldDiff)을 운영의 cdc_change_audit 기록이 그대로 쓴다 — 변경 필드명은 표에만 남기고 지표 레이블로는 쓰지 않는다(카디널리티)
+- **V1** · DELETE 왕복 지연: `502 ms`
+- **V1** · DELETE 커밋 기준 지연(편차 보정): `448 ms  ← 무효`
+- **V1** · DELETE 시계 편차: `1025 ms (허용 500 ms)`
+- **V1** · DELETE: 시계 편차 1025 ms 가 허용치 500 ms 를 넘었다 — 규칙에 따라 이 회차의 커밋 기준 지연은 판정에 쓰지 않는다. 왕복 지연으로만 판정한다
+- **V1** · 배치 건수: `10000`
+- **V1** · source 커밋 소요: `1977 ms`
+- **V1** · 캡처 완료까지: `2410 ms`
+- **V1** · 캡처 처리량(적재 제외): `4149 events/s`
+- **V1** · 수신 건수: `10000 / 10000`
+- **V1** · 위 처리량은 캡처 구간만의 수치다 (target 적재 제외). 운영 처리량은 rate(cdc_events_total[1m]) 로 따로 재고 두 값을 같이 읽어야 한다
+- **V1** · 1만 건 LSN 단조 증가 확인 — WAL 순서 보존됨
+
+## V2. Provider 다운 후 재기동
+- **V2** · Provider 정지 — 슬롯은 남아 있고 active=false 가 된다
+- **V2** · 다운 중 변경 건수: `1000`
+- **V2** · 다운 시간: `2232 ms`
+- **V2** · 슬롯이 붙잡은 WAL: `161.9 KiB`
+- **V2** · 변경 1건당 WAL 증가: `165 bytes`
+- **V2** · max_slot_wal_keep_size: `-1`
+- **V2** · max_slot_wal_keep_size=-1 — 상한이 없다. Provider 가 오래 죽으면 WAL 이 디스크를 채울 때까지 쌓인다
+- **V2** · 재기동 후 수신: `1000 / 1000`
+- **V2** · 유실 건수: `0`
+- **V2** · 재기동 시 마지막 오프셋부터 이어 읽어 유실 없음 — 슬롯이 WAL 을 붙잡아 준 결과
+
+## V3. 복제 슬롯 유실
+- **V3** · 슬롯 삭제 직전 confirmed_flush_lsn: `0/1B7A868`
+- **V3** · 복제 슬롯 강제 삭제 — 볼륨이 사라지는 재기동이나 이중화 전환(페일오버)에서도 같은 상태가 된다. 정상 재기동으로는 슬롯이 사라지지 않는다
+- **V3** · 끊긴 구간 변경 건수: `100`
+- **V3** · 재기동 후 수신: `0 / 100`
+- **V3** · 엔진이 오류로 종료했는가: `true`
+- **V3** · 엔진 종료 메시지: `io.debezium.DebeziumException: The connector is trying to read change stream starting at PostgresOffsetContext [sourceInfoSchema=Schema{io.debezium.connector.postgresql.Source:STRUCT}, sourceInfo=source_info[server='verify_verify_v3_slot'db='sourcedb', lsn=LSN{0/1B7A868}, txId=793, messageType=INSERT, lastCommitLsn=LSN{0/1B7A868}, timestamp=2026-09-04T06:41:07.869569Z, snapshot=FALSE, schema=, table=], lastSnapshotRecord=false, lastCompletelyProcessedLsn=LSN{0/1B7A868}, lastCommitLsn=LSN{0/1B7A868}, streamingStoppingLsn=null, transactionContext=TransactionContext [currentTransactionId=null, perTableEventCount={}, totalEventCount=0], incrementalSnapshotContext=IncrementalSnapshotContext [windowOpened=false, chunkEndPosition=null, dataCollectionsToSnapshot=[], lastEventKeySent=null, maximumKey=null]], but this is no longer available on the server. Reconfigure the connector to use a snapshot mode when needed.`
+- **V3** · 슬롯이 새로 만들어졌는가: `false`
+- **V3** · 유실 건수: `100`
+- **V3** · Debezium 이 기동을 거부하며 오류로 종료한다 — 유실 구간이 조용히 넘어가지 않는다. 다만 프로세스는 재시작 루프에 들어가므로 운영에서는 이 예외를 잡아 경보로 올려야 한다
+- **V3** · 직전 처리 LSN: `0/1B7A868`
+- **V3** · 현재 슬롯 restart_lsn: `null`
+- **V3** · 가드가 유실을 탐지했는가: `true`
+- **V3** · 권고: 기동 시 저장된 오프셋 LSN 과 슬롯 restart_lsn 을 대조해 역전되면 기동을 거부하고 재동기화를 요구할 것
+- **V3** · 재동기화 전 수신측 건수: `50 / 101`
+- **V3** · 재동기화 후 수신측 건수: `101 / 101`
+- **V3** · 재동기화는 멱등 UPSERT 라 중복 적재가 안전하다. 다만 원본에서 사라진 행은 재적재로 지워지지 않으므로 삭제 대사가 따로 필요하다
+
+## V4. 중복 유입과 이중 반영 방지
+- **V4** · 오프셋 체크포인트 확보 — 이 지점 이후는 flush 되지 않은 것으로 간주한다
+- **V4** · 오프셋을 체크포인트로 되돌림 — flush 전에 죽은 상황과 동일한 상태
+- **V4** · 1차 수신: `200`
+- **V4** · 재기동 후 수신: `200`
+- **V4** · 그중 중복(같은 LSN): `200`
+- **V4** · 1차 반영 행 수: `200`
+- **V4** · 2차 반영 행 수: `0`
+- **V4** · 원본 건수: `200`
+- **V4** · 수신측 건수: `200`
+- **V4** · 두 번 반영된 행: `0`
+- **V4** · LSN 가드가 붙은 멱등 UPSERT 라 중복 이벤트는 갱신 행 수 0 으로 차단된다
+
+## V4-b. DLQ 재처리 경로의 중복 유입 — 테이블별 가드
+- **V4-b** · 이 항목은 verify_* 전용 테이블이 아니라 운영 테이블과 기동 중인 emb-cdc-service 를 그대로 쓴다 — 검증 대상이 각 테이블의 저장소 구현과 운영 DLQ 재처리기 자체라서 복제본으로는 답이 나오지 않는다
+- **V4-b** · member · 배치 건수: `20건 중 1건 격리`
+- **V4-b** · member · 격리 외 반영: `19건`
+- **V4-b** · member · 격리된 이벤트 LSN: `28912456`
+- **V4-b** · member · 재처리 전 수신 값: `V4-FIXED`
+- **V4-b** · member · 재처리 전 수신 LSN: `28916000`
+- **V4-b** · member · 재처리 후 DLQ 상태: `RESOLVED`
+- **V4-b** · member · 재처리 후 수신 값: `V4-FIXED`
+- **V4-b** · member · 재처리 후 수신 LSN: `28916000`
+- **V4-b** · member · 재처리 판정: `STALE_SKIPPED`
+- **V4-b** · member: 오래된 이벤트가 LSN 가드에 막혀 0행 반영 — 최신 값이 그대로 남았다
+- **V4-b** · car · 배치 건수: `20건 중 1건 격리`
+- **V4-b** · car · 격리 외 반영: `19건`
+- **V4-b** · car · 격리된 이벤트 LSN: `28921216`
+- **V4-b** · car · 재처리 전 수신 값: `V4-FIXED`
+- **V4-b** · car · 재처리 전 수신 LSN: `28923112`
+- **V4-b** · car · 재처리 후 DLQ 상태: `RESOLVED`
+- **V4-b** · car · 재처리 후 수신 값: `V4-FIXED`
+- **V4-b** · car · 재처리 후 수신 LSN: `28923112`
+- **V4-b** · car · 재처리 판정: `STALE_SKIPPED`
+- **V4-b** · car: 오래된 이벤트가 LSN 가드에 막혀 0행 반영 — 최신 값이 그대로 남았다
+- **V4-b** · grade · 배치 건수: `20건 중 1건 격리`
+- **V4-b** · grade · 격리 외 반영: `19건`
+- **V4-b** · grade · 격리된 이벤트 LSN: `28928856`
+- **V4-b** · grade · 재처리 전 수신 값: `V4-FIXED`
+- **V4-b** · grade · 재처리 전 수신 LSN: `28931448`
+- **V4-b** · grade · 재처리 후 DLQ 상태: `RESOLVED`
+- **V4-b** · grade · 재처리 후 수신 값: `V4-FIXED`
+- **V4-b** · grade · 재처리 후 수신 LSN: `28931448`
+- **V4-b** · grade · 재처리 판정: `STALE_SKIPPED`
+- **V4-b** · grade: 오래된 이벤트가 LSN 가드에 막혀 0행 반영 — 최신 값이 그대로 남았다
+- **V4-b** · computer · 배치 건수: `20건 중 1건 격리`
+- **V4-b** · computer · 격리 외 반영: `19건`
+- **V4-b** · computer · 격리된 이벤트 LSN: `28943096`
+- **V4-b** · computer · 재처리 전 수신 값: `V4BRAND V4-FIXED`
+- **V4-b** · computer · 재처리 전 수신 LSN: `28945160`
+- **V4-b** · computer · 재처리 후 DLQ 상태: `RESOLVED`
+- **V4-b** · computer · 재처리 후 수신 값: `V4BRAND V4-FIXED`
+- **V4-b** · computer · 재처리 후 수신 LSN: `28945160`
+- **V4-b** · computer · 재처리 판정: `STALE_SKIPPED`
+- **V4-b** · computer: 오래된 이벤트가 LSN 가드에 막혀 0행 반영 — 최신 값이 그대로 남았다
+- **V4-b** · 재처리는 반영 행 수로 판정한다 — 0행이면 STALE_SKIPPED, 1행 이상이면 APPLIED 를 cdc_dead_letter.resolution 에 남긴다. status 만 보면 둘이 똑같이 RESOLVED 라 구분되지 않는다
+
+## V5-b. TOAST 후보 판별과 REPLICA IDENTITY 비용
+- **V5-b** · 선별 질의: `toast-candidates.sql (임계 2032 bytes)`
+- **V5-b** · probe · big_blob 최대 저장 크기: `200000 bytes → 후보 true`
+- **V5-b** · probe · small_note 최대 저장 크기: `10 bytes → 후보 false`
+- **V5-b** · 캡처 대상 테이블 수: `5`
+- **V5-b** · 그중 toastable 컬럼 수: `13`
+- **V5-b** · TOAST 후보 컬럼 수: `0`
+- **V5-b** · 가장 큰 컬럼: `member.email = 17 bytes`
+- **V5-b** · 지금 캡처 대상 스키마에는 TOAST 후보 컬럼이 하나도 없다 — 그런데도 네 테이블이 모두 REPLICA IDENTITY FULL 이다. FULL 을 요구한 것은 V5 인데, 정작 V5 가 문제 삼는 컬럼이 이 스키마에는 없다
+- **V5-b** · 확정 · big_blob(후보) 판독 불가: `true`
+- **V5-b** · 확정 · small_note(비후보) 판독 가능: `true`
+- **V5-b** · 판별 절차 확정 — 1단계 toast-candidates.sql 로 후보를 뽑고, 2단계로 그 테이블에 관심 필드를 건드리지 않는 UPDATE 를 한 건 흘려 자리표시자가 오는지 본다. 1단계만으로 확정하지 않는 이유는 토스터가 컬럼이 아니라 행 단위로 판단하기 때문이다
+- **V5-b** · 유휴 바닥값(측정 구간당): `0 B`
+- **V5-b** · 아래 수치에는 위 유휴값만큼의 잡음이 섞여 있다 — WAL 은 클러스터 공용이고 운영 파이프라인의 heartbeat 가 계속 돌기 때문이다
+- **V5-b** · verify_wal_narrow · INSERT · DEFAULT: `166 bytes/행  (총 808.1 KiB, FPI 0개)`
+- **V5-b** · verify_wal_narrow · INSERT · FULL: `166 bytes/행  (총 808.1 KiB, FPI 0개)`
+- **V5-b** · verify_wal_narrow · INSERT · 증가율: `1.00 배`
+- **V5-b** · verify_wal_narrow · UPDATE · DEFAULT: `342 bytes/행  (총 1.6 MiB, FPI 57개)`
+- **V5-b** · verify_wal_narrow · UPDATE · FULL: `388 bytes/행  (총 1.8 MiB, FPI 60개)`
+- **V5-b** · verify_wal_narrow · UPDATE · 증가율: `1.14 배`
+- **V5-b** · verify_wal_narrow · DELETE · DEFAULT: `145 bytes/행  (총 709.4 KiB, FPI 84개)`
+- **V5-b** · verify_wal_narrow · DELETE · FULL: `177 bytes/행  (총 865.3 KiB, FPI 84개)`
+- **V5-b** · verify_wal_narrow · DELETE · 증가율: `1.22 배`
+- **V5-b** · INSERT 비용은 두 설정이 사실상 같다. V2 의 165 bytes/변경 은 INSERT 부하로 잰 값이라 REPLICA IDENTITY 와 무관하다 — FULL 의 대가는 UPDATE/DELETE 에서만 나타난다
+- **V5-b** · verify_wal_wide · INSERT · DEFAULT: `214,391 bytes/행  (총 20.4 MiB, FPI 0개)`
+- **V5-b** · verify_wal_wide · INSERT · FULL: `214,310 bytes/행  (총 20.4 MiB, FPI 0개)`
+- **V5-b** · verify_wal_wide · INSERT · 증가율: `1.00 배`
+- **V5-b** · verify_wal_wide · UPDATE · DEFAULT: `306 bytes/행  (총 29.9 KiB, FPI 2개)`
+- **V5-b** · verify_wal_wide · UPDATE · FULL: `200,926 bytes/행  (총 19.2 MiB, FPI 2개)`
+- **V5-b** · verify_wal_wide · UPDATE · 증가율: `656.11 배`
+- **V5-b** · verify_wal_wide · DELETE · DEFAULT: `211,280 bytes/행  (총 20.1 MiB, FPI 2511개)`
+- **V5-b** · verify_wal_wide · DELETE · FULL: `411,870 bytes/행  (총 39.3 MiB, FPI 2509개)`
+- **V5-b** · verify_wal_wide · DELETE · 증가율: `1.95 배`
+- **V5-b** · 대용량 컬럼이 있는 테이블에서 FULL 을 켜면 그 컬럼을 건드리지 않는 UPDATE 한 건이 컬럼 크기만큼의 WAL 을 만든다. V5 를 해소하는 대가가 V2 의 디스크 압력으로 그대로 넘어가는 지점이다
+- **V5-b** · 여기서는 운영 테이블과 기동 중인 emb-cdc-service 를 쓴다 — "내려도 되는가"는 이 파이프라인이 그 테이블의 before 이미지를 실제로 무엇에 쓰는지에 달려 있어서 복제본으로는 답이 나오지 않는다
+- **V5-b** · computer · DEFAULT 에서 INSERT 반영: `V5B V5B-INS`
+- **V5-b** · computer · DEFAULT 에서 UPDATE 반영: `V5B V5B-UPD`
+- **V5-b** · computer · DEFAULT 에서 소프트 삭제: `true`
+- **V5-b** · computer 는 DEFAULT 로 내려도 동기화가 유지된다 — 핸들러가 before 에서 PK 만 읽고, TOAST 후보 컬럼도 없기 때문이다
+- **V5-b** · car · DEFAULT 에서 필드 단위 변경 식별: `false`
+- **V5-b** · car · FULL 에서 필드 단위 변경 식별: `true (변경 필드 price,updated_at)`
+- **V5-b** · car 의 FULL 을 요구하는 것은 V5 가 아니라 V1 이다 — 감사 대상 테이블은 필드 단위 변경 식별에 before 이미지가 필요하다. TOAST 후보가 없어도 이 테이블은 FULL 을 내릴 수 없다
+
+## V5. TOAST 로 값이 빠지는 경우
+- **V5** · INSERT 이벤트에는 대용량 필드가 온전히 실린다 (200000 bytes)
+- **V5** · DEFAULT · after.big_payload 자리표시자: `true`
+- **V5** · DEFAULT · after.big_payload 누락: `false`
+- **V5** · DEFAULT · 실제 값 판독 가능: `false`
+- **V5** · DEFAULT · before 존재: `false`
+- **V5** · DEFAULT 에서 관심 필드가 TOAST 대상이면 UPDATE 이벤트만으로는 현재 값을 알 수 없다
+- **V5** · REPLICA IDENTITY FULL 로 변경 후 재측정
+- **V5** · FULL · after 판독 가능: `true`
+- **V5** · FULL · before 판독 가능: `true`
+- **V5** · FULL · after 값: `200000 bytes`
+- **V5** · FULL · before 값: `200000 bytes`
+- **V5** · FULL · 현재 값 복원 가능: `true`
+- **V5** · FULL 에서는 after 로 현재 값을 복원할 수 있다
+
+## V6-b. 대사의 사각지대와 구간 한정
+- **V6-b** · car · 건수: `3 / 3 일치`
+- **V6-b** · car · 체크섬 대사: `가능 · 일치`
+- **V6-b** · car · 구간 대사: `가능 (updated_at)`
+- **V6-b** · computer · 건수: `3 / 3 일치`
+- **V6-b** · computer · 체크섬 대사: `불가 (양쪽 컬럼 집합이 다름 — 변환 테이블)`
+- **V6-b** · computer · 구간 대사: `불가 (원천 created_at vs 수신 synced_at)`
+- **V6-b** · grade · 건수: `5 / 5 일치`
+- **V6-b** · grade · 체크섬 대사: `가능 · 일치`
+- **V6-b** · grade · 구간 대사: `가능 (created_at)`
+- **V6-b** · member · 건수: `5 / 5 일치`
+- **V6-b** · member · 체크섬 대사: `가능 · 일치`
+- **V6-b** · member · 구간 대사: `가능 (updated_at)`
+- **V6-b** · 관리 컬럼(deleted, source_lsn, synced_at)을 뺀 컬럼 집합이 양쪽에서 같으면 체크섬 대사가 성립한다. 변환이 걸린 표(computer)만 건수 대사로 제한되고, 그 표는 원천 시각을 수신이 보존하지 않아 구간 대사도 되지 않는다
+- **V6-b** · 격리 후 · grade 건수차 − DLQ(PENDING): `0`
+- **V6-b** · 격리 후 · 고아 참조(member→grade): `1 건`
+- **V6-b** · DLQ 를 판정식에서 빼는 것은 옳지만, 그것만으로는 '격리된 행이 다른 행의 부모였다'를 알 수 없다. 건수 대사가 통과하는 동안 하류는 이미 깨져 있다
+- **V6-b** · 재처리 후 · grade 건수차 − DLQ(PENDING): `0`
+- **V6-b** · 재처리 후 · 고아 참조: `0 건`
+- **V6-b** · 부모가 반영되면 고아도 함께 사라진다 — 고아 대사는 '지금 조치가 필요한가'를 말해 주는 지표이지 영구 손상의 표시가 아니다
+- **V6-b** · 비용 측정 표 크기: `50,000 행`
+- **V6-b** · 그중 최근 24시간: `1,000 행 (2.0%)`
+- **V6-b** · 전체 대사 소요: `234 ms`
+- **V6-b** · 구간 대사 소요 · 인덱스 없음: `32 ms  (Aggregate / ->  Seq Scan on verify_recon_cost t)`
+- **V6-b** · 구간 대사 소요 · 인덱스 있음: `19 ms  (Aggregate / ->  Index Only Scan using verify_recon_cost_updated_at_idx on verify_recon_cost t)`
+- **V6-b** · 이 규모에서 비용을 만드는 것은 스캔이 아니라 정렬·집계다 — 구간을 2% 로 좁히는 것만으로 234ms 가 32ms 로 줄었고, 인덱스는 읽는 방식만 바꿨을 뿐 시간은 19ms 로 같았다. 인덱스가 값을 하는 것은 표가 커져 스캔이 지배적이 될 때이며, 선택도가 낮으면 플래너가 아예 쓰지 않으므로 구간 폭은 표 크기에 맞춰 정해야 한다
+- **V6-b** · 구간 밖 1행 변조 · 전체 대사: `검출`
+- **V6-b** · 구간 밖 1행 변조 · 구간 대사: `검출 못 함`
+- **V6-b** · 구간 대사와 전체 대사는 대체재가 아니라 짝이다 — 상시(수십 분 주기)로 구간을 돌려 빨리 잡고, 야간 배치로 전체를 한 번 훑는다. 구간만 돌리면 오래된 행의 어긋남이 영원히 안 잡힌다
+
+## V6. 대사와 heartbeat
+- **V6** · 원본 건수: `300`
+- **V6** · 수신측 건수: `300`
+- **V6** · 원본 체크섬: `0a826cc7b1f40f0d3654c4dfc0f18c15`
+- **V6** · 수신측 체크섬: `0a826cc7b1f40f0d3654c4dfc0f18c15`
+- **V6** · 대사 결과: `일치`
+- **V6** · 수신측에서 3건을 임의 삭제 — 유실 상황 주입
+- **V6** · 유실 주입 후 건수차: `3 건`
+- **V6** · 유실 주입 후 대사 결과: `불일치`
+- **V6** · 값 변조 후 대사 결과: `불일치`
+- **V6** · 건수가 같아도 체크섬이 달라 검출된다 — 건수 대사만으로는 부족하다
+- **V6** · 간격만 · confirmed_flush_lsn: `0/A3BD808 -> 0/A3BD808`
+- **V6** · 간격만 · 붙잡은 WAL: `104 -> 33120 bytes`
+- **V6** · heartbeat.interval.ms 단독 · 슬롯 전진량: `0 bytes`
+- **V6** · 발견: heartbeat.interval.ms 를 켜도 관심 테이블에 변경이 없으면 슬롯이 전혀 전진하지 않는다. 다른 테이블이 만든 WAL 을 슬롯이 계속 붙잡는다
+- **V6** · 간격 + action.query · confirmed_flush_lsn: `0/A3CD790 -> 0/A3D5B68`
+- **V6** · 간격 + action.query · 붙잡은 WAL: `672 -> 34424 bytes`
+- **V6** · heartbeat.action.query 병행 · 슬롯 전진량: `33752 bytes`
+- **V6** · 권고: 관심 테이블 변경이 드문 환경에서는 heartbeat.interval.ms 와 heartbeat.action.query 를 반드시 함께 설정할 것. 간격만 켜면 WAL 이 계속 쌓인다

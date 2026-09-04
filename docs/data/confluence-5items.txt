@@ -1,0 +1,83 @@
+h2. CDC PoC — 「아직 안 한 것」 5개 항목 완료 보고
+
+*확인일* 2026-09-04 &nbsp;·&nbsp; *대상* {{src/embedded-cdc}} ({{24659a9}}) &nbsp;·&nbsp; *확인 방법* 코드 검토 + 기동 중인 스택에서 Prometheus 실측
+
+지난 회차에 「결론은 났는데 코드나 설정에 안 들어간 것」으로 남겨 둔 5개 항목을 저장소 현재 상태와 대조했습니다. *5개 모두 반영 완료* 입니다.
+
+||#||항목||판정||반영 위치||실측값 (2026-09-04)||
+|1|heartbeat 설정 추가 (V6)|*완료*|{{application.yml:62,64}} → {{DebeziumEngineManager.java:187,189}}|{{cdc_heartbeat_age_seconds}} = *8.4초*|
+|2|{{wal_status}} / {{safe_wal_size}} 수집 + 경보 (V3)|*완료*|{{queries-source.yaml:49,119~137}} · {{cdc-alerts.yml:84,92}}|{{cdc_slot_status_code}} = *0* (정상)|
+|3|DLQ 대시보드 패널 (V6)|*완료*|{{embedded-cdc-verification}} 패널 #66, #43|pending *0건* · 누적 격리 *6건*|
+|4|capture-gap 메트릭 노출 (V3)|*완료*|{{DebeziumEngineManager.java:64}} · 패널 4곳 · 경보 2종|{{cdc_capture_gap}} = *0*|
+|5|{{pg_ls_waldir()}} + node_exporter (V2)|*완료*|{{queries-source.yaml:78~80}} · {{docker-compose.monitoring.yml:100}}|source WAL *128.0 MiB / 8파일*|
+
+h3. 항목별 상세
+
+h4. 1. heartbeat.interval.ms + heartbeat.action.query
+
+{{application.yml:62}} 에 {{heartbeat-interval-ms: 10000}}, {{:64}} 에 {{heartbeat-action-query}} ({{cdc_heartbeat}} 테이블 UPSERT) 가 들어갔고 {{DebeziumEngineManager.java:187,189}} 에서 Debezium 속성으로 전달됩니다.
+
+두 설정을 *함께* 걸어야 하는 이유는 V6 실측입니다 — {{interval.ms}} 만으로는 슬롯 전진이 *0 bytes* 이고, {{action.query}} 가 publication 에 든 테이블에 쓰기를 만들어 줘야 confirm 이 일어납니다. 대상 테이블 {{cdc_heartbeat}} 가 {{table-include-list}} ({{:49}}) 에도 포함돼 있어야 진행 지점이 함께 전진합니다.
+
+h4. 2. wal_status / safe_wal_size 수집과 경보
+
+{{queries-source.yaml:119~137}} 이 {{wal_status}} 를 정렬 가능한 숫자({{cdc_slot_status_code}})로 변환해 내보내고, {{:49}} 가 {{safe_wal_size}} 를 함께 냅니다.
+
+경보 연결:
+* {{cdc-alerts.yml:84}} — {{cdc_slot_status_code >= 2}} (unreserved), severity warning, for 1m
+* {{cdc-alerts.yml:92}} — {{cdc_slot_status_code == 3}} (lost), severity critical, 즉시
+
+두 단계를 나눈 이유는 *2 단계에서 대응하면 재동기화를 피할 수 있고, 3 은 재동기화 외에 방법이 없기* 때문입니다.
+
+h4. 3. DLQ 대시보드 패널
+
+검증 대시보드에 패널 *#66 「격리 발생 추이 — 테이블별」* ({{sum by (table) (rate(cdc_dead_letters_total[5m]))}}) 과 pending 현황 패널이 있습니다.
+
+지표가 둘이고 성격이 다르므로 함께 읽어야 합니다.
+* {{cdc_dlq_total_pending}} — *지금 몇 건이 밀려 있나* (exporter 가 표를 셈). 대사 판정식 {{|source − target| − DLQ(PENDING) = 0}} 에 쓰이는 값
+* {{cdc_dead_letters_total}} — *그동안 몇 건이 격리됐나* (앱 누적 카운터)
+
+h4. 4. capture-gap 메트릭 노출
+
+{{DebeziumEngineManager.java:64}} 가 갭 탐지 결과를 {{metrics.captureGap()}} 으로 올립니다.
+
+*갭을 발견해도 프로세스는 죽이지 않고 엔진만 띄우지 않는* 구조입니다. 예외를 던지면 스프링 컨텍스트가 죽어 Prometheus 가 한 번도 못 긁기 때문입니다 — 탐지해 놓고 신호를 못 내보내면 탐지한 적 없는 것과 같습니다.
+
+경보는 두 경로입니다.
+* {{CdcCaptureGap}} ({{cdc-alerts.yml:41}}) — 앱 지표 직접
+* {{CdcCaptureGapByLsn}} ({{:50}}) — 앱이 아예 안 뜬 경우의 LSN 기반 대체 판정
+
+h4. 5. pg_ls_waldir() 합계 + node_exporter
+
+{{queries-source.yaml:78~80}} (및 target {{:73}}) 이 {{pg_ls_waldir()}} 합계를 내보냅니다.
+
+{warning:title=지표 이름 주의}
+목록에는 {{pg_ls_waldir}} 로 적혀 있지만 실제 지표명은 *{{cdc_wal_size_bytes}}* 와 *{{cdc_wal_files}}* 입니다. 대시보드·경보에서 검색할 때 이 이름을 쓰십시오.
+{warning}
+
+node_exporter 는 {{docker-compose.monitoring.yml:100}} 에 {{prom/node-exporter:v1.8.2}} 로 들어가 있고 {{prometheus.yml:41}} 의 {{node}} job 으로 수집됩니다.
+
+두 값은 경보 {{CdcWalDiskHeadroomLow}} ({{cdc-alerts.yml:124~126}}) 에서 함께 쓰여 *다운 허용시간 = 디스크 여유 ÷ WAL 증가율* 을 계산합니다.
+
+h3. 이 목록에 없지만 실제로 남아 있는 것
+
+위 5개가 정리되면서 남은 항목은 아래와 같습니다. 그중 car 결함은 2026-09-04 에 고쳤습니다.
+
+||항목||왜 시급한가||근거||
+|{{max_slot_wal_keep_size}} 가 {{-1}}|상한이 없어 컨슈머 장기 다운 시 *원천 DB 디스크가 참*|{{docker-compose.source.yml:29~45}} 에 항목 없음|
+|~~{{car}} 의 DLQ 재처리 가드 부재~~ *(2026-09-04 수정 완료)*|재처리가 최신 값을 과거 값으로 덮던 문제. 포트 계약을 {{upsertIfNewer}} / {{deleteIfNewer}} 로 바꾸고 {{car.source_lsn}} 추가|재검증에서 {{V4-FIXED}} 유지 · {{resolution=STALE_SKIPPED}} · 29/29 통과|
+|행업 판정 경보 없음|기존 {{CdcSlotNotAdvancing}} 은 30분 창 · heartbeat 미설정용이라 목적이 다름|{{cdc-alerts.yml:261~269}}|
+|계측 산출물 미보존|{{results.md}} 가 {{build/}} 아래라 실행마다 사라져 *수치 대조 불가*|{{.gitignore:1}}|
+
+h3. 재현 방법
+
+{code:bash}
+cd src/embedded-cdc
+./scripts/up.sh                    # DB 2개 + 모니터링 + 앱
+./scripts/verify.sh                # 전체 검증 (약 5분, 29/29 통과)
+
+# 위 실측값 확인
+curl -s 'http://localhost:56090/api/v1/query?query=cdc_slot_status_code'
+curl -s 'http://localhost:56090/api/v1/query?query=cdc_capture_gap'
+curl -s 'http://localhost:56090/api/v1/query?query=cdc_wal_size_bytes'
+{code}
