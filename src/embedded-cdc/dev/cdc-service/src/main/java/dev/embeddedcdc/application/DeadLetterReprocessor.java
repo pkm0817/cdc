@@ -38,6 +38,11 @@ import java.util.List;
         havingValue = "true", matchIfMissing = true)
 public class DeadLetterReprocessor {
 
+    /** 재처리가 실제로 행을 바꿨다. */
+    static final String RESOLUTION_APPLIED = "APPLIED";
+    /** 더 새로운 값이 이미 있어 LSN 가드에 막혔다. 복구는 끝난 것으로 본다. */
+    static final String RESOLUTION_STALE_SKIPPED = "STALE_SKIPPED";
+
     private final DeadLetterStore deadLetters;
     private final BatchApplier applier;
     private final CdcSourceProperties source;
@@ -52,19 +57,33 @@ public class DeadLetterReprocessor {
         }
 
         log.info("DLQ 재처리 시작 — {}건", claimed.size());
-        int resolved = 0;
+        int applied = 0;
+        int skipped = 0;
         int failed = 0;
 
         for (PendingDeadLetter pending : claimed) {
             try {
                 // 체크포인트를 올리지 않는 경로다 — 지나간 LSN 을 다시 적용하는 것이므로
                 // 진행 지점을 건드리면 안 된다.
-                applier.applyOne(source.name(), pending.event());
-                deadLetters.markResolved(pending.id());
-                resolved++;
-                log.info("재처리 성공 dlqId={} table={} op={} lsn={}",
-                        pending.id(), pending.event().table(),
-                        pending.event().op().code(), pending.event().lsn());
+                int affected = applier.applyOne(source.name(), pending.event());
+
+                // 예외가 없다고 다 반영된 것이 아니다. 격리된 뒤 재처리까지의 사이에
+                // 정상 경로로 더 새로운 값이 들어왔으면 LSN 가드가 0행으로 막는다.
+                // 그것도 복구 완료이긴 하지만 "반영했다"와는 다른 사실이라 갈라서 남긴다 —
+                // 둘을 뭉뚱그리면 라우팅 오류나 대상 부재까지 성공으로 보인다.
+                if (affected > 0) {
+                    deadLetters.markResolved(pending.id(), RESOLUTION_APPLIED);
+                    applied++;
+                    log.info("재처리 반영 dlqId={} table={} op={} lsn={} 행={}",
+                            pending.id(), pending.event().table(),
+                            pending.event().op().code(), pending.event().lsn(), affected);
+                } else {
+                    deadLetters.markResolved(pending.id(), RESOLUTION_STALE_SKIPPED);
+                    skipped++;
+                    log.info("재처리 차단 dlqId={} table={} op={} lsn={} — 더 새로운 값이 이미 있다",
+                            pending.id(), pending.event().table(),
+                            pending.event().op().code(), pending.event().lsn());
+                }
             } catch (Exception e) {
                 deadLetters.markRetryFailed(pending.id(), e);
                 failed++;
@@ -73,6 +92,6 @@ public class DeadLetterReprocessor {
             }
         }
 
-        log.info("DLQ 재처리 완료 — 성공 {}건, 실패 {}건", resolved, failed);
+        log.info("DLQ 재처리 완료 — 반영 {}건, 차단 {}건, 실패 {}건", applied, skipped, failed);
     }
 }

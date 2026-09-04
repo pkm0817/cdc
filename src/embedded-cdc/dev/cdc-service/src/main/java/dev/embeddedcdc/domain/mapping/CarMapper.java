@@ -15,13 +15,18 @@ public final class CarMapper {
     private CarMapper() {
     }
 
-    public static Car from(RowData row) {
+    /**
+     * @param sourceLsn 이 이벤트의 WAL 위치. 행에 함께 적어 두어야 다음 이벤트가
+     *                  더 새로운 것인지 판정할 수 있다.
+     */
+    public static Car from(RowData row, long sourceLsn) {
         return new Car(
                 row.longValue("id"),
                 row.text("name"),
                 row.text("brand"),
                 row.decimal("price"),
                 row.timestamp("created_at"),
-                row.timestamp("updated_at"));
+                row.timestamp("updated_at"),
+                sourceLsn);
     }
 }

@@ -13,5 +13,10 @@ public interface TableSyncHandler {
 
     SourceTable table();
 
-    void apply(ChangeEvent event);
+    /**
+     * @return 반영된 행 수. <b>0 은 오류가 아니라 더 오래된 이벤트가 차단된 것</b>이다.
+     *         DLQ 재처리는 이 값으로 "실제로 반영했다"와 "차단됐다"를 가른다 —
+     *         예외 유무만 보면 둘이 똑같이 성공으로 기록된다.
+     */
+    int apply(ChangeEvent event);
 }

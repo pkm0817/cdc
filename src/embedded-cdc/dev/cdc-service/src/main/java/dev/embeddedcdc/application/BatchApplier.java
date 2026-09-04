@@ -68,8 +68,8 @@ public class BatchApplier {
      * 이 경로에서는 체크포인트를 기록하지 않는다 — 격리가 끝난 뒤 한 번에 남긴다.
      */
     @Transactional
-    public void applyOne(String pipeline, ChangeEvent event) {
-        apply(pipeline, event);
+    public int applyOne(String pipeline, ChangeEvent event) {
+        return apply(pipeline, event);
     }
 
     @Transactional
@@ -77,7 +77,7 @@ public class BatchApplier {
         checkpoints.record(pipeline, lsn);
     }
 
-    private void apply(String pipeline, ChangeEvent event) {
+    private int apply(String pipeline, ChangeEvent event) {
         TableSyncHandler handler = SourceTable.fromName(event.table())
                 .map(handlers::get)
                 .orElse(null);
@@ -96,10 +96,11 @@ public class BatchApplier {
             } else {
                 log.warn("매핑되지 않은 테이블, 건너뜀: {}", event.table());
             }
-            return;
+            return 0;
         }
-        handler.apply(event);
+        int affected = handler.apply(event);
         auditIfUpdate(pipeline, event);
+        return affected;
     }
 
     /** cdc_ 로 시작하는 것은 파이프라인이 자기 목적으로 쓰는 표다 (heartbeat 등). */

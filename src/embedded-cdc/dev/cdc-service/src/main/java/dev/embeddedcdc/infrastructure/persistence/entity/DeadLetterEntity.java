@@ -63,6 +63,13 @@ public class DeadLetterEntity {
     @Column(nullable = false)
     private String status;
 
+    /**
+     * 재처리가 실제로 한 일. APPLIED · STALE_SKIPPED.
+     * status 가 RESOLVED 인 것만으로는 반영과 차단이 구분되지 않아 따로 남긴다.
+     */
+    @Column
+    private String resolution;
+
     @Column(name = "first_failed_at", nullable = false)
     private OffsetDateTime firstFailedAt;
 

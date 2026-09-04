@@ -32,7 +32,12 @@ public interface DeadLetterStore {
     List<PendingDeadLetter> claimForRetry(String pipeline, int limit);
 
     /** 재처리 성공. */
-    void markResolved(long id);
+    /**
+     * @param resolution 재처리가 실제로 무엇을 했는지. 예외가 없었다는 사실만으로는
+     *                   "반영됨"과 "더 새로운 값이 있어 차단됨"이 구분되지 않는다.
+     *                   {@code APPLIED} 또는 {@code STALE_SKIPPED} 를 넣는다.
+     */
+    void markResolved(long id, String resolution);
 
     /** 재처리 실패. 다시 PENDING 으로 돌리고 시도 횟수를 올린다. */
     void markRetryFailed(long id, Throwable cause);

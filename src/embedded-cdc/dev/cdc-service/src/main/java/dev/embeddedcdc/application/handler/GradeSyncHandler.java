@@ -25,7 +25,7 @@ public class GradeSyncHandler implements TableSyncHandler {
     }
 
     @Override
-    public void apply(ChangeEvent event) {
+    public int apply(ChangeEvent event) {
         int affected = event.op().isUpsert()
                 ? repository.upsertIfNewer(GradeMapper.from(event.after(), event.lsn()))
                 : repository.softDelete(event.before().longValue("id"), event.lsn());
@@ -33,5 +33,6 @@ public class GradeSyncHandler implements TableSyncHandler {
         if (affected == 0) {
             log.debug("더 오래된 이벤트라 차단됨 table=grade op={} lsn={}", event.op().code(), event.lsn());
         }
+        return affected;
     }
 }

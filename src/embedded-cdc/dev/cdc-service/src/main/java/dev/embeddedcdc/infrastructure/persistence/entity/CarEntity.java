@@ -51,8 +51,12 @@ public class CarEntity {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    /** 이 행에 마지막으로 반영된 이벤트의 WAL 위치. 순서 역전 판정의 기준이다. */
+    @Column(name = "source_lsn", nullable = false)
+    private Long sourceLsn;
+
     public static CarEntity from(Car car) {
         return new CarEntity(car.id(), car.name(), car.brand(), car.price(),
-                car.createdAt(), car.updatedAt());
+                car.createdAt(), car.updatedAt(), car.sourceLsn());
     }
 }

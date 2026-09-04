@@ -33,15 +33,30 @@ public class JpaCarRepository implements CarRepository {
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public void upsert(Car car) {
-        jpa.save(CarEntity.from(car));
+    public int upsertIfNewer(Car car) {
+        return jpa.upsertIfNewer(
+                car.id(),
+                car.name(),
+                car.brand(),
+                car.price(),
+                car.createdAt(),
+                car.updatedAt(),
+                car.sourceLsn());
     }
 
+    /**
+     * 조건 없는 DELETE 였다면 늦게 도착한 삭제 이벤트가 그 사이 되살아난 행까지 지운다.
+     * 물리 삭제라 되돌릴 방법이 없으므로, 저장된 LSN 보다 새로울 때만 지운다.
+     *
+     * 행이 없으면(이미 지워졌으면) 0 이 돌아온다 — 이것도 차단과 같은 취급이며,
+     * 삭제는 원래 멱등이라 문제되지 않는다.
+     */
     @Override
-    public void delete(long id) {
-        queryFactory
+    public int deleteIfNewer(long id, long lsn) {
+        return (int) queryFactory
                 .delete(carEntity)
-                .where(carEntity.id.eq(id))
+                .where(carEntity.id.eq(id)
+                        .and(carEntity.sourceLsn.lt(lsn)))
                 .execute();
     }
 }

@@ -119,9 +119,10 @@ public class JpaDeadLetterStore implements DeadLetterStore {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markResolved(long id) {
+    public void markResolved(long id, String resolution) {
         queryFactory.update(deadLetterEntity)
                 .set(deadLetterEntity.status, "RESOLVED")
+                .set(deadLetterEntity.resolution, resolution)
                 .set(deadLetterEntity.lastFailedAt, OffsetDateTime.now())
                 .where(deadLetterEntity.id.eq(id))
                 .execute();

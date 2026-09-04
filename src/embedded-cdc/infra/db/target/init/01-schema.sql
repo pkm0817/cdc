@@ -15,13 +15,22 @@
 --              synced_at  : 마지막 동기화 시각 (지연 관측용)
 -- ============================================================================
 
+-- source_lsn 은 관리 컬럼이다. 원천에 없는 값이지만 여기 있어야 "이 행에 마지막으로
+-- 반영된 이벤트가 어디까지인지"를 한 문장 안에서 비교할 수 있다.
+-- 없으면 늦게 도착한 이벤트(DLQ 재처리가 대표적이다)가 최신 값을 그대로 덮는다 — V4-b 에서
+-- 실제로 V4-FIXED 가 V4-POISON 으로 되돌아갔다.
+-- 대사에서는 deleted·source_lsn·synced_at 을 빼고 체크섬을 내므로(reconcile.sql) 비교에 영향이 없다.
+-- car 는 소프트 삭제를 쓰지 않는다. deleted 컬럼을 두는 순간 exporter 의 건수 쿼리가
+-- WHERE deleted = false 로 바뀌어 "하드 삭제 테이블"이라는 전제(V3 삭제 대사)가 흔들린다.
+-- 대신 삭제도 LSN 조건을 달아 순서 역전만 막는다.
 CREATE TABLE car (
     id         BIGINT       PRIMARY KEY,
     name       TEXT         NOT NULL,
     brand      TEXT         NOT NULL,
     price      NUMERIC(12,2) NOT NULL,
     created_at TIMESTAMPTZ  NOT NULL,
-    updated_at TIMESTAMPTZ  NOT NULL
+    updated_at TIMESTAMPTZ  NOT NULL,
+    source_lsn BIGINT       NOT NULL DEFAULT 0
 );
 
 CREATE TABLE computer (
@@ -102,6 +111,12 @@ CREATE TABLE cdc_dead_letter (
     failure_message   TEXT        NOT NULL,
     attempts          INT         NOT NULL,
     status            TEXT        NOT NULL DEFAULT 'PENDING',
+    -- 재처리가 실제로 무엇을 했는지. status 만으로는 구분되지 않는다 —
+    -- LSN 가드에 막혀 0행이 반영돼도 예외가 없으니 RESOLVED 가 되기 때문이다.
+    --   APPLIED       실제로 행이 바뀌었다
+    --   STALE_SKIPPED 더 새로운 값이 이미 있어 차단됐다 (정상이며, 복구 완료로 봐도 된다)
+    -- 이 둘을 못 가르면 "반영됐다"와 "아무 일도 안 일어났다"가 운영 화면에서 같아 보인다.
+    resolution        TEXT,
     first_failed_at   TIMESTAMPTZ NOT NULL,
     last_failed_at    TIMESTAMPTZ NOT NULL
 );

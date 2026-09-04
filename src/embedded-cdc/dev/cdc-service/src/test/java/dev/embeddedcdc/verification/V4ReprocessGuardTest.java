@@ -22,9 +22,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 그러면 재처리는 "중복"이 아니라 "역전"이다 — 오래된 값이 최신 값을 덮어쓸 수 있다.
  *
  * <p><b>그리고 그것을 막는 기제가 테이블마다 다르다.</b>
- * computer / grade / member 는 {@code WHERE EXCLUDED.source_lsn > ...} 가드가 붙은 UPSERT 라
- * 오래된 LSN 이 차단되지만, car 는 조건 없는 merge 라 막을 것이 없다.
- * 한 테이블만 보고 V4 를 통과시키면 이 차이가 보고서에서 사라진다.
+ * 네 표 모두 {@code WHERE EXCLUDED.source_lsn > ...} 가드가 붙은 UPSERT 라 오래된 LSN 이 차단된다.
+ * car 만 예전에 조건 없는 merge 였고, 그래서 재처리가 최신 값을 격리 시점 값으로 되돌렸다.
+ * 한 테이블만 보고 V4 를 통과시키면 이 차이가 보고서에서 사라진다 — 그래서 넷을 모두 돈다.
  *
  * <p><b>이 항목만은 검증 전용 테이블을 쓰지 않는다.</b> 다른 시나리오는 verify_* 테이블과
  * 전용 슬롯으로 돌지만, 여기서 검증하려는 것이 곧 각 테이블의 저장소 구현과 운영 DLQ 재처리기다.
@@ -73,8 +73,8 @@ class V4ReprocessGuardTest extends VerificationSupport {
     @AfterAll
     static void report() {
         VerificationReport.note(ITEM,
-                "DLQ 는 재처리 결과를 예외 유무로만 판정한다 — 가드에 막혀 0행이 반영돼도 RESOLVED 가 된다. "
-                        + "상태만으로는 '반영됨'과 '차단됨'을 구분할 수 없으므로, 재처리 결과에 반영 행 수를 남길 것");
+                "재처리는 반영 행 수로 판정한다 — 0행이면 STALE_SKIPPED, 1행 이상이면 APPLIED 를 "
+                        + "cdc_dead_letter.resolution 에 남긴다. status 만 보면 둘이 똑같이 RESOLVED 라 구분되지 않는다");
     }
 
     // ── 테이블별 시나리오 ──────────────────────────────────────────────────
@@ -106,10 +106,15 @@ class V4ReprocessGuardTest extends VerificationSupport {
                 POISON, FIXED));
     }
 
+    /**
+     * car 는 원래 조건 없는 merge 라 재처리가 최신 값을 격리 시점 값으로 되돌렸다.
+     * 저장소 계약에 LSN 조건을 넣어 나머지 셋과 같은 결과가 되었는지 본다.
+     * 하드 삭제 테이블이라 soft delete 는 여전히 쓰지 않는다 — 삭제에도 LSN 조건만 달았다.
+     */
     @Test
-    @DisplayName("car — 가드가 없어 재처리가 최신 값을 덮어쓴다")
-    void carHasNoGuardAndRegresses() {
-        runCase(new Fixture("car", false,
+    @DisplayName("car — LSN 가드가 재처리의 역전을 막는다")
+    void carGuardBlocksStaleReprocess() {
+        runCase(new Fixture("car", true,
                 "name <> '" + POISON + "'",
                 "name", "name",
                 POISON, FIXED));
@@ -199,21 +204,21 @@ class V4ReprocessGuardTest extends VerificationSupport {
 
         assertThat(finalStatus).as("재처리는 예외 없이 끝나야 한다").isEqualTo("RESOLVED");
 
-        if (f.guarded()) {
-            VerificationReport.note(ITEM, f.table()
-                    + ": 오래된 이벤트가 LSN 가드에 막혀 0행 반영 — 최신 값이 그대로 남았다");
-            assertThat(valueAfter)
-                    .as("가드가 있는 테이블은 오래된 재처리가 최신 값을 덮어쓰지 않는다")
-                    .isEqualTo(f.fixedTargetValue());
-            assertThat(lsnAfter).as("가드가 막았으므로 수신 LSN 도 그대로다").isEqualTo(lsnBefore);
-        } else {
-            VerificationReport.note(ITEM, f.table()
-                    + ": 조건 없는 merge 라 재처리가 최신 값을 격리 시점 값으로 되돌렸다 — "
-                    + "DLQ 재처리는 이 테이블에서 안전하지 않다");
-            assertThat(valueAfter)
-                    .as("가드가 없는 테이블은 오래된 재처리가 최신 값을 덮어쓴다 (현 구현의 사실)")
-                    .isEqualTo(f.poisonTargetValue());
-        }
+        // status 만으로는 "반영했다"와 "차단됐다"가 구분되지 않아 resolution 을 따로 남긴다.
+        // 이 값이 없으면 라우팅 오류나 대상 부재까지 성공으로 보인다.
+        String resolution = Db.scalarOnTarget(
+                "SELECT resolution FROM cdc_dead_letter WHERE id = ?", String.class, dlqId);
+        VerificationReport.metric(ITEM, f.table() + " · 재처리 판정", String.valueOf(resolution));
+
+        VerificationReport.note(ITEM, f.table()
+                + ": 오래된 이벤트가 LSN 가드에 막혀 0행 반영 — 최신 값이 그대로 남았다");
+        assertThat(valueAfter)
+                .as("오래된 재처리가 최신 값을 덮어쓰지 않는다")
+                .isEqualTo(f.fixedTargetValue());
+        assertThat(lsnAfter).as("가드가 막았으므로 수신 LSN 도 그대로다").isEqualTo(lsnBefore);
+        assertThat(resolution)
+                .as("차단된 재처리는 APPLIED 가 아니라 STALE_SKIPPED 로 남아야 한다")
+                .isEqualTo("STALE_SKIPPED");
 
         cleanupQuietly(f, poisonRowId);
     }
@@ -284,7 +289,7 @@ class V4ReprocessGuardTest extends VerificationSupport {
                 "SELECT " + f.targetKeyColumn() + " FROM " + f.table() + " WHERE id = ?", String.class, id);
     }
 
-    /** 가드 컬럼이 있는 테이블만 값을 준다. car 는 컬럼 자체가 없어 null 이다. */
+    /** 네 표 모두 source_lsn 을 가진다. guarded=false 인 표를 넣으면 null 을 준다. */
     private static Long guardColumnLsn(Fixture f, long id) {
         if (!f.guarded()) {
             return null;
